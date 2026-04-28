@@ -24,4 +24,15 @@ dependencyResolutionManagement {
 
 rootProject.name = "kanshu"
 include(":app")
- 
+include(":core")
+
+file("features")
+    .listFiles()
+    ?.filter { it.isDirectory }
+    ?.forEach { feature ->
+        feature.listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { platform ->
+                include(":features:${feature.name}:${platform.name}")
+            }
+    }
