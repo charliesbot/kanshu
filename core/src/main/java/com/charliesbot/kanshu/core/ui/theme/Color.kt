@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.ui.theme
+package com.charliesbot.kanshu.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
