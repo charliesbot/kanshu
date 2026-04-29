@@ -31,7 +31,9 @@ file("features")
     ?.filter { it.isDirectory }
     ?.forEach { feature ->
         feature.listFiles()
-            ?.filter { it.isDirectory }
+            ?.filter { platform ->
+                platform.isDirectory && platform.resolve("build.gradle.kts").isFile
+            }
             ?.forEach { platform ->
                 include(":features:${feature.name}:${platform.name}")
             }
