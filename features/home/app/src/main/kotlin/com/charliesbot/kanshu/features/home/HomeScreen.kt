@@ -1,10 +1,11 @@
 package com.charliesbot.kanshu.features.home
 
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.tooling.preview.Preview
+import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -15,11 +16,14 @@ fun HomeScreen(viewModel: HomeViewModel = koinViewModel()) {
 
 @Composable
 private fun HomeContent(uiState: HomeUiState) {
-  Text(text = uiState.title)
+  BasicText(
+    text = uiState.title,
+    style = KanshuTheme.typography.body.copy(color = KanshuTheme.colors.onBackground),
+  )
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun HomeScreenPreview() {
-  HomeContent(uiState = HomeUiState())
+  KanshuTheme { HomeContent(uiState = HomeUiState()) }
 }
