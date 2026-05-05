@@ -1,0 +1,110 @@
+# Kavita API — Reference for Kanshu
+
+Practical reference for the slice of the Kavita API that Kanshu uses. Captures the decisions and gotchas we've already paid for so we don't rediscover them.
+
+## Source of truth
+
+- OpenAPI spec: <https://raw.githubusercontent.com/Kareadita/Kavita/develop/openapi.json> — authoritative; verify here when this doc and behavior disagree.
+- Wiki: <https://wiki.kavitareader.com/guides/api/>
+
+When updating this doc, search the OpenAPI spec by path string rather than line number — the spec drifts.
+
+## Authentication
+
+The OpenAPI spec declares one global security scheme: `AuthKey`, an API key in the `x-api-key` header. Almost every endpoint inherits it.
+
+```
+GET /api/Server/server-info-slim
+x-api-key: <user api key>
+```
+
+Kavita derives the user from the key, so user-scoped endpoints (reader progress, account) work with `x-api-key` alone.
+
+### When you actually need the JWT
+
+`POST /api/Plugin/authenticate?apiKey=<key>&pluginName=<name>` exchanges the API key for a JWT, returning a `UserDto` whose `token` field is used as `Authorization: Bearer <jwt>`.
+
+**Rule of thumb: `x-api-key` is enough for everything Kanshu does.** The JWT exchange is only needed for SignalR hubs and OPDS-style endpoints that don't accept the key. None of those are on the Kanshu roadmap.
+
+### Image endpoints are different
+
+Image endpoints take the API key as a **query param**, not a header — so `<img src>` works without setting headers. See cover images below.
+
+## Endpoints we use
+
+### Test connection — `GET /api/Server/server-info-slim`
+
+Lightweight, auth-gated. Returns 200 with a small JSON payload on valid creds, 401 on bad key. The right call for a "test connection" button.
+
+**Do not use `/api/Health` for auth tests** — it's an unauthenticated Docker liveness probe, returns 200 regardless of credentials, will silently false-positive a wrong key.
+
+Always check `Content-Type: application/json` before trusting the body. A misconfigured base URL (user typed the SPA root instead of the API root, or the wrong port) can return the SPA HTML with HTTP 200.
+
+### List libraries — `GET /api/Library/libraries`
+
+Returns `LibraryDto[]` — the libraries the calling user can see. Use this to scope series queries by `libraryId`.
+
+**Do not use `/api/Library/list`** — that's a filesystem directory picker for the admin UI, not user libraries.
+
+### List series — `POST /api/Series/all-v2`
+
+Body: `SeriesFilterV2Dto` (use `{}` for unfiltered). Query: `PageNumber`, `PageSize`, optional `userId`, `context`. Returns `SeriesDto[]`.
+
+`/api/Series/all` (no `-v2`) **does not exist** in the current spec despite older docs/PRDs referencing it. Always prefer `-v2` paths — many older `/api/Series/*` routes are deprecated but still in the spec.
+
+To restrict to EPUB only, filter `SeriesFilterV2Dto.statements` by `format == 3` (`MangaFormat.Epub` is an int enum, not a string). Filtering by `libraryId` is usually cleaner if the user has dedicated EPUB libraries.
+
+`SeriesDto` key fields: `id`, `name`, `originalName`, `localizedName`, `pages`, `pagesRead`, `format`, `libraryId`, `libraryName`, `coverImage`.
+
+**`coverImage` is an opaque token, not a URL.** Use the cover endpoint below to render it.
+
+**Pagination metadata lives in a response header, not the body.** Read the `Pagination-Header` HTTP header — it contains JSON with `currentPage`, `itemsPerPage`, `totalItems`, `totalPages`. The OpenAPI spec doesn't document this.
+
+### Cover images — `GET /api/Image/series-cover?seriesId={id}&apiKey={key}`
+
+API key goes in the **query string** here, not the header — so the URL is directly usable as an `<img src>`. Same pattern for `/api/Image/chapter-cover` and friends.
+
+### Download an EPUB
+
+Kavita's model is Series → Volume → Chapter → file(s). For EPUB libraries, each book is typically one chapter with one `.epub` file.
+
+1. `GET /api/Series/volumes?seriesId={id}` → `VolumeDto[]`, each with its `chapters` populated.
+2. Pick the chapter id.
+3. `GET /api/Download/chapter?chapterId={id}` → the file bytes.
+
+**The response is not always an EPUB.** If the chapter has a single file, you get the raw `.epub` with `Content-Type: application/epub+zip`. If it has multiple files, Kavita zips them and returns `application/zip`. Always inspect `Content-Type` and use the filename from `Content-Disposition`; do not assume the extension from the URL.
+
+Optional pre-flight: `GET /api/Download/chapter-size?chapterId={id}` returns the byte size. `/api/Download/volume` and `/api/Download/series` exist for bulk downloads.
+
+**Do not use `/api/Reader/*` to fetch the file** — those endpoints are for paginated server-side reading (`/api/Reader/pdf`, `/api/Reader/image` stream individual pages, `/api/Reader/chapter-info` returns reader metadata). Wrong tool for an offline reader; we want the file on the device.
+
+### `ChapterDto` field warning
+
+`number` on `ChapterDto` is deprecated. Use `minNumber`, `maxNumber`, or `sortOrder`.
+
+## Endpoints we don't use yet
+
+Listed so we don't re-evaluate them every time.
+
+- **`POST /api/Plugin/authenticate`** — JWT exchange. Not needed; `x-api-key` covers our endpoints.
+- **`GET /api/Plugin/version?apiKey=`** — legacy plugin handshake. Logs unauthorized hits to the security log; don't probe it for connection tests.
+- **`/api/Reader/*` (streaming)** — server-side paginated reading. Kanshu renders EPUBs locally, so we download the file and skip these.
+- **`/api/Reader/progress`, `/api/Reader/mark-*`** — reading progress sync. On the post-Phase-0 roadmap; works with `x-api-key` when we get there.
+- **`POST /api/Series/v2`** — per-library filtered listing. Useful later if we add library-scoped views; for now `all-v2` is enough.
+- **`/api/Health`** — unauthenticated Docker liveness probe. Useless for our purposes; documented above as a footgun.
+
+## Footguns reference
+
+Quick scannable list of the gotchas already covered above:
+
+- `/api/Series/all` does not exist — use `/api/Series/all-v2`.
+- `/api/Library/list` is the filesystem dir picker, not user libraries — use `/api/Library/libraries`.
+- `/api/Health` is unauthenticated — useless for credential validation.
+- Misconfigured base URL can return SPA HTML with HTTP 200 — check `Content-Type` on responses.
+- Pagination metadata is in the `Pagination-Header` response header, not the body.
+- `coverImage` on `SeriesDto` is a token, not a URL — go through `/api/Image/series-cover`.
+- Image endpoints take `apiKey` as a query param, not a header.
+- `MangaFormat` is an int enum in JSON (`3` = EPUB), not a string.
+- `Download/chapter` returns `application/epub+zip` for single-file chapters and `application/zip` for multi-file ones — inspect `Content-Type`.
+- `ChapterDto.number` is deprecated — use `minNumber` / `maxNumber` / `sortOrder`.
+- Prefer `-v2` paths; non-v2 variants are often deprecated.

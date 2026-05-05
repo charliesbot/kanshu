@@ -22,7 +22,7 @@ The long-term goal is a distraction-free bridge between a personal Kavita librar
   - Auth can use an `x-api-key` header.
   - Swagger may be available at `/swagger/index.html`.
   - Useful early endpoint candidates:
-    - `GET /api/Series/all` for library discovery.
+    - `POST /api/Series/all-v2` for library discovery.
     - Reader/download endpoints for resolving and downloading EPUB files.
 - E-ink constraints:
   - No animations, ripples, fades, slides, page curls, or animated indicators.
