@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionTestResult
+import com.charliesbot.kanshu.core.connection.CredentialsRepository
+import com.charliesbot.kanshu.core.connection.KavitaCredentials
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +42,10 @@ sealed interface TestStatus {
   }
 }
 
-class ConnectionViewModel(private val repository: ConnectionRepository) : ViewModel() {
+class ConnectionViewModel(
+  private val repository: ConnectionRepository,
+  private val credentialsRepository: CredentialsRepository,
+) : ViewModel() {
   private val _uiState = MutableStateFlow(ConnectionUiState())
   val uiState: StateFlow<ConnectionUiState> = _uiState.asStateFlow()
 
@@ -63,7 +68,12 @@ class ConnectionViewModel(private val repository: ConnectionRepository) : ViewMo
     _uiState.update { it.copy(status = TestStatus.Testing) }
     inFlight =
       viewModelScope.launch {
-        val result = repository.testConnection(state.baseUrl.trim(), state.apiKey.trim())
+        val baseUrl = state.baseUrl.trim()
+        val apiKey = state.apiKey.trim()
+        val result = repository.testConnection(baseUrl, apiKey)
+        if (result is ConnectionTestResult.Ok) {
+          credentialsRepository.save(KavitaCredentials(baseUrl, apiKey))
+        }
         _uiState.update { it.copy(status = result.toStatus()) }
       }
   }

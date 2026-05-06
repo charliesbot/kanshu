@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-  namespace = "com.charliesbot.kanshu.features.connection"
+  namespace = "com.charliesbot.kanshu.features.library"
   compileSdk = libs.versions.compileSdk.get().toInt()
 
   defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
@@ -26,8 +26,4 @@ dependencies {
   implementation(libs.koin.compose.viewmodel)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
-
-  testImplementation(libs.junit)
-  testImplementation(libs.mockk)
-  testImplementation(libs.kotlinx.coroutines.test)
 }
