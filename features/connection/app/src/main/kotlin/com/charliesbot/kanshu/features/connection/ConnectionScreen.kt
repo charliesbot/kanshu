@@ -1,11 +1,9 @@
 package com.charliesbot.kanshu.features.connection
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
@@ -27,6 +25,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
+import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -48,39 +47,39 @@ private fun ConnectionContent(
   onApiKeyChange: (String) -> Unit,
   onTest: () -> Unit,
 ) {
-  Column(
-    modifier =
-      Modifier.fillMaxSize()
-        .background(KanshuTheme.colors.background)
-        .padding(horizontal = 24.dp, vertical = 32.dp),
-    verticalArrangement = Arrangement.spacedBy(20.dp),
-  ) {
-    BasicText(
-      text = "Connect to Kavita",
-      style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
-    )
-    LabeledTextField(
-      label = "Base URL",
-      value = uiState.baseUrl,
-      onValueChange = onBaseUrlChange,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-    )
-    LabeledTextField(
-      label = "API key",
-      value = uiState.apiKey,
-      onValueChange = onApiKeyChange,
-      visualTransformation = PasswordVisualTransformation(),
-      keyboardOptions =
-        KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-      keyboardActions = KeyboardActions(onDone = { onTest() }),
-    )
-    KanshuButton(
-      text = "Test connection",
-      onClick = onTest,
-      enabled = uiState.canTest,
-      modifier = Modifier.fillMaxWidth(),
-    )
-    StatusText(uiState.status)
+  KanshuScaffold {
+    Column(
+      modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
+      verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+      BasicText(
+        text = "Connect to Kavita",
+        style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
+      )
+      LabeledTextField(
+        label = "Base URL",
+        value = uiState.baseUrl,
+        onValueChange = onBaseUrlChange,
+        keyboardOptions =
+          KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+      )
+      LabeledTextField(
+        label = "API key",
+        value = uiState.apiKey,
+        onValueChange = onApiKeyChange,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions =
+          KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onTest() }),
+      )
+      KanshuButton(
+        text = "Test connection",
+        onClick = onTest,
+        enabled = uiState.canTest,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      StatusText(uiState.status)
+    }
   }
 }
 
