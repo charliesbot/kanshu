@@ -1,6 +1,7 @@
 plugins {
   alias(libs.plugins.android.library)
   alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -20,5 +21,10 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.composeunstyled)
   implementation(libs.koin.android)
+  implementation(libs.ktor.client.core)
+  implementation(libs.ktor.client.okhttp)
+  implementation(libs.ktor.client.content.negotiation)
+  implementation(libs.ktor.serialization.kotlinx.json)
+  implementation(libs.kotlinx.serialization.json)
   debugImplementation(libs.androidx.compose.ui.tooling)
 }

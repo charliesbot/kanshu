@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-  namespace = "com.charliesbot.kanshu.features.home"
+  namespace = "com.charliesbot.kanshu.features.connection"
   compileSdk = libs.versions.compileSdk.get().toInt()
 
   defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
