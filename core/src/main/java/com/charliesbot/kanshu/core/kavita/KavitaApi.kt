@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.kavita
 
+import android.util.Log
 import com.charliesbot.kanshu.core.kavita.dto.ServerInfoSlim
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -14,6 +15,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+
+private const val TAG = "KavitaApi"
 
 interface KavitaApi {
   suspend fun serverInfoSlim(baseUrl: String, apiKey: String): ServerInfoSlim
@@ -31,14 +34,19 @@ class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
     } catch (e: CancellationException) {
       throw e
     } catch (e: HttpRequestTimeoutException) {
+      Log.w(TAG, "Request timeout for $url", e)
       throw KavitaException.NetworkError
     } catch (e: ConnectTimeoutException) {
+      Log.w(TAG, "Connect timeout for $url", e)
       throw KavitaException.NetworkError
     } catch (e: SocketTimeoutException) {
+      Log.w(TAG, "Socket timeout for $url", e)
       throw KavitaException.NetworkError
     } catch (e: IOException) {
+      Log.w(TAG, "Network failure for $url", e)
       throw KavitaException.NetworkError
     } catch (e: Exception) {
+      Log.w(TAG, "Unexpected failure for $url", e)
       throw KavitaException.Unknown(e.message ?: e.javaClass.simpleName)
     }
 
