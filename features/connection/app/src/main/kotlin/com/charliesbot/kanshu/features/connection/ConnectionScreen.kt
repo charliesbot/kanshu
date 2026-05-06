@@ -15,6 +15,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -53,18 +55,18 @@ private fun ConnectionContent(
       verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
       BasicText(
-        text = "Connect to Kavita",
+        text = stringResource(R.string.connection_title),
         style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
       )
       LabeledTextField(
-        label = "Base URL",
+        label = stringResource(R.string.connection_label_base_url),
         value = uiState.baseUrl,
         onValueChange = onBaseUrlChange,
         keyboardOptions =
           KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
       )
       LabeledTextField(
-        label = "API key",
+        label = stringResource(R.string.connection_label_api_key),
         value = uiState.apiKey,
         onValueChange = onApiKeyChange,
         visualTransformation = PasswordVisualTransformation(),
@@ -73,7 +75,7 @@ private fun ConnectionContent(
         keyboardActions = KeyboardActions(onDone = { onTest() }),
       )
       KanshuButton(
-        text = "Test connection",
+        text = stringResource(R.string.connection_button_test),
         onClick = onTest,
         enabled = uiState.canTest,
         modifier = Modifier.fillMaxWidth(),
@@ -123,11 +125,12 @@ private fun StatusText(status: TestStatus) {
   val text =
     when (status) {
       TestStatus.Idle -> ""
-      TestStatus.Testing -> "Testing…"
+      TestStatus.Testing -> stringResource(R.string.connection_status_testing)
       is TestStatus.Success ->
-        if (status.serverVersion != null) "Connected. Kavita ${status.serverVersion}."
-        else "Connected."
-      is TestStatus.Error -> status.message
+        if (status.serverVersion != null)
+          stringResource(R.string.connection_status_connected_with_version, status.serverVersion)
+        else stringResource(R.string.connection_status_connected)
+      is TestStatus.Error -> errorMessage(status)
     }
   if (text.isEmpty()) return
   BasicText(
@@ -136,6 +139,17 @@ private fun StatusText(status: TestStatus) {
     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
   )
 }
+
+@Composable
+private fun errorMessage(error: TestStatus.Error): String =
+  when (error) {
+    TestStatus.Error.InvalidUrl -> stringResource(R.string.connection_error_invalid_url)
+    TestStatus.Error.Unauthorized -> stringResource(R.string.connection_error_unauthorized)
+    TestStatus.Error.UnexpectedResponse ->
+      stringResource(R.string.connection_error_unexpected_response)
+    TestStatus.Error.Network -> stringResource(R.string.connection_error_network)
+    TestStatus.Error.Unknown -> stringResource(R.string.connection_error_unknown)
+  }
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
@@ -177,7 +191,7 @@ private fun ConnectionScreenErrorPreview() {
         ConnectionUiState(
           baseUrl = "https://kavita.example.com",
           apiKey = "abc123",
-          status = TestStatus.Error("Invalid API key."),
+          status = TestStatus.Error.Unauthorized,
         ),
       onBaseUrlChange = {},
       onApiKeyChange = {},

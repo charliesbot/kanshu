@@ -33,6 +33,7 @@ android {
 
 dependencies {
   implementation(project(":core"))
+  implementation(project(":core:strings"))
   implementation(project(":features:connection:app"))
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)

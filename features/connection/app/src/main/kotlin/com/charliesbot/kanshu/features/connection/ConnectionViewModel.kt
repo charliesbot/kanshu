@@ -27,7 +27,17 @@ sealed interface TestStatus {
 
   data class Success(val serverVersion: String?) : TestStatus
 
-  data class Error(val message: String) : TestStatus
+  sealed interface Error : TestStatus {
+    data object InvalidUrl : Error
+
+    data object Unauthorized : Error
+
+    data object UnexpectedResponse : Error
+
+    data object Network : Error
+
+    data object Unknown : Error
+  }
 }
 
 class ConnectionViewModel(private val repository: ConnectionRepository) : ViewModel() {
@@ -67,10 +77,9 @@ class ConnectionViewModel(private val repository: ConnectionRepository) : ViewMo
 private fun ConnectionTestResult.toStatus(): TestStatus =
   when (this) {
     is ConnectionTestResult.Ok -> TestStatus.Success(serverVersion)
-    ConnectionTestResult.InvalidUrl -> TestStatus.Error("Invalid URL. Use http(s)://host[:port].")
-    ConnectionTestResult.Unauthorized -> TestStatus.Error("Invalid API key.")
-    ConnectionTestResult.UnexpectedResponse ->
-      TestStatus.Error("Unexpected response. Check the base URL points at the API root.")
-    ConnectionTestResult.NetworkError -> TestStatus.Error("Could not reach server.")
-    is ConnectionTestResult.Unexpected -> TestStatus.Error(message)
+    ConnectionTestResult.InvalidUrl -> TestStatus.Error.InvalidUrl
+    ConnectionTestResult.Unauthorized -> TestStatus.Error.Unauthorized
+    ConnectionTestResult.UnexpectedResponse -> TestStatus.Error.UnexpectedResponse
+    ConnectionTestResult.NetworkError -> TestStatus.Error.Network
+    is ConnectionTestResult.Unexpected -> TestStatus.Error.Unknown
   }

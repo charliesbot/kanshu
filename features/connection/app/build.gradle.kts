@@ -14,6 +14,7 @@ android {
 
 dependencies {
   implementation(project(":core"))
+  implementation(project(":core:strings"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
