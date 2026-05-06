@@ -5,7 +5,7 @@
     <string name="connection_title">Connect to Kavita</string>
     <string name="connection_label_base_url">Base URL</string>
     <string name="connection_label_api_key">API key</string>
-    <string name="connection_button_test">Test connection</string>
+    <string name="connection_button_test">Connect</string>
     <string name="connection_status_testing">Testing…</string>
     <string name="connection_status_connected">Connected.</string>
     <string name="connection_status_connected_with_version">Connected. Kavita %1$s.</string>
