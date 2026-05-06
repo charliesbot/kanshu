@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Kanshu</string>
+
+    <!-- Connection screen -->
+    <string name="connection_title">Connect to Kavita</string>
+    <string name="connection_label_base_url">Base URL</string>
+    <string name="connection_label_api_key">API key</string>
+    <string name="connection_button_test">Test connection</string>
+    <string name="connection_status_testing">Testing…</string>
+    <string name="connection_status_connected">Connected.</string>
+    <string name="connection_status_connected_with_version">Connected. Kavita %1$s.</string>
+    <string name="connection_error_invalid_url">Invalid URL. Use http(s)://host[:port].</string>
+    <string name="connection_error_unauthorized">Invalid API key.</string>
+    <string name="connection_error_unexpected_response">Unexpected response. Check the base URL points at the API root.</string>
+    <string name="connection_error_network">Could not reach server.</string>
+    <string name="connection_error_unknown">Unknown error.</string>
+</resources>

@@ -25,6 +25,7 @@ dependencyResolutionManagement {
 rootProject.name = "kanshu"
 include(":app")
 include(":core")
+include(":core:strings")
 
 file("features")
     .listFiles()

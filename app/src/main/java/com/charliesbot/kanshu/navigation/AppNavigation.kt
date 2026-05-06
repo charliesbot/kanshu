@@ -4,11 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
-import com.charliesbot.kanshu.features.home.HomeScreen
+import com.charliesbot.kanshu.features.connection.ConnectionScreen
 
 @Composable
 fun AppNavigation() {
-  val backStack = rememberNavBackStack(HomeRoute)
+  val backStack = rememberNavBackStack(ConnectionRoute)
 
   NavDisplay(
     backStack = backStack,
@@ -17,6 +17,6 @@ fun AppNavigation() {
         backStack.removeAt(backStack.lastIndex)
       }
     },
-    entryProvider = entryProvider { entry<HomeRoute> { HomeScreen() } },
+    entryProvider = entryProvider { entry<ConnectionRoute> { ConnectionScreen() } },
   )
 }
