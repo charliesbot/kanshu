@@ -14,4 +14,8 @@
     <string name="connection_error_unexpected_response">Unexpected response. Check the base URL points at the API root.</string>
     <string name="connection_error_network">Could not reach server.</string>
     <string name="connection_error_unknown">Unknown error.</string>
+
+    <!-- Library screen -->
+    <string name="library_title">Library</string>
+    <string name="library_connected_to">Connected to %1$s</string>
 </resources>

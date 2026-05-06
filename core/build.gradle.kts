@@ -8,9 +8,16 @@ android {
   namespace = "com.charliesbot.kanshu.core"
   compileSdk = libs.versions.compileSdk.get().toInt()
 
-  defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
+  defaultConfig {
+    minSdk = libs.versions.minSdk.get().toInt()
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+  }
 
   buildFeatures { compose = true }
+
+  packaging {
+    resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
+  }
 }
 
 dependencies {
@@ -26,5 +33,15 @@ dependencies {
   implementation(libs.ktor.client.content.negotiation)
   implementation(libs.ktor.serialization.kotlinx.json)
   implementation(libs.kotlinx.serialization.json)
+  implementation(libs.androidx.datastore.preferences)
   debugImplementation(libs.androidx.compose.ui.tooling)
+
+  testImplementation(libs.junit)
+  testImplementation(libs.mockk)
+  testImplementation(libs.kotlinx.coroutines.test)
+
+  androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.test.runner)
+  androidTestImplementation(libs.androidx.test.rules)
+  androidTestImplementation(libs.mockk.android)
 }
