@@ -16,3 +16,5 @@ The android-dev skill covers architecture, Koin, StateFlow, Spotless, and scaffo
 | Networking | Ktor             | Retrofit      |
 
 **Navigation 3 transitions must be disabled.** E-ink screens ghost on animations. Use `NavDisplay` with no transition spec — no enter/exit animations, no shared element transitions, no crossfades.
+
+**No use case classes for trivial repository passthroughs.** The skill defaults to a use case per business operation, but ViewModels in Kanshu depend on repository interfaces (in `:core:domain`) directly. Add a use case only when there's real logic on top of the repo — combining sources, transforming, validating, sorting. A class that just forwards `invoke()` to one repo method is ceremony, not architecture.
