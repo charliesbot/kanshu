@@ -191,6 +191,23 @@ class ChapterStylerTest {
   }
 
   @Test
+  fun `script content is not html-escaped`() {
+    val raw = "<html><body><p>x</p></body></html>".toByteArray()
+
+    val out = ChapterStyler.style(raw)
+
+    // The injected JS contains `<` (e.g. `count < 1`). If JSoup writes script as a TextNode the
+    // `<` is HTML-encoded and the WebView's JS parser fails with SyntaxError. Verify raw chars
+    // survive by spotting an entity that should never appear in a working script body.
+    val scriptStart = out.indexOf("<script>")
+    val scriptEnd = out.indexOf("</script>")
+    assertTrue("script tag found", scriptStart >= 0 && scriptEnd > scriptStart)
+    val scriptBody = out.substring(scriptStart, scriptEnd)
+    assertFalse("less-than must not be escaped inside <script>", scriptBody.contains("&lt;"))
+    assertFalse("greater-than must not be escaped inside <script>", scriptBody.contains("&gt;"))
+  }
+
+  @Test
   fun `injects column layout for paginated rendering`() {
     val raw = "<html><body><p>x</p></body></html>".toByteArray()
 

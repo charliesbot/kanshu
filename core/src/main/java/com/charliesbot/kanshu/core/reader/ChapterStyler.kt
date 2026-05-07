@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.reader
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.DataNode
 
 // Single source of truth for reader typography and pagination. Kept opinionated and small in
 // V1: one serif, black on white, justified paragraphs, capped line length, generous side
@@ -100,7 +101,10 @@ object ChapterStyler {
     // Strip inline style attributes only. Class and id stay so in-document anchors keep working
     // and a future stylesheet can hook on semantic classes if we choose to.
     doc.select("[style]").forEach { it.removeAttr("style") }
-    doc.head().appendElement("style").appendText(INJECTED_STYLESHEET)
+    // Use DataNode (not appendText/TextNode) so JSoup serializes script/style content verbatim.
+    // appendText escapes `<` to `&lt;`, which mangles the JS and produces a SyntaxError at the
+    // first comparison.
+    doc.head().appendElement("style").appendChild(DataNode(INJECTED_STYLESHEET))
 
     // Move every body child (text + element nodes) into the page host so the multi-column
     // layout has a single positioned ancestor to grow under. The script runs after the host so
@@ -109,7 +113,7 @@ object ChapterStyler {
     val host = doc.createElement("div").attr("id", "kanshu-page-host")
     while (body.childNodeSize() > 0) host.appendChild(body.childNode(0))
     body.appendChild(host)
-    body.appendElement("script").appendText(INJECTED_SCRIPT)
+    body.appendElement("script").appendChild(DataNode(INJECTED_SCRIPT))
     return doc.outerHtml()
   }
 }
