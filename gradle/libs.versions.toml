@@ -24,8 +24,7 @@ coroutinesTest = "1.9.0"
 androidxTestRunner = "1.6.2"
 androidxTestRules = "1.6.1"
 coil = "2.7.0"
-readium = "3.1.1"
-jsoup = "1.18.1"
+readium = "3.1.2"
 desugarJdkLibs = "2.1.4"
 
 [libraries]
@@ -66,7 +65,8 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 readium-shared = { group = "org.readium.kotlin-toolkit", name = "readium-shared", version.ref = "readium" }
 readium-streamer = { group = "org.readium.kotlin-toolkit", name = "readium-streamer", version.ref = "readium" }
-jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+readium-navigator = { group = "org.readium.kotlin-toolkit", name = "readium-navigator", version.ref = "readium" }
+androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version = "1.8.5" }
 android-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 
 [plugins]

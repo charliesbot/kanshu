@@ -40,9 +40,8 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.coil.compose)
-  implementation(libs.readium.shared)
+  api(libs.readium.shared)
   implementation(libs.readium.streamer)
-  implementation(libs.jsoup)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
   testImplementation(libs.junit)
