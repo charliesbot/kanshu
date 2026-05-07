@@ -46,7 +46,7 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `success result loads first chapter`() = runTest {
+  fun `success result loads first chapter at page zero with unknown page count`() = runTest {
     val handle =
       fakeHandle(
         title = "A Book",
@@ -60,14 +60,64 @@ class ReaderViewModelTest {
     val state = viewModel.uiState.value
     assertTrue(state is ReaderUiState.Ready)
     state as ReaderUiState.Ready
-    assertEquals(0, state.currentIndex)
+    assertEquals(0, state.currentChapterIndex)
     assertEquals(2, state.chapterCount)
+    assertEquals(0, state.currentPageIndex)
+    assertEquals(null, state.pageCount)
     assertEquals("A Book", state.title)
     assertTrue(state.currentHtml.contains("chapter zero"))
   }
 
   @Test
-  fun `next advances chapter index`() = runTest {
+  fun `page count reported lands on page zero for fresh chapter`() = runTest {
+    val handle = fakeHandle(chapters = mapOf(0 to "<p>x</p>".toByteArray()))
+    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(5)
+    advanceUntilIdle()
+
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(5, state.pageCount)
+    assertEquals(0, state.currentPageIndex)
+  }
+
+  @Test
+  fun `next within chapter advances page index without reloading`() = runTest {
+    val handle = fakeHandle(chapters = mapOf(0 to "<p>x</p>".toByteArray()))
+    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(3)
+    advanceUntilIdle()
+
+    viewModel.goNext()
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(1, state.currentPageIndex)
+    assertEquals(0, state.currentChapterIndex)
+  }
+
+  @Test
+  fun `prev within chapter rewinds page index`() = runTest {
+    val handle = fakeHandle(chapters = mapOf(0 to "<p>x</p>".toByteArray()))
+    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(3)
+    advanceUntilIdle()
+    viewModel.goNext()
+    viewModel.goNext()
+
+    viewModel.goPrev()
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(1, state.currentPageIndex)
+  }
+
+  @Test
+  fun `next at last page rolls to next chapter at page zero`() = runTest {
     val handle =
       fakeHandle(
         chapters = mapOf(0 to "<p>zero</p>".toByteArray(), 1 to "<p>one</p>".toByteArray())
@@ -76,40 +126,107 @@ class ReaderViewModelTest {
 
     val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
     advanceUntilIdle()
-    viewModel.goNext()
+    viewModel.onPageCountReported(2)
+    advanceUntilIdle()
+    viewModel.goNext() // page 0 -> 1
+    viewModel.goNext() // last page -> next chapter
     advanceUntilIdle()
 
+    val midState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(1, midState.currentChapterIndex)
+    assertEquals(0, midState.currentPageIndex)
+    assertEquals(null, midState.pageCount)
+    assertTrue(midState.currentHtml.contains("one"))
+
+    viewModel.onPageCountReported(4)
+    advanceUntilIdle()
     val state = viewModel.uiState.value as ReaderUiState.Ready
-    assertEquals(1, state.currentIndex)
-    assertTrue(state.currentHtml.contains("one"))
+    assertEquals(0, state.currentPageIndex)
+    assertEquals(4, state.pageCount)
   }
 
   @Test
-  fun `next at last chapter is a no-op`() = runTest {
+  fun `prev at page zero rolls to previous chapter at last page`() = runTest {
+    val handle =
+      fakeHandle(
+        chapters = mapOf(0 to "<p>zero</p>".toByteArray(), 1 to "<p>one</p>".toByteArray())
+      )
+    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(1)
+    viewModel.goNext() // chapter 1, page 0
+    advanceUntilIdle()
+    viewModel.onPageCountReported(2)
+    advanceUntilIdle()
+
+    viewModel.goPrev() // page 0 -> previous chapter, last page
+    advanceUntilIdle()
+
+    val midState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(0, midState.currentChapterIndex)
+    assertEquals(null, midState.pageCount)
+    assertTrue(midState.currentHtml.contains("zero"))
+
+    viewModel.onPageCountReported(3)
+    advanceUntilIdle()
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(2, state.currentPageIndex) // last page = pageCount - 1
+    assertEquals(3, state.pageCount)
+  }
+
+  @Test
+  fun `next at end of last chapter is a no-op`() = runTest {
     val handle = fakeHandle(chapters = mapOf(0 to "<p>only</p>".toByteArray()))
     coEvery { openBook(any()) } returns ReaderResult.Success(handle)
 
     val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
     advanceUntilIdle()
-    viewModel.goNext()
+    viewModel.onPageCountReported(1)
     advanceUntilIdle()
+    viewModel.goNext()
 
     val state = viewModel.uiState.value as ReaderUiState.Ready
-    assertEquals(0, state.currentIndex)
+    assertEquals(0, state.currentPageIndex)
+    assertEquals(0, state.currentChapterIndex)
   }
 
   @Test
-  fun `prev at first chapter is a no-op`() = runTest {
+  fun `prev at start of first chapter is a no-op`() = runTest {
     val handle = fakeHandle(chapters = mapOf(0 to "<p>only</p>".toByteArray()))
     coEvery { openBook(any()) } returns ReaderResult.Success(handle)
 
     val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(1)
     advanceUntilIdle()
     viewModel.goPrev()
+
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(0, state.currentPageIndex)
+    assertEquals(0, state.currentChapterIndex)
+  }
+
+  @Test
+  fun `resize re-report clamps current page to new max`() = runTest {
+    val handle = fakeHandle(chapters = mapOf(0 to "<p>x</p>".toByteArray()))
+    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    advanceUntilIdle()
+    viewModel.onPageCountReported(8)
+    advanceUntilIdle()
+    viewModel.goNext()
+    viewModel.goNext()
+    viewModel.goNext() // page 3
+
+    viewModel.onPageCountReported(2) // shrunk; clamp to last
     advanceUntilIdle()
 
     val state = viewModel.uiState.value as ReaderUiState.Ready
-    assertEquals(0, state.currentIndex)
+    assertEquals(1, state.currentPageIndex)
+    assertEquals(2, state.pageCount)
   }
 
   @Test

@@ -160,4 +160,43 @@ class ChapterStylerTest {
     val styleTagCount = "<style>".toRegex().findAll(out).count()
     assertEquals(1, styleTagCount)
   }
+
+  @Test
+  fun `wraps body content in pagination host`() {
+    val raw =
+      """
+      <html><body><h1>One</h1><p>two</p><p>three</p></body></html>
+      """
+        .trimIndent()
+        .toByteArray()
+
+    val out = ChapterStyler.style(raw)
+
+    assertTrue("host wrapper present", out.contains("id=\"kanshu-page-host\""))
+    // Original content lives inside the host now, not as direct body children.
+    val hostBlock = out.substringAfter("id=\"kanshu-page-host\"")
+    assertTrue("h1 moved into host", hostBlock.contains("<h1>One</h1>"))
+    assertTrue("paragraphs moved into host", hostBlock.contains("two"))
+  }
+
+  @Test
+  fun `injects pagination script that exposes kanshuGoToPage`() {
+    val raw = "<html><body><p>x</p></body></html>".toByteArray()
+
+    val out = ChapterStyler.style(raw)
+
+    assertTrue("script tag present", out.contains("<script>"))
+    assertTrue("page-count bridge call present", out.contains("Kanshu.onPageCount"))
+    assertTrue("page navigator exposed", out.contains("kanshuGoToPage"))
+  }
+
+  @Test
+  fun `injects column layout for paginated rendering`() {
+    val raw = "<html><body><p>x</p></body></html>".toByteArray()
+
+    val out = ChapterStyler.style(raw)
+
+    assertTrue("column-width keyed off viewport", out.contains("column-width"))
+    assertTrue("html overflow hidden so columns stay clipped", out.contains("overflow: hidden"))
+  }
 }
