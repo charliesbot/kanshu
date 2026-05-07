@@ -1,16 +1,21 @@
 package com.charliesbot.kanshu.core.kavita
 
 import android.util.Log
+import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.ServerInfoSlim
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
-import io.ktor.client.request.get
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
+import io.ktor.client.request.request
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import java.io.IOException
@@ -20,17 +25,51 @@ private const val TAG = "KavitaApi"
 
 interface KavitaApi {
   suspend fun serverInfoSlim(baseUrl: String, apiKey: String): ServerInfoSlim
+
+  suspend fun listSeries(
+    baseUrl: String,
+    apiKey: String,
+    pageNumber: Int,
+    pageSize: Int,
+  ): List<SeriesDto>
 }
 
 class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
   override suspend fun serverInfoSlim(baseUrl: String, apiKey: String): ServerInfoSlim {
-    val response = executeGet("${baseUrl.trimEnd('/')}/api/Server/server-info-slim", apiKey)
+    val response =
+      executeRequest("${baseUrl.trimEnd('/')}/api/Server/server-info-slim", HttpMethod.Get) {
+        header("x-api-key", apiKey)
+      }
     return decodeJsonBody(response)
   }
 
-  private suspend fun executeGet(url: String, apiKey: String): HttpResponse =
+  override suspend fun listSeries(
+    baseUrl: String,
+    apiKey: String,
+    pageNumber: Int,
+    pageSize: Int,
+  ): List<SeriesDto> {
+    val response =
+      executeRequest("${baseUrl.trimEnd('/')}/api/Series/all-v2", HttpMethod.Post) {
+        header("x-api-key", apiKey)
+        parameter("PageNumber", pageNumber)
+        parameter("PageSize", pageSize)
+        contentType(ContentType.Application.Json)
+        setBody("{}")
+      }
+    return decodeJsonBody(response)
+  }
+
+  private suspend fun executeRequest(
+    url: String,
+    httpMethod: HttpMethod,
+    block: HttpRequestBuilder.() -> Unit,
+  ): HttpResponse =
     try {
-      client.get(url) { header("x-api-key", apiKey) }
+      client.request(url) {
+        method = httpMethod
+        block()
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: HttpRequestTimeoutException) {

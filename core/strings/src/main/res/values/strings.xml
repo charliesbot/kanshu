@@ -17,5 +17,12 @@
 
     <!-- Library screen -->
     <string name="library_title">Library</string>
-    <string name="library_connected_to">Connected to %1$s</string>
+    <string name="library_status_loading">Loading library…</string>
+    <string name="library_status_empty">No books yet.</string>
+    <string name="library_status_no_credentials">No Kavita server connected.</string>
+    <string name="library_error_unauthorized">Invalid API key. Reconnect to Kavita.</string>
+    <string name="library_error_network">Could not reach Kavita.</string>
+    <string name="library_error_unexpected_response">Unexpected response from Kavita.</string>
+    <string name="library_error_unknown">Could not load library.</string>
+    <string name="library_cover_content_description">Cover for %1$s</string>
 </resources>
