@@ -20,6 +20,10 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Readium: when isMinifyEnabled is turned on for release, Readium's reflection-based parsers
-# (kotlinx.serialization, parcelable readers) need consumer rules. Add them then per
-# https://github.com/readium/kotlin-toolkit before flipping minify on.
+# Readium: when isMinifyEnabled is turned on for release, Readium relies on reflection in
+# several places that need keep rules — kotlinx.serialization @Serializable models in
+# readium-shared, FragmentManager.fragmentFactory instantiating EpubNavigatorFragment by
+# class name, JavascriptInterface methods in the EPUB WebView bridge, and the internal
+# R2ViewPager / R2RTLViewPager subclasses. Pull the consumer rules from the upstream
+# project (https://github.com/readium/kotlin-toolkit/tree/main/test-app) before flipping
+# minify on.
