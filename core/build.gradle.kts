@@ -15,9 +15,7 @@ android {
 
   buildFeatures { compose = true }
 
-  packaging {
-    resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") }
-  }
+  packaging { resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") } }
 }
 
 dependencies {
@@ -34,6 +32,7 @@ dependencies {
   implementation(libs.ktor.serialization.kotlinx.json)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.coil.compose)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
   testImplementation(libs.junit)

@@ -22,8 +22,13 @@ dependencies {
   implementation(libs.composeunstyled)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.koin.compose)
   implementation(libs.koin.compose.viewmodel)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
+
+  testImplementation(libs.junit)
+  testImplementation(libs.mockk)
+  testImplementation(libs.kotlinx.coroutines.test)
 }
