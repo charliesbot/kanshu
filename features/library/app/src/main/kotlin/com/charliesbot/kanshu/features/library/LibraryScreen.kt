@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.features.library
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -27,13 +30,16 @@ import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel = koinViewModel()) {
+fun LibraryScreen(
+  onItemClick: (LibraryItem) -> Unit = {},
+  viewModel: LibraryViewModel = koinViewModel(),
+) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-  LibraryContent(uiState = uiState)
+  LibraryContent(uiState = uiState, onItemClick = onItemClick)
 }
 
 @Composable
-private fun LibraryContent(uiState: LibraryUiState) {
+private fun LibraryContent(uiState: LibraryUiState, onItemClick: (LibraryItem) -> Unit) {
   KanshuScaffold {
     Column(
       modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 32.dp),
@@ -44,7 +50,7 @@ private fun LibraryContent(uiState: LibraryUiState) {
         style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
       )
       when (uiState) {
-        is LibraryUiState.Loaded -> CoverGrid(items = uiState.items)
+        is LibraryUiState.Loaded -> CoverGrid(items = uiState.items, onItemClick = onItemClick)
         else -> StatusText(uiState)
       }
     }
@@ -52,7 +58,7 @@ private fun LibraryContent(uiState: LibraryUiState) {
 }
 
 @Composable
-private fun CoverGrid(items: List<LibraryItem>) {
+private fun CoverGrid(items: List<LibraryItem>, onItemClick: (LibraryItem) -> Unit) {
   LazyVerticalGrid(
     columns = GridCells.Adaptive(minSize = 128.dp),
     contentPadding = PaddingValues(0.dp),
@@ -61,9 +67,16 @@ private fun CoverGrid(items: List<LibraryItem>) {
     modifier = Modifier.fillMaxSize(),
   ) {
     items(items = items, key = { it.id }) { item ->
+      val interactionSource = remember { MutableInteractionSource() }
       KanshuCover(
         imageUrl = item.coverUrl,
         contentDescription = stringResource(R.string.library_cover_content_description, item.title),
+        modifier =
+          Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = { onItemClick(item) },
+          ),
       )
     }
   }
@@ -101,7 +114,8 @@ private fun LibraryScreenLoadedPreview() {
             (1..6).map {
               LibraryItem(id = it, title = "Book $it", coverUrl = "https://example.com/cover/$it")
             }
-        )
+        ),
+      onItemClick = {},
     )
   }
 }
@@ -109,11 +123,11 @@ private fun LibraryScreenLoadedPreview() {
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun LibraryScreenLoadingPreview() {
-  KanshuTheme { LibraryContent(uiState = LibraryUiState.Loading) }
+  KanshuTheme { LibraryContent(uiState = LibraryUiState.Loading, onItemClick = {}) }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun LibraryScreenEmptyPreview() {
-  KanshuTheme { LibraryContent(uiState = LibraryUiState.Empty) }
+  KanshuTheme { LibraryContent(uiState = LibraryUiState.Empty, onItemClick = {}) }
 }
