@@ -59,10 +59,12 @@ private fun buildWebView(context: android.content.Context, bridge: KanshuJsBridg
   }
 
 // JavascriptInterface methods are invoked on a WebView worker thread; the callback hops to
-// viewModelScope inside the VM, so we don't need to dispatch here.
-private class KanshuJsBridge(private val onPageCount: (Int) -> Unit) {
+// viewModelScope inside the VM, so we don't need to dispatch here. The constructor parameter
+// is named `callback` (not `onPageCount`) so the @JavascriptInterface method can call it
+// without name-shadow recursion.
+private class KanshuJsBridge(private val callback: (Int) -> Unit) {
   @JavascriptInterface
   fun onPageCount(count: Int) {
-    onPageCount(count)
+    callback(count)
   }
 }
