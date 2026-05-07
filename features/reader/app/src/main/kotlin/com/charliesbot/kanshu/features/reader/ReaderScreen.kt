@@ -12,9 +12,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -26,6 +31,7 @@ import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -72,7 +78,14 @@ private fun ReaderBody(uiState: ReaderUiState.Ready) {
     EpubNavigatorHost(
       factory = uiState.factory,
       onNavigatorReady = { navigator = it },
-      modifier = Modifier.weight(1f).fillMaxWidth(),
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxWidth()
+          .horizontalSwipeToPageTurn(
+            enabled = navigator != null,
+            onSwipeForward = { scope.launch { navigator?.goForward() } },
+            onSwipeBackward = { scope.launch { navigator?.goBackward() } },
+          ),
     )
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -89,6 +102,58 @@ private fun ReaderBody(uiState: ReaderUiState.Ready) {
         onClick = { scope.launch { navigator?.goForward() } },
         enabled = navigator != null,
       )
+    }
+  }
+}
+
+// Intercepts horizontal drags BEFORE Readium's R2ViewPager sees them (PointerEventPass.Initial)
+// so the user-driven swipe never triggers ViewPager's smooth-scroll animation. Once a gesture
+// is locked as horizontal we consume every subsequent change for that pointer; on finger up we
+// trigger an instant page turn via the navigator's goForward/goBackward (which already default
+// to animated=false). Vertical drags and short taps are not consumed and pass through, so
+// Readium's tap-to-paginate, text selection, and scroll inside the page still work.
+@Composable
+private fun Modifier.horizontalSwipeToPageTurn(
+  enabled: Boolean,
+  onSwipeForward: () -> Unit,
+  onSwipeBackward: () -> Unit,
+): Modifier {
+  if (!enabled) return this
+  val viewConfiguration = LocalViewConfiguration.current
+  val forward by rememberUpdatedState(onSwipeForward)
+  val backward by rememberUpdatedState(onSwipeBackward)
+  return this.pointerInput(Unit) {
+    val touchSlop = viewConfiguration.touchSlop
+    val swipeThreshold = touchSlop * 4f
+    while (true) {
+      awaitPointerEventScope {
+        val down =
+          awaitPointerEvent(pass = PointerEventPass.Initial).changes.firstOrNull { it.pressed }
+            ?: return@awaitPointerEventScope
+        var totalDx = 0f
+        var totalDy = 0f
+        var locked = false
+        var horizontal = false
+        while (true) {
+          val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+          val change =
+            event.changes.firstOrNull { it.id == down.id } ?: return@awaitPointerEventScope
+          if (!change.pressed) {
+            if (horizontal && abs(totalDx) >= swipeThreshold) {
+              if (totalDx < 0) forward() else backward()
+            }
+            return@awaitPointerEventScope
+          }
+          val delta = change.positionChange()
+          totalDx += delta.x
+          totalDy += delta.y
+          if (!locked && (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop)) {
+            horizontal = abs(totalDx) > abs(totalDy)
+            locked = true
+          }
+          if (locked && horizontal) change.consume()
+        }
+      }
     }
   }
 }

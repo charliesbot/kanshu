@@ -3,6 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Boox's vendor patch (android.onyx.optimization.ScrollHelper) acquires a wake lock during
+         scroll for e-ink refresh optimisation; without this permission it logs a SecurityException
+         on every page turn. We never acquire wake locks ourselves so this is purely a no-op
+         declaration that quiets the vendor warning. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
