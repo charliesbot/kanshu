@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Readium: when isMinifyEnabled is turned on for release, Readium's reflection-based parsers
+# (kotlinx.serialization, parcelable readers) need consumer rules. Add them then per
+# https://github.com/readium/kotlin-toolkit before flipping minify on.

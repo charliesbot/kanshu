@@ -15,10 +15,17 @@ android {
 
   buildFeatures { compose = true }
 
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+    isCoreLibraryDesugaringEnabled = true
+  }
+
   packaging { resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") } }
 }
 
 dependencies {
+  coreLibraryDesugaring(libs.android.desugar.jdk.libs)
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
@@ -33,6 +40,9 @@ dependencies {
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.coil.compose)
+  implementation(libs.readium.shared)
+  implementation(libs.readium.streamer)
+  implementation(libs.jsoup)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
   testImplementation(libs.junit)
