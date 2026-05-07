@@ -25,4 +25,7 @@
     <string name="library_error_unexpected_response">Unexpected response from Kavita.</string>
     <string name="library_error_unknown">Could not load library.</string>
     <string name="library_cover_content_description">Cover for %1$s</string>
+
+    <!-- Reader screen -->
+    <string name="reader_placeholder_series_id">Series ID: %1$d</string>
 </resources>

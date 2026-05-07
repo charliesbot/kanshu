@@ -6,3 +6,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object ConnectionRoute : NavKey
 
 @Serializable data object LibraryRoute : NavKey
+
+@Serializable data class ReaderRoute(val seriesId: Int, val title: String) : NavKey

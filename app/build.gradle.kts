@@ -36,6 +36,7 @@ dependencies {
   implementation(project(":core:strings"))
   implementation(project(":features:connection:app"))
   implementation(project(":features:library:app"))
+  implementation(project(":features:reader:app"))
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
