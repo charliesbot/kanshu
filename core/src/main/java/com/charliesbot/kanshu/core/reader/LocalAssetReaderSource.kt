@@ -51,7 +51,7 @@ class LocalAssetReaderSource(private val context: Context) : ReaderSource {
       asset.close()
       return ReaderResult.Error.ParseFailed
     }
-    return ReaderResult.Success(BookHandle(builder.build()))
+    return ReaderResult.Success(builder.build())
   }
 
   private fun ensureSampleOnDisk(): File? {

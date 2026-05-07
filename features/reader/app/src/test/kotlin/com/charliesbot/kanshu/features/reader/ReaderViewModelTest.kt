@@ -1,6 +1,5 @@
 package com.charliesbot.kanshu.features.reader
 
-import com.charliesbot.kanshu.core.reader.BookHandle
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import io.mockk.coEvery
@@ -15,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,19 +37,17 @@ class ReaderViewModelTest {
     Dispatchers.resetMain()
   }
 
-  private fun fakeHandle(title: String? = "A Book"): BookHandle =
-    mockk<BookHandle>(relaxed = true).also {
-      val publication = mockk<Publication>(relaxed = true)
+  private fun fakePublication(title: String? = "A Book"): Publication =
+    mockk<Publication>(relaxed = true).also {
       val metadata = mockk<Metadata>(relaxed = true)
       every { metadata.title } returns title
-      every { publication.metadata } returns metadata
-      every { it.publication } returns publication
+      every { it.metadata } returns metadata
     }
 
   @Test
   fun `success result becomes Ready with title and factory`() = runTest {
-    val handle = fakeHandle(title = "A Book")
-    coEvery { openBook(any()) } returns ReaderResult.Success(handle)
+    val publication = fakePublication(title = "A Book")
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication)
 
     val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
     advanceUntilIdle()
@@ -58,6 +56,7 @@ class ReaderViewModelTest {
     assertTrue(state is ReaderUiState.Ready)
     state as ReaderUiState.Ready
     assertEquals("A Book", state.title)
+    assertNotNull(state.factory)
   }
 
   @Test

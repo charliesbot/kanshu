@@ -17,13 +17,17 @@ import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.preferences.ColumnCount
+import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.AbsoluteUrl
 
 // Hosts Readium's EpubNavigatorFragment inside Compose. The Fragment owns paginated rendering,
 // tap zones, and chapter advancement; ReaderScreen drives Prev/Next via the supplied callback
-// once the navigator is attached. publisherStyles=false strips the EPUB's own CSS so our
-// preferences (and a future user stylesheet) own typography — Kindle-style.
+// once the navigator is attached. publisherStyles=false strips the EPUB's own CSS (Kindle-style
+// typography ownership), columnCount=ONE forces single column on wide screens (Readium defaults
+// to two-up on landscape, wrong for e-ink). The host writes to the activity's global
+// supportFragmentManager.fragmentFactory — fine for our single-ReaderScreen-at-a-time setup,
+// would clobber under concurrent fragment users.
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
 fun EpubNavigatorHost(
@@ -42,27 +46,33 @@ fun EpubNavigatorHost(
   )
 
   DisposableEffect(factory, containerId) {
-    // The FragmentFactory must be set before commitNow so the FragmentManager instantiates
-    // EpubNavigatorFragment with our publication, locator, and preferences instead of calling
-    // its no-arg constructor (which throws).
+    // After process-death restore, MainActivity's dummy factory will have produced a stub
+    // EpubNavigatorFragment under our tag. Drop it so the FragmentManager doesn't merge it
+    // with the real navigator we're about to add.
+    fragmentManager.findFragmentByTag(tag)?.let { stale ->
+      fragmentManager.commitNow(allowStateLoss = true) { remove(stale) }
+    }
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = null,
-        // publisherStyles=false strips the EPUB's own CSS so typography is owned by us
-        // (Kindle-style). columnCount=ONE forces a single-column page even on wide screens
-        // (Readium defaults to two-up on landscape / wide tablets, which is wrong for e-ink).
         initialPreferences =
           EpubPreferences(publisherStyles = false, columnCount = ColumnCount.ONE),
         listener = NoopNavigatorListener,
       )
-    if (fragmentManager.findFragmentByTag(tag) == null) {
-      fragmentManager.commitNow {
-        add(containerId, EpubNavigatorFragment::class.java, Bundle(), tag)
-      }
+    fragmentManager.commitNow { add(containerId, EpubNavigatorFragment::class.java, Bundle(), tag) }
+    val navigator = fragmentManager.findFragmentByTag(tag) as? EpubNavigatorFragment
+    navigator?.let {
+      // Readium 3.x doesn't wire tap-edge pagination by default; the adapter listens for taps
+      // and calls go{Forward,Backward}. animatedTransition=false (its default) keeps the page
+      // turn instant for e-ink.
+      it.addInputListener(DirectionalNavigationAdapter(it))
+      onNavigatorReady(it)
     }
-    (fragmentManager.findFragmentByTag(tag) as? EpubNavigatorFragment)?.let { onNavigatorReady(it) }
     onDispose {
       fragmentManager.findFragmentByTag(tag)?.let { fragment ->
+        // allowStateLoss because dispose can fire after the activity has saved its instance
+        // state (e.g. config change, process backgrounded). The navigator will be re-added on
+        // re-mount; we don't need its in-memory state to survive.
         fragmentManager.commit(allowStateLoss = true) { remove(fragment) }
       }
     }

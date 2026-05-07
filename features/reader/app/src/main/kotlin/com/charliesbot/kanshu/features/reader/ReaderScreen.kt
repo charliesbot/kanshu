@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -111,7 +112,12 @@ private fun ReaderBody(uiState: ReaderUiState.Ready) {
 // is locked as horizontal we consume every subsequent change for that pointer; on finger up we
 // trigger an instant page turn via the navigator's goForward/goBackward (which already default
 // to animated=false). Vertical drags and short taps are not consumed and pass through, so
-// Readium's tap-to-paginate, text selection, and scroll inside the page still work.
+// Readium's tap-edge navigation, text selection, and scroll inside the page still work.
+//
+// Single-pointer scope: we lock onto the first finger down and ignore subsequent pointers (no
+// pinch-to-zoom etc.). Acceptable for V1 — selection / multi-touch may want a dedicated path
+// later. Cancellation is handled by changedToUp(); if the pointer disappears entirely without
+// a release event we exit silently rather than firing.
 @Composable
 private fun Modifier.horizontalSwipeToPageTurn(
   enabled: Boolean,
@@ -138,7 +144,7 @@ private fun Modifier.horizontalSwipeToPageTurn(
           val event = awaitPointerEvent(pass = PointerEventPass.Initial)
           val change =
             event.changes.firstOrNull { it.id == down.id } ?: return@awaitPointerEventScope
-          if (!change.pressed) {
+          if (change.changedToUp()) {
             if (horizontal && abs(totalDx) >= swipeThreshold) {
               if (totalDx < 0) forward() else backward()
             }
