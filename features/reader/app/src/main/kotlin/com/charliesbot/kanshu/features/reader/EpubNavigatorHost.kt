@@ -16,6 +16,7 @@ import androidx.fragment.app.commitNow
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.preferences.ColumnCount
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.AbsoluteUrl
 
@@ -47,7 +48,11 @@ fun EpubNavigatorHost(
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = null,
-        initialPreferences = EpubPreferences(publisherStyles = false),
+        // publisherStyles=false strips the EPUB's own CSS so typography is owned by us
+        // (Kindle-style). columnCount=ONE forces a single-column page even on wide screens
+        // (Readium defaults to two-up on landscape / wide tablets, which is wrong for e-ink).
+        initialPreferences =
+          EpubPreferences(publisherStyles = false, columnCount = ColumnCount.ONE),
         listener = NoopNavigatorListener,
       )
     if (fragmentManager.findFragmentByTag(tag) == null) {
