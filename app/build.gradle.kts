@@ -6,7 +6,7 @@ plugins {
 
 android {
   namespace = "com.charliesbot.kanshu"
-  compileSdk { version = release(libs.versions.compileSdk.get().toInt()) { minorApiLevel = 1 } }
+  compileSdk { version = release(libs.versions.compileSdk.get().toInt()) { minorApiLevel = 0 } }
 
   defaultConfig {
     applicationId = "com.charliesbot.kanshu"
