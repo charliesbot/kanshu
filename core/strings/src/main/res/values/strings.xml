@@ -27,5 +27,10 @@
     <string name="library_cover_content_description">Cover for %1$s</string>
 
     <!-- Reader screen -->
-    <string name="reader_placeholder_series_id">Series ID: %1$d</string>
+    <string name="reader_status_loading">Opening book…</string>
+    <string name="reader_error_not_found">Book not found.</string>
+    <string name="reader_error_parse_failed">Could not read this book.</string>
+    <string name="reader_error_read_failed">Could not load the book file.</string>
+    <string name="reader_prev">Prev</string>
+    <string name="reader_next">Next</string>
 </resources>

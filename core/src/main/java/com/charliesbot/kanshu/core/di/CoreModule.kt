@@ -10,6 +10,9 @@ import com.charliesbot.kanshu.core.library.LibraryRepository
 import com.charliesbot.kanshu.core.library.LibraryRepositoryImpl
 import com.charliesbot.kanshu.core.library.usecase.LoadLibraryUseCase
 import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
+import com.charliesbot.kanshu.core.reader.LocalAssetReaderSource
+import com.charliesbot.kanshu.core.reader.ReaderSource
+import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.security.KavitaApiKeyCipher
 import com.charliesbot.kanshu.core.security.KeyCipher
 import org.koin.android.ext.koin.androidContext
@@ -24,4 +27,6 @@ val coreModule = module {
   single<CredentialsRepository> { CredentialsRepositoryImpl(get(), get()) }
   single<LibraryRepository> { LibraryRepositoryImpl(get(), get()) }
   factory { LoadLibraryUseCase(get()) }
+  single<ReaderSource> { LocalAssetReaderSource(androidContext()) }
+  factory { OpenBookUseCase(get()) }
 }
