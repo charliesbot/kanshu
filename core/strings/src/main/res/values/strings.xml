@@ -25,6 +25,10 @@
     <string name="library_error_unexpected_response">Unexpected response from Kavita.</string>
     <string name="library_error_unknown">Could not load library.</string>
     <string name="library_cover_content_description">Cover for %1$s</string>
+    <string name="library_downloading_progress">Downloading %1$d%%</string>
+    <string name="library_downloaded_indicator">Downloaded</string>
+    <string name="library_book_options_delete">Delete download</string>
+    <string name="library_book_options_cancel">Cancel</string>
 
     <!-- Reader screen -->
     <string name="reader_status_loading">Opening book…</string>
