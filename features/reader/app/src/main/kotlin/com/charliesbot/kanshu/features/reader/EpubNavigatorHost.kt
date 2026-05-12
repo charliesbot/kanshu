@@ -23,11 +23,12 @@ import org.readium.r2.shared.util.AbsoluteUrl
 
 // Hosts Readium's EpubNavigatorFragment inside Compose. The Fragment owns paginated rendering,
 // tap zones, and chapter advancement; ReaderScreen drives Prev/Next via the supplied callback
-// once the navigator is attached. publisherStyles=false strips the EPUB's own CSS (Kindle-style
-// typography ownership), columnCount=ONE forces single column on wide screens (Readium defaults
-// to two-up on landscape, wrong for e-ink). The host writes to the activity's global
-// supportFragmentManager.fragmentFactory — fine for our single-ReaderScreen-at-a-time setup,
-// would clobber under concurrent fragment users.
+// once the navigator is attached. publisherStyles=true lets the publisher's CSS apply — most
+// importantly the @font-face rules and the document's font-family — so books with embedded
+// fonts or non-Latin scripts render correctly instead of tofu. columnCount=ONE forces single
+// column on wide screens (Readium defaults to two-up on landscape, wrong for e-ink). The host
+// writes to the activity's global supportFragmentManager.fragmentFactory — fine for our
+// single-ReaderScreen-at-a-time setup, would clobber under concurrent fragment users.
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
 fun EpubNavigatorHost(
@@ -55,8 +56,7 @@ fun EpubNavigatorHost(
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = null,
-        initialPreferences =
-          EpubPreferences(publisherStyles = false, columnCount = ColumnCount.ONE),
+        initialPreferences = EpubPreferences(publisherStyles = true, columnCount = ColumnCount.ONE),
         listener = NoopNavigatorListener,
       )
     fragmentManager.commitNow { add(containerId, EpubNavigatorFragment::class.java, Bundle(), tag) }
