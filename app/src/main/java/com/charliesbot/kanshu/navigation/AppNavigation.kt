@@ -7,9 +7,11 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.charliesbot.kanshu.features.connection.ConnectionScreen
 import com.charliesbot.kanshu.features.library.LibraryScreen
@@ -39,6 +41,15 @@ fun AppNavigation(start: NavKey) {
     transitionSpec = { NoTransition },
     popTransitionSpec = { NoTransition },
     predictivePopTransitionSpec = { NoTransition },
+    // Required for per-entry ViewModelStore — without rememberViewModelStoreNavEntryDecorator,
+    // every entry falls back to the activity's store and `koinViewModel { parametersOf(...) }`
+    // returns the first cached instance with stale params (e.g. opening book B reuses book A's
+    // ReaderViewModel).
+    entryDecorators =
+      listOf(
+        rememberSaveableStateHolderNavEntryDecorator(),
+        rememberViewModelStoreNavEntryDecorator(),
+      ),
     entryProvider =
       entryProvider {
         entry<ConnectionRoute> { ConnectionScreen() }

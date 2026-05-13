@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,7 +50,10 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
   }
 
   override fun onCleared() {
-    publication?.close()
+    val pub = publication ?: return
     publication = null
+    // Publication.close() releases container/asset handles via blocking I/O. onCleared runs on
+    // Main and viewModelScope is already cancelled here, so fire-and-forget on IO.
+    CoroutineScope(Dispatchers.IO).launch { pub.close() }
   }
 }
