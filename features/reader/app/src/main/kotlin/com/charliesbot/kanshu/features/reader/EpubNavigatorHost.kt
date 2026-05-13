@@ -19,9 +19,9 @@ import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.AbsoluteUrl
 
-// Hosts Readium's EpubNavigatorFragment inside Compose. The Fragment owns paginated rendering,
-// tap zones, and chapter advancement; ReaderScreen drives Prev/Next via the supplied callback
-// once the navigator is attached.
+// Hosts Readium's EpubNavigatorFragment inside Compose. The Fragment owns paginated rendering
+// and chapter advancement; page turns come from ReaderScreen's swipe modifier plus the
+// DirectionalNavigationAdapter tap zones installed below — there is no on-screen button UI.
 //
 // Typography is centralized in EpubTypography — defaults flow in via the factory configuration
 // (set in ReaderViewModel), while initialPreferences and the fragment configuration (font-face
