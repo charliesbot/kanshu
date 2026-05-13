@@ -44,6 +44,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
+androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycleRuntimeKtx" }
 composeunstyled = { group = "com.composables", name = "composeunstyled", version.ref = "composeUnstyled" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin" }
