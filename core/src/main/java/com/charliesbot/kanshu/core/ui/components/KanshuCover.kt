@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.core.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +22,12 @@ import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 private const val PLACEHOLDER_ASPECT_RATIO = 2f / 3f
 
 @Composable
-fun KanshuCover(imageUrl: String?, contentDescription: String?, modifier: Modifier = Modifier) {
+fun KanshuCover(
+  imageUrl: String?,
+  contentDescription: String?,
+  modifier: Modifier = Modifier,
+  overlay: @Composable BoxScope.() -> Unit = {},
+) {
   Box(
     modifier =
       modifier
@@ -39,6 +45,7 @@ fun KanshuCover(imageUrl: String?, contentDescription: String?, modifier: Modifi
     } else {
       Spacer(modifier = Modifier.fillMaxWidth().aspectRatio(PLACEHOLDER_ASPECT_RATIO))
     }
+    overlay()
   }
 }
 

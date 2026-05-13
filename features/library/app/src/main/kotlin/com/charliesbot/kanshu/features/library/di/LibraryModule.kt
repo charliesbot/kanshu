@@ -4,4 +4,4 @@ import com.charliesbot.kanshu.features.library.LibraryViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
-val libraryModule = module { viewModel { LibraryViewModel(get()) } }
+val libraryModule = module { viewModel { LibraryViewModel(get(), get(), get()) } }

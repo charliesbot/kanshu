@@ -6,6 +6,8 @@ Read `docs/PRD.md` before any design, UX, or feature decision — it defines e-i
 
 Read `docs/KAVITA_API.md` before any Kavita networking work — it captures the verified auth flow, the endpoints we use, the ones we deliberately don't, and the footguns we've already paid for.
 
+Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle and the `EpubPreferences` mapping.
+
 ## Stack Overrides
 
 The android-dev skill covers architecture, Koin, StateFlow, Spotless, and scaffolding. These are Kanshu-specific deviations from its defaults:

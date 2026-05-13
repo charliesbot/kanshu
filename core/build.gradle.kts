@@ -22,6 +22,8 @@ android {
   }
 
   packaging { resources { excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md") } }
+
+  testOptions { unitTests { isReturnDefaultValues = true } }
 }
 
 dependencies {
