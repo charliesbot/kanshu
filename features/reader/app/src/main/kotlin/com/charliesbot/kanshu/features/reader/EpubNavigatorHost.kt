@@ -15,8 +15,6 @@ import androidx.fragment.app.commit
 import androidx.fragment.app.commitNow
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
-import org.readium.r2.navigator.epub.EpubPreferences
-import org.readium.r2.navigator.preferences.ColumnCount
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.AbsoluteUrl
@@ -25,12 +23,9 @@ import org.readium.r2.shared.util.AbsoluteUrl
 // tap zones, and chapter advancement; ReaderScreen drives Prev/Next via the supplied callback
 // once the navigator is attached.
 //
-// Typography: publisherStyles=false starts Kanshu's Opinionated Normalization stance —
-// ReadiumCSS overrides the publisher's font-family / line-height etc. columnCount=ONE enforces
-// our layout ownership for wide screens. Known limitation: this currently renders tofu for
-// glyphs the default Readium font doesn't cover; the property-stripping, unit-normalization
-// and fontFamily override that close that gap land in a follow-up PR. See
-// docs/KINDLE_TYPOGRAPHY.md for the full model.
+// Typography is centralized in EpubTypography — defaults flow in via the factory configuration
+// (set in ReaderViewModel), while initialPreferences and the fragment configuration (font-face
+// declarations + servedAssets) flow in here. See docs/KINDLE_TYPOGRAPHY.md.
 //
 // The host writes to the activity's global supportFragmentManager.fragmentFactory — fine for
 // our single-ReaderScreen-at-a-time setup, would clobber under concurrent fragment users.
@@ -61,9 +56,9 @@ fun EpubNavigatorHost(
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = null,
-        initialPreferences =
-          EpubPreferences(publisherStyles = false, columnCount = ColumnCount.ONE),
+        initialPreferences = EpubTypography.initialPreferences,
         listener = NoopNavigatorListener,
+        configuration = EpubTypography.fragmentConfiguration,
       )
     fragmentManager.commitNow { add(containerId, EpubNavigatorFragment::class.java, Bundle(), tag) }
     val navigator = fragmentManager.findFragmentByTag(tag) as? EpubNavigatorFragment

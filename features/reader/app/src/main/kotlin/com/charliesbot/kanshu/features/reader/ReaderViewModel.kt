@@ -32,7 +32,12 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
             // Constructing the factory here is cheap.
             ReaderUiState.Ready(
               title = result.publication.metadata.title,
-              factory = EpubNavigatorFactory(result.publication),
+              factory =
+                EpubNavigatorFactory(
+                  publication = result.publication,
+                  configuration =
+                    EpubNavigatorFactory.Configuration(defaults = EpubTypography.defaults),
+                ),
             )
           }
           ReaderResult.Error.NotFound -> ReaderUiState.Error.NotFound
