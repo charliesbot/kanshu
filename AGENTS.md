@@ -8,6 +8,8 @@ Read `docs/KAVITA_API.md` before any Kavita networking work — it captures the 
 
 Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle and the `EpubPreferences` mapping.
 
+Read `docs/READIUM_API.md` before any Readium navigator or streamer work — it captures the verified 3.1.2 surface (the two `Configuration` classes, the settings layering, what `servedAssets` actually does, and the `TransformingContainer` escape hatch) so we stop imagining APIs that don't exist.
+
 ## Stack Overrides
 
 The android-dev skill covers architecture, Koin, StateFlow, Spotless, and scaffolding. These are Kanshu-specific deviations from its defaults:
