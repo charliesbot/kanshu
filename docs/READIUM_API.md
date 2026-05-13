@@ -120,6 +120,11 @@ Unstyled defaults: compFontFamily, codeFontFamily
 overrides: Map<String, String?>   ← escape hatch, see below
 ```
 
+Field gotchas worth knowing before reaching for typed fields:
+
+- **`pageGutter` is horizontal-only.** Despite the generic name, the bundled body rule (see "What `body` actually gets" below) is `padding: 0 var(--RS__pageGutter) !important;` — the shorthand zeros top/bottom. This field only controls left/right body padding. Confirmed by the docstring on `Properties.kt:187`: _"The horizontal page margins."_
+- **`pageGutter` requires `Length.Absolute`.** `Length.Rem(2.0)` fails to compile — the constructor accepts only the `Absolute` arm of the sealed `Length` hierarchy (`Length.Px`, `Length.Pt`, `Length.Cm`, etc.). Surprising given other Length-typed fields take relative units.
+
 The image-safeguard fields are the ones most relevant to fixing publisher overflow:
 
 - `maxMediaWidth` → `--RS__maxMediaWidth`. ReadiumCSS default `100%`. Caps `img/svg/audio/video` width.
@@ -127,6 +132,43 @@ The image-safeguard fields are the ones most relevant to fixing publisher overfl
 - `boxSizingMedia` → `--RS__boxSizingMedia`. ReadiumCSS default `border-box`.
 
 So if you do nothing, ReadiumCSS already caps media at `100% × 100vh` with `border-box`. Setting these in `RsProperties` only matters if you want to _deviate_ from ReadiumCSS's defaults. This is non-obvious from the field names.
+
+### What `body` actually gets (paginated mode)
+
+Verified by reading the toolkit's bundled `readium/navigator/src/main/assets/readium/readium-css/ReadiumCSS-after.css` at the 3.1.2 tag — not upstream `readium/readium-css` master, which has drifted.
+
+The unconditional body rule (lines 46–51 of the un-minified file):
+
+```css
+body {
+  width: 100%;
+  max-width: var(--RS__maxLineLength) !important;
+  padding: 0 var(--RS__pageGutter) !important;
+  margin: 0 auto !important;
+  box-sizing: border-box;
+}
+```
+
+The user override that fires when `--USER__pageMargins` is set (lines 174–175):
+
+```css
+:root[style*="--USER__pageMargins"] body {
+  padding: 0 calc(var(--RS__pageGutter) * var(--USER__pageMargins)) !important;
+}
+```
+
+Both rules use the `padding: 0 X` shorthand. **Top and bottom are literally hardcoded to `0`.** So `EpubPreferences.pageMargins = 2.0` doubles horizontal padding and does nothing vertical. `RsProperties.pageGutter` is similarly horizontal-only.
+
+No `--RS__verticalPageGutter`, `--USER__verticalPageMargins`, `padding-block` variable, or anything equivalent exists anywhere across the three bundled stylesheets (`ReadiumCSS-before.css`, `-after.css`, `-default.css`). `--RS__scrollPaddingTop` / `--RS__scrollPaddingBottom` do exist but are gated on `:root:not(:--scroll-view)` matching — they only apply in scroll mode, never in paginated.
+
+The "Vertical rhythm" RsProperties fields (`flowSpacing`, `paraSpacing`, `paraIndent`) only affect block-level elements inside body (`<p>`, `<h1-h6>`, `<blockquote>`, `<figure>`, etc.). They do not pad the body container itself and cannot move the last line of a packed page away from the WebView edge.
+
+**If you need vertical reading margins in paginated mode**, your real options are:
+
+- **Compose-side padding on the WebView host.** Shrinks the WebView's drawable area; affects every page uniformly, so the cover (or any image-only spread) is inset by the same amount you give text.
+- **Custom CSS injected via `TransformingContainer`** with `body { padding-block: X !important; }`. Inject the `<link>` before `</body>` to beat ReadiumCSS-after.css on the cascade tiebreaker (see TransformingContainer caveats below). Has potential interactions with Readium's `column-fill: auto` + `height: 100vh` pagination math — unverified on real books, so test before shipping.
+
+There is no third route exposed through the typed `EpubDefaults` / `EpubPreferences` / `RsProperties` API surface. Confirmed by exhaustive read of `Properties.kt`, `EpubSettingsResolver.kt`, and all three bundled CSS files at the 3.1.2 tag.
 
 ### The `overrides` map — what it actually does
 
@@ -273,7 +315,9 @@ For the URL above to resolve, the asset still has to be in `servedAssets` on the
 Caveats:
 
 - `TransformingResource` loads the full resource into memory (own doc comment, line 25–27). Fine for spine HTML, not for video.
-- Readium's own `<link>` to `ReadiumCSS-after.css` is injected _after_ `</head>` closes, so it beats your `<link>` on `!important` ties when specificity matches. If you need to win, prefer higher specificity or `!important` in your stylesheet rather than relying on cascade order.
+- Readium's own `<link>` to `ReadiumCSS-after.css` is injected _after_ `</head>` closes, so it beats your `<link>` on `!important` ties when specificity matches. Two ways to win the cascade: higher specificity (e.g., `html body` beats bare `body`), or inject your `<link>` before `</body>` so it sits later in document order than Readium's.
+- **XHTML strict parsing.** Spine HTML can be parsed strictly as XHTML — a duplicate `style="..."` attribute on the same element is a fatal parse error (`Attribute style redefined` at the offending line; the WebView renders only the parser-error stub, no content). If you string-rewrite a tag to add a `style` attribute, strip any existing `style` first or the page fails to render entirely.
+- **Publisher inline `style="..."` beats external CSS.** Inline styles win over external rules at equal `!important`. The only counter is more-inline (HTML mutation to replace or merge the publisher's `style` attribute), which collides with the XHTML caveat above. Worth flagging because for cover XHTML this rarely matters — most publishers don't inline-style covers — but for text spines that hand-style specific elements you may not be able to override them externally.
 
 We haven't implemented this in Kanshu yet. Documented here so we don't reinvent it or assume it's impossible.
 
@@ -314,7 +358,6 @@ Worth knowing because most online tutorials predate it and contain dead patterns
 - **`supportFragmentManager.fragmentFactory` is global.** Setting it from `EpubNavigatorHost` is fine for our single-reader-at-a-time UX but would clobber under concurrent fragment users. Don't add a second fragment-factory-using feature without revisiting this.
 - **`Publication.close()` is blocking I/O.** Called fire-and-forget on `Dispatchers.IO` from `ReaderViewModel.onCleared` because `viewModelScope` is already cancelled at that point.
 - **Process-death stub fragment.** `MainActivity` installs a dummy fragment factory on process restoration. The host has to remove that stub fragment before adding the real navigator, otherwise `FragmentManager` merges them. See `EpubNavigatorHost` `DisposableEffect`.
-- **The "custom hook" comment in `EpubTypography.kt:21-23` is aspirational and wrong for 3.1.2** — there is no `<link>` injection mechanism on the navigator Configuration. The actual escape hatch is the Streamer `TransformingContainer` path above. Worth fixing when we next touch that file.
 
 ## Where the work lives in Kanshu
 

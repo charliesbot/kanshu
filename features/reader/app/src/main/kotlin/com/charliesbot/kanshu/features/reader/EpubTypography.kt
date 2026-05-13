@@ -18,8 +18,11 @@ import org.readium.r2.shared.util.Either
 // `EpubDefaults` — that's why the seed font lives here and not in defaults.
 //
 // Escape hatch: when ReadiumCSS + RsProperties no longer cover a rule we need (drop caps,
-// blockquote ornament, etc.), ship `assets/reader/kanshu.css`, add it to `servedAssets`, and
-// inject a <link> via a custom hook.
+// blockquote ornament, vertical body padding in paginated mode, etc.), the documented path in
+// Readium 3.1.2 is a Streamer-side `TransformingContainer` that rewrites spine HTML to inject
+// a <link>. The navigator surface has no `<link>` injection hook. See docs/READIUM_API.md
+// ("The Streamer escape hatch: TransformingContainer" and "What `body` actually gets") for the
+// pattern and caveats.
 @OptIn(ExperimentalReadiumApi::class)
 internal object EpubTypography {
 
