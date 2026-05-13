@@ -12,39 +12,40 @@ import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.Either
 
-// Kanshu's EPUB typography. Models the "layout-mine, fonts-yours" split from
-// docs/KINDLE_TYPOGRAPHY.md: layout via `defaults` + `rsProperties`, legibility via
-// `initialPreferences`. Readium plumbs `fontFamily` only through `EpubPreferences`, never
-// `EpubDefaults` — that's why the seed font lives here and not in defaults.
+// Kanshu's EPUB typography. Models Kindle's "layout from publisher, legibility from user" split
+// per docs/KINDLE_TYPOGRAPHY.md: publisherStyles stays on so structural CSS (headings,
+// blockquotes, list shape, indent rhythm) survives, while EpubPreferences drives the legibility
+// primitives the user cares about (font family, size, line-height, alignment). Readium plumbs
+// `fontFamily` only through `EpubPreferences`, never `EpubDefaults` — that's why the seed font
+// lives here and not in defaults.
 //
-// Escape hatch: when ReadiumCSS + RsProperties no longer cover a rule we need (drop caps,
-// blockquote ornament, etc.), ship `assets/reader/kanshu.css`, add it to `servedAssets`, and
-// inject a <link> via a custom hook.
+// Escape hatch: when ReadiumCSS + RsProperties can't constrain a fragile publisher pattern
+// (`position: absolute`, oversized fixed widths), the documented path is a Streamer-level
+// `TransformingContainer` that injects a normalization stylesheet — see docs/READIUM_API.md.
 @OptIn(ExperimentalReadiumApi::class)
 internal object EpubTypography {
 
   val inter = FontFamily("Inter")
   val notoSerif = FontFamily("Noto Serif")
 
+  // Kindle's "Publisher Font ON for structure" mode: keep the publisher's headings, blockquotes,
+  // list shape, and indent rhythm; override only the legibility primitives. ReadiumCSS-after.css
+  // applies --USER__* with !important, so font/size/line-height/align still win over publisher
+  // CSS for those specific properties even with publisherStyles = true. paragraphIndent and
+  // paragraphSpacing are deliberately unset — those are the publisher's lane.
   val defaults =
     EpubDefaults(
-      publisherStyles = false,
+      publisherStyles = true,
       columnCount = ColumnCount.ONE,
       fontSize = 1.0,
       lineHeight = 1.4,
-      paragraphIndent = 1.5,
-      paragraphSpacing = 0.0,
       textAlign = TextAlign.JUSTIFY,
       hyphens = true,
       ligatures = true,
     )
 
   val rsProperties =
-    RsProperties(
-      maxLineLength = Length.Rem(40.0),
-      paraIndent = Length.Rem(1.5),
-      baseLineHeight = Either.Right(1.4),
-    )
+    RsProperties(maxLineLength = Length.Rem(40.0), baseLineHeight = Either.Right(1.4))
 
   val initialPreferences = EpubPreferences(fontFamily = notoSerif, columnCount = ColumnCount.ONE)
 
