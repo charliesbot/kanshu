@@ -25,9 +25,12 @@ import org.readium.r2.shared.util.AbsoluteUrl
 // tap zones, and chapter advancement; ReaderScreen drives Prev/Next via the supplied callback
 // once the navigator is attached.
 //
-// Typography: publisherStyles=true lets @font-face and the publisher's font-family apply;
-// columnCount=ONE enforces our layout ownership. See docs/KINDLE_TYPOGRAPHY.md for the
-// layout/font split we're modelling after Kindle and the EpubPreferences mapping.
+// Typography: publisherStyles=false starts Kanshu's Opinionated Normalization stance —
+// ReadiumCSS overrides the publisher's font-family / line-height etc. columnCount=ONE enforces
+// our layout ownership for wide screens. Known limitation: this currently renders tofu for
+// glyphs the default Readium font doesn't cover; the property-stripping, unit-normalization
+// and fontFamily override that close that gap land in a follow-up PR. See
+// docs/KINDLE_TYPOGRAPHY.md for the full model.
 //
 // The host writes to the activity's global supportFragmentManager.fragmentFactory — fine for
 // our single-ReaderScreen-at-a-time setup, would clobber under concurrent fragment users.
@@ -58,7 +61,8 @@ fun EpubNavigatorHost(
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = null,
-        initialPreferences = EpubPreferences(publisherStyles = true, columnCount = ColumnCount.ONE),
+        initialPreferences =
+          EpubPreferences(publisherStyles = false, columnCount = ColumnCount.ONE),
         listener = NoopNavigatorListener,
       )
     fragmentManager.commitNow { add(containerId, EpubNavigatorFragment::class.java, Bundle(), tag) }
