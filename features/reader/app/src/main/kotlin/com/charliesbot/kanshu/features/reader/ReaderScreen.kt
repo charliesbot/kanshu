@@ -1,10 +1,6 @@
 package com.charliesbot.kanshu.features.reader
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -14,7 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
@@ -28,8 +23,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
+import com.charliesbot.kanshu.core.ui.system.FullScreenMode
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
 import kotlin.math.abs
@@ -39,15 +34,17 @@ import org.koin.core.parameter.parametersOf
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 
-// Reading mode defaults to zero persistent app UI per the PRD. The Prev/Next row is the V1
-// navigation surface; tap zones and the reader overlay come in a follow-up PR. Pagination,
-// chapter advancement, and rendering are owned by EpubNavigatorFragment via Readium.
+// Reading mode defaults to zero persistent app UI per the PRD: system bars are hidden via
+// FullScreenMode for the lifetime of this screen, and pagination is driven entirely by swipe
+// gestures and Readium's tap-edge adapter — no on-screen buttons. Pagination, chapter
+// advancement, and rendering are owned by EpubNavigatorFragment via Readium.
 @Composable
 fun ReaderScreen(
   seriesId: Int,
   title: String,
   viewModel: ReaderViewModel = koinViewModel { parametersOf(seriesId) },
 ) {
+  FullScreenMode()
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   ReaderContent(uiState = uiState, fallbackTitle = title)
 }
@@ -75,36 +72,17 @@ private fun ReaderContent(uiState: ReaderUiState, fallbackTitle: String) {
 private fun ReaderBody(uiState: ReaderUiState.Ready) {
   var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
   val scope = rememberCoroutineScope()
-  Column(modifier = Modifier.fillMaxSize()) {
-    EpubNavigatorHost(
-      factory = uiState.factory,
-      onNavigatorReady = { navigator = it },
-      modifier =
-        Modifier.weight(1f)
-          .fillMaxWidth()
-          .horizontalSwipeToPageTurn(
-            enabled = navigator != null,
-            onSwipeForward = { scope.launch { navigator?.goForward() } },
-            onSwipeBackward = { scope.launch { navigator?.goBackward() } },
-          ),
-    )
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      KanshuButton(
-        text = stringResource(R.string.reader_prev),
-        onClick = { scope.launch { navigator?.goBackward() } },
-        enabled = navigator != null,
-      )
-      KanshuButton(
-        text = stringResource(R.string.reader_next),
-        onClick = { scope.launch { navigator?.goForward() } },
-        enabled = navigator != null,
-      )
-    }
-  }
+  EpubNavigatorHost(
+    factory = uiState.factory,
+    onNavigatorReady = { navigator = it },
+    modifier =
+      Modifier.fillMaxSize()
+        .horizontalSwipeToPageTurn(
+          enabled = navigator != null,
+          onSwipeForward = { scope.launch { navigator?.goForward() } },
+          onSwipeBackward = { scope.launch { navigator?.goBackward() } },
+        ),
+  )
 }
 
 // Intercepts horizontal drags BEFORE Readium's R2ViewPager sees them (PointerEventPass.Initial)

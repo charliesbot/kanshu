@@ -1,64 +1,86 @@
 # Kindle CSS Application Model
 
-Kindle's "Enhanced Typesetting" (KFX) engine represents the gold standard for reflowable ebook typography. It achieves its polished look through an aggressive, multi-stage CSS transformation process that prioritizes readability over raw source fidelity.
+Kindle's "Enhanced Typesetting" (KFX) engine is the de facto reference for reflowable ebook typography. It does **not** evaluate publisher CSS live the way a browser does, nor does it ignore publisher CSS and substitute its own. The pipeline pre-bakes the EPUB through a headless render, extracts computed styles, normalizes problematic patterns, and then layers user preferences over the result. The takeaway: publisher CSS is the _starting point_, not the final word.
 
 ## 1. The Core Architecture: KFX & Ion
-Kindle Format 10 (KFX) is a proprietary binary format based on Amazon's **Ion** superset of JSON. This architecture marks a shift from a "live rendering" model (like a browser) to a "pre-baked" model.
+
+KFX (Kindle Format 10) is a proprietary binary format built on Amazon's **Ion** — a binary-encoded superset of JSON. Unlike legacy EPUB/MOBI rendering, KFX shifts from a live-render model to a **pre-baked** model.
 
 ### Pre-Baking & Normalization
-When an EPUB is converted to KFX, the engine does not simply "copy" the CSS. Instead:
-- **Headless Rendering:** The book is rendered in a headless WebKit environment at a reference width (typically 512px).
-- **Computed Style Extraction:** The engine extracts the **computed styles** for every element. Absolute pixel values are preferred over relative units at this stage.
-- **Decomposition:** The HTML and CSS are decomposed into thousands of **Ion fragments**. These fragments represent content blocks with hardcoded, normalized styling rules already attached.
 
-## 2. The Normalization Heuristics
-Kindle "nails" the styling by aggressively cleaning up "bad" EPUB CSS during the conversion process.
+When an EPUB is converted to KFX (typically inside Kindle Previewer or KDP's upload pipeline), the engine:
 
-### Property Stripping
-The engine strips or ignores properties that interfere with a reflowable, high-contrast reading environment:
-- **`position: absolute/fixed`**: Stripped to prevent text from overlapping or disappearing.
-- **`float`**: Heavily restricted; allowed only for simple image-wrapping.
-- **`color` & `background-color`**: Stripped on body/paragraph text to ensure WCAG-compliant contrast and to prevent breaking "Night Mode" or "Sepia" themes.
-- **`width` & `height`**: Stripped from containers (`div`, `p`, `body`) to ensure the text always fits the physical screen.
+- **Headless render at a reference width.** The book is rendered in a headless WebKit (PhantomJS in older versions of the toolchain) at a reference viewport. The commonly cited width is ~512px.
+- **Computed style extraction.** For every element, the engine reads the _computed_ style — the post-cascade values — and serializes them with the content.
+- **Decomposition into Ion fragments.** The HTML+CSS is broken down into Ion records: content nodes with their resolved styles already attached. The final book file ships these baked fragments, not raw stylesheets.
 
-### Unit Normalization
-Kindle converts chaotic units into a standardized internal grid:
-- **Absolute to Relative**: `px` or `pt` values are normalized into `em` equivalents or forced to the device default if they are too close to standard body text size.
-- **Indentation Scaling**: Paragraph indents (`text-indent`) are normalized to a standard range (typically 1.5em to 2em). If a publisher sets a 5em indent, the engine may "correct" it to 1.5em to preserve page balance.
+## 2. Normalization Heuristics
 
-## 3. The "User Agent" Defaults
-Kindle applies a "virtual" stylesheet that provides robust defaults for elements the publisher might have ignored:
-- **`text-align: justify`**: The default for long-form reading on most Kindles.
-- **`line-height: 1.2 - 1.4`**: A comfortable baseline that the user can further scale.
-- **`margin-top/bottom`**: Applied to headings (`h1`-`h6`) even if missing in the source, ensuring a clear visual hierarchy.
-- **List Padding**: Enforced `padding-left` on `<ul>` and `<ol>` to ensure bullets are never cut off.
+KFX's normalization pass rewrites or constrains a small set of publisher CSS patterns that historically break reflowable reading. **Important correction over older drafts of this doc:** Amazon's KF8 CSS reference lists most "dangerous" properties as _supported_, not stripped. The engine's normalization is narrower and more nuanced than "blanket strip":
 
-## 4. Enhanced Typesetting (ET) Features
-The **YJ Engine** (the modern Kindle renderer) applies advanced typography that standard EPUB engines often miss:
-- **Advanced H&J (Hyphenation & Justification)**: Uses language-specific dictionaries to insert soft hyphens dynamically, preventing "rivers" of white space.
-- **Intelligent Justification**: If the line length is too short (due to large font size), the engine dynamically switches from full justification to left-alignment to prevent awkward word gaps.
-- **Kerning & Ligatures**: Native support for OpenType features (`GPOS`/`GSUB`), ensuring professional character spacing.
-- **Responsive Drop Caps**: Drop caps are treated as special objects that scale and nestle into the surrounding text accurately across all font sizes.
+- **`position`.** `position: absolute` and `position: fixed` are documented as supported but "not recommended" for reflowable layouts; they're inconsistently honored across devices and are commonly the source of disappearing or overlapping text. Treat them as fragile, not forbidden.
+- **`float`.** Supported, but in practice some `float` declarations are coerced to `display: inline` during normalization, especially around inline images.
+- **`width` / `height`.** Supported on containers — but `max-width` and `max-height` are explicitly **not** supported. This is a real gap and affects responsive image sizing.
+- **`color` / `background-color`.** Supported on most elements. The engine doesn't blanket-strip these, but Kindle's theme system (sepia, dark, black) overrides them at render time when a non-default theme is active.
+- **Unit handling.** Absolute and relative units are normalized through the computed-style extraction. There is community evidence that `text-indent` is recomputed into a constrained range (publisher reports of 5em indents being "corrected" downward), but no primary Amazon documentation specifies an exact range.
 
-## 5. The "Layout vs. Fonts" Split
-Kindle enforces a strict conceptual separation that is the secret to its consistency:
-- **Layout (Structural)**: Headings, blockquotes, signatures, and initial indents. These are preserved from the source CSS as they define the book's *structure*.
-- **Fonts (Legibility)**: Typeface, size, line spacing, and justification. These are entirely owned by the user. The engine treats the publisher's `font-family` and `font-size` on body text as merely "suggestions" that are overridden the moment the user touches the settings menu.
+The honest summary: KFX **constrains** publisher CSS through computed-style extraction and theme overrides; it does not categorically delete properties.
+
+## 3. User-Agent Defaults
+
+KFX applies a baseline stylesheet for elements publishers commonly under-specify. Documented examples:
+
+- **Full justification** is the default for body text and is forced regardless of publisher CSS, unless the user has changed alignment in their settings.
+- **List padding** on `<ul>` / `<ol>` is enforced so bullets are never cut off — publisher overrides on list padding are unreliable.
+- Line height, heading margins, and indentation also have engine defaults, but the specific numeric ranges sometimes cited (e.g. line-height 1.2–1.4) are not in primary Amazon documentation.
+
+## 4. Enhanced Typesetting (Modern Renderer)
+
+The current rendering engine (Amazon brands user-facing features under "Enhanced Typesetting") adds:
+
+- **Language-aware hyphenation.** Soft hyphens are inserted dynamically using language dictionaries.
+- **Adaptive justification.** When line length shrinks (large font sizes, narrow viewports), the engine can switch from full justify to left-align to avoid awkward word gaps. This behavior is observed and documented by third parties; Amazon describes it in user-facing terms as "improved word spacing."
+- **OpenType kerning and ligatures.** GPOS/GSUB features are honored where the font provides them.
+
+## 5. The Layout vs. Fonts Split
+
+The conceptual separation that makes Kindle's output consistent across publishers:
+
+- **Layout (structural CSS).** Headings, blockquotes, signatures, paragraph indents, list structure — preserved from publisher CSS because they define the _shape_ of the book.
+- **Fonts (legibility CSS).** Typeface, font size, line height, alignment — owned by the user. The "Publisher Font" toggle in the Kindle UI controls whether the publisher's `font-family` is even applied; with it off, the engine uses Bookerly or another Kindle font. Size and line height are always user-driven.
+
+This split is the operative model for a Kindle-quality reader: don't try to honor everything the publisher said about fonts, and don't try to override everything the publisher said about structure.
+
+## 6. Cover Pages — Open Question
+
+Cover rendering is **not** part of the documented CSS pipeline. Amazon's KDP guidelines instruct _publishers_ to ship cover XHTML that fills the viewport (commonly using `<svg viewBox preserveAspectRatio>` to get `object-fit: contain` semantics across devices, since `max-width`/`max-height` are unsupported). There is no primary source documenting an automatic Kindle-side override that makes any cover XHTML fill the screen. Books that render edge-to-edge on Kindle do so because the publisher used the SVG-wrapper pattern; books that letterbox do so because the publisher didn't. KDP also discourages an HTML cover page in addition to the cover image, suggesting Kindle sometimes synthesizes its own cover surface from OPF metadata rather than rendering the publisher's cover XHTML.
+
+For Kanshu: don't expect Kindle parity on covers by passing publisher cover CSS through Readium unchanged. If we want consistent viewport-fill rendering, we have to implement it ourselves — exactly the same conclusion KFX's pipeline reached internally.
 
 ## Summary for Implementation
-To replicate Kindle's quality, a reader must move away from "rendering the CSS as-is" and toward an **Opinionated Normalization** model:
-1. **Strip** problematic layout properties (positioning, hardcoded colors).
-2. **Inject** robust defaults for indentation and spacing.
-3. **Normalize** units to a relative `em` grid.
-4. Override legibility properties (font-family, size, line-height) with user preferences.
+
+To replicate Kindle's quality, a reader should move away from "render the publisher CSS as-is" and toward **opinionated normalization**:
+
+1. **Honor structural CSS** (headings, blockquotes, indents, list structure).
+2. **Inject robust defaults** for things publishers commonly miss (justification, list padding, heading margins).
+3. **Constrain** known-fragile properties (`position: absolute`, hardcoded widths that don't account for the viewport).
+4. **Override legibility CSS** with user preferences (font family, font size, line height, alignment).
+5. **Treat cover pages as a separate concern** — don't assume publisher CSS will fill the viewport.
 
 ## References
 
-- **Kindle KFX Architecture & Ion Format**: [MobileRead Forum - KFX Input/Output Plugins](https://www.mobileread.com/forums/showthread.php?t=263902)
-- **Enhanced Typesetting (YJ Engine) Internals**: [JustKindleBooks - Enhanced Typesetting Features](https://www.justkindlebooks.com/blog/kindle-enhanced-typesetting/)
-- **Amazon Kindle Publishing Guidelines**: [Official PDF - Section 3: Formatting Guidelines](https://kdp.amazon.com/en_US/help/topic/G200645680)
-- **Kindle CSS Normalization Heuristics**: [Reddit - KFX Normalization Details](https://www.reddit.com/r/kindle/comments/16l5w5h/technical_details_of_kfx_normalization/)
-- **KFX vs. KF8 Comparison**: [The Ebook Reader - Kindle Formats Explained](https://blog.the-ebook-reader.com/2017/05/17/kindle-formats-explained-mobi-azw-azw3-kfx/)
-- **Advanced Hyphenation & Justification**: [MobileRead - KFX Typography Research](https://www.mobileread.com/forums/showthread.php?t=291040)
-- **CSS Property Stripping in Kindle**: [Dodeca - Kindle CSS Override Logic](https://dodeca.co.uk/blog/kindle-typography-settings/)
+Verified primary and community sources used to back the claims above.
 
+### Amazon / KDP (primary)
+
+- **KF8 CSS reference** — what KFX nominally supports and rejects: <https://kdp.amazon.com/en_US/help/topic/GG5R7N649LECKP7U>
+- **Enhanced Typesetting** — user-facing feature description: <https://kdp.amazon.com/en_US/help/topic/G202087570>
+- **Publisher Font toggle / user font controls**: <https://kdp.amazon.com/en_US/help/topic/GH4DRT75GWWAGBTU>
+- **Image and cover guidelines**: <https://kdp.amazon.com/en_US/help/topic/G75V4YX5X8GRGXWV>
+
+### Community / technical writeups
+
+- **KFX format overview (MobileRead Wiki)** — Ion format, structural details: <https://wiki.mobileread.com/wiki/KFX>
+- **"What Kindle does behind the scenes" — Jiminy Panoz** — pre-baked rendering, computed style extraction, 512px reference: <https://medium.com/@jiminypan/what-kindle-does-behind-the-scenes-3d1be22efce3>
+- **FriendsOfEpub `WillThatBeOverriden` — Kindle Previewer 3 / KFX notes** — independent confirmation of computed-style extraction and dynamic H&J: <https://github.com/FriendsOfEpub/WillThatBeOverriden/blob/master/ReadingSystems/Kindle/KDF-KFX/KindlePreviewer3.md>
+- **MobileRead thread on text-indent normalization (#321918)** — publisher report of indent recomputation: <https://www.mobileread.com/forums/showthread.php?t=321918>
