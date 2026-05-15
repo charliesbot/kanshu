@@ -1,9 +1,10 @@
 package com.charliesbot.kanshu.features.reader
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
+import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.system.FullScreenMode
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
@@ -35,28 +37,53 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 
 // Reading mode defaults to zero persistent app UI per the PRD: system bars are hidden via
-// FullScreenMode for the lifetime of this screen, and pagination is driven entirely by swipe
-// gestures and Readium's tap-edge adapter — no on-screen buttons. Pagination, chapter
-// advancement, and rendering are owned by EpubNavigatorFragment via Readium.
+// FullScreenMode for the lifetime of this screen, and pagination is driven by swipe gestures
+// and Readium's tap-edge adapter. A center tap reveals the ReaderOverlay (top chrome + bottom
+// chrome), which dismisses on tap of the middle zone. Pagination, chapter advancement, and
+// rendering are owned by EpubNavigatorFragment via Readium.
 @Composable
 fun ReaderScreen(
   seriesId: Int,
   title: String,
   viewModel: ReaderViewModel = koinViewModel { parametersOf(seriesId) },
 ) {
-  FullScreenMode()
+  var overlayVisible by remember { mutableStateOf(false) }
+  FullScreenMode(enabled = !overlayVisible)
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-  ReaderContent(uiState = uiState, fallbackTitle = title)
+  val chapterState by viewModel.chapterState.collectAsStateWithLifecycle()
+  ReaderContent(
+    uiState = uiState,
+    fallbackTitle = title,
+    overlayVisible = overlayVisible,
+    onOverlayVisibleChange = { overlayVisible = it },
+    chapterState = chapterState,
+    onLocatorChanged = viewModel::onLocatorChanged,
+  )
 }
 
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
-private fun ReaderContent(uiState: ReaderUiState, fallbackTitle: String) {
+private fun ReaderContent(
+  uiState: ReaderUiState,
+  fallbackTitle: String,
+  overlayVisible: Boolean,
+  onOverlayVisibleChange: (Boolean) -> Unit,
+  chapterState: ChapterState,
+  onLocatorChanged: (org.readium.r2.shared.publication.Locator) -> Unit,
+) {
   KanshuScaffold {
     when (uiState) {
       ReaderUiState.Loading ->
         StatusText(text = fallbackTitle.ifBlank { stringResource(R.string.reader_status_loading) })
-      is ReaderUiState.Ready -> ReaderBody(uiState = uiState)
+      is ReaderUiState.Ready ->
+        ReaderBody(
+          uiState = uiState,
+          fallbackTitle = fallbackTitle,
+          overlayVisible = overlayVisible,
+          onOverlayVisibleChange = onOverlayVisibleChange,
+          chapterState = chapterState,
+          onLocatorChanged = onLocatorChanged,
+        )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
       ReaderUiState.Error.ParseFailed ->
@@ -69,20 +96,46 @@ private fun ReaderContent(uiState: ReaderUiState, fallbackTitle: String) {
 
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
-private fun ReaderBody(uiState: ReaderUiState.Ready) {
+private fun ReaderBody(
+  uiState: ReaderUiState.Ready,
+  fallbackTitle: String,
+  overlayVisible: Boolean,
+  onOverlayVisibleChange: (Boolean) -> Unit,
+  chapterState: ChapterState,
+  onLocatorChanged: (org.readium.r2.shared.publication.Locator) -> Unit,
+) {
   var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
   val scope = rememberCoroutineScope()
-  EpubNavigatorHost(
-    factory = uiState.factory,
-    onNavigatorReady = { navigator = it },
-    modifier =
-      Modifier.fillMaxSize()
-        .horizontalSwipeToPageTurn(
-          enabled = navigator != null,
-          onSwipeForward = { scope.launch { navigator?.goForward() } },
-          onSwipeBackward = { scope.launch { navigator?.goBackward() } },
-        ),
-  )
+  LaunchedEffect(navigator) { navigator?.currentLocator?.collect(onLocatorChanged) }
+  Box(Modifier.fillMaxSize()) {
+    EpubNavigatorHost(
+      factory = uiState.factory,
+      onNavigatorReady = { navigator = it },
+      onCenterTap = { onOverlayVisibleChange(true) },
+      modifier =
+        Modifier.fillMaxSize()
+          .horizontalSwipeToPageTurn(
+            enabled = navigator != null,
+            onSwipeForward = { scope.launch { navigator?.goForward() } },
+            onSwipeBackward = { scope.launch { navigator?.goBackward() } },
+          ),
+    )
+    if (overlayVisible) {
+      ReaderOverlay(
+        title = uiState.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+        chapterTitle = chapterState.title,
+        prevChapterEnabled = chapterState.prevLocator != null,
+        nextChapterEnabled = chapterState.nextLocator != null,
+        onPrevChapter = {
+          chapterState.prevLocator?.let { target -> scope.launch { navigator?.go(target) } }
+        },
+        onNextChapter = {
+          chapterState.nextLocator?.let { target -> scope.launch { navigator?.go(target) } }
+        },
+        onDismiss = { onOverlayVisibleChange(false) },
+      )
+    }
+  }
 }
 
 // Intercepts horizontal drags BEFORE Readium's R2ViewPager sees them (PointerEventPass.Initial)
@@ -144,9 +197,9 @@ private fun Modifier.horizontalSwipeToPageTurn(
 
 @Composable
 private fun StatusText(text: String) {
-  BasicText(
+  KanshuText(
     text = text,
-    style = KanshuTheme.typography.body.copy(color = KanshuTheme.colors.onBackground),
+    style = KanshuTheme.typography.bodyLarge,
     modifier =
       Modifier.fillMaxSize().padding(24.dp).semantics { liveRegion = LiveRegionMode.Polite },
   )
@@ -159,6 +212,10 @@ private fun ReaderScreenLoadingPreview() {
     ReaderContent(
       uiState = ReaderUiState.Loading,
       fallbackTitle = "Alice's Adventures in Wonderland",
+      overlayVisible = false,
+      onOverlayVisibleChange = {},
+      chapterState = ChapterState.Empty,
+      onLocatorChanged = {},
     )
   }
 }
@@ -166,5 +223,14 @@ private fun ReaderScreenLoadingPreview() {
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun ReaderScreenErrorPreview() {
-  KanshuTheme { ReaderContent(uiState = ReaderUiState.Error.ParseFailed, fallbackTitle = "") }
+  KanshuTheme {
+    ReaderContent(
+      uiState = ReaderUiState.Error.ParseFailed,
+      fallbackTitle = "",
+      overlayVisible = false,
+      onOverlayVisibleChange = {},
+      chapterState = ChapterState.Empty,
+      onLocatorChanged = {},
+    )
+  }
 }

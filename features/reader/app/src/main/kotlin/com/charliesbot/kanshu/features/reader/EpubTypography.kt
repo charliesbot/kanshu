@@ -12,10 +12,15 @@ import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.Either
 
-// Kanshu's EPUB typography. Models the "layout-mine, fonts-yours" split from
-// docs/KINDLE_TYPOGRAPHY.md: layout via `defaults` + `rsProperties`, legibility via
-// `initialPreferences`. Readium plumbs `fontFamily` only through `EpubPreferences`, never
-// `EpubDefaults` — that's why the seed font lives here and not in defaults.
+// Kanshu's EPUB typography. Models the "layout-theirs, fonts-ours" split from
+// docs/KINDLE_TYPOGRAPHY.md §5: publisher CSS shapes the book (publisherStyles = true) and
+// user preferences override only the legibility layer — typeface, size, hyphenation. The
+// `EpubDefaults` and `RsProperties` values below are therefore *fallbacks*, not overrides:
+// publisher rules at equal specificity beat them, so they only take effect for properties the
+// publisher didn't specify. Font-family is the one user pref that wins regardless because
+// ReadiumCSS applies it with `!important`. Readium plumbs `fontFamily` only through
+// `EpubPreferences`, never `EpubDefaults` — that's why the seed font lives in
+// `initialPreferences` and not in `defaults`.
 //
 // Escape hatch: when ReadiumCSS + RsProperties no longer cover a rule we need (drop caps,
 // blockquote ornament, vertical body padding in paginated mode, etc.), the documented path in
@@ -31,7 +36,7 @@ internal object EpubTypography {
 
   val defaults =
     EpubDefaults(
-      publisherStyles = false,
+      publisherStyles = true,
       columnCount = ColumnCount.ONE,
       fontSize = 1.0,
       lineHeight = 1.4,

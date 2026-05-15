@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -14,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.charliesbot.kanshu.core.library.LibraryItem
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
+import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
 
@@ -31,10 +31,7 @@ fun BookOptionsDialog(item: LibraryItem, onDelete: () -> Unit, onDismiss: () -> 
           .padding(24.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      BasicText(
-        text = item.title,
-        style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
-      )
+      KanshuText(text = item.title, style = KanshuTheme.typography.titleLarge)
       KanshuButton(
         text = stringResource(R.string.library_book_options_delete),
         onClick = onDelete,

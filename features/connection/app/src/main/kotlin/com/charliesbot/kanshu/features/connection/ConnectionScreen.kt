@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,6 +26,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
+import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
@@ -54,9 +54,9 @@ private fun ConnectionContent(
       modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
       verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-      BasicText(
+      KanshuText(
         text = stringResource(R.string.connection_title),
-        style = KanshuTheme.typography.title.copy(color = KanshuTheme.colors.onBackground),
+        style = KanshuTheme.typography.titleLarge,
       )
       LabeledTextField(
         label = stringResource(R.string.connection_label_base_url),
@@ -95,10 +95,7 @@ private fun LabeledTextField(
   keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    BasicText(
-      text = label,
-      style = KanshuTheme.typography.label.copy(color = KanshuTheme.colors.onBackground),
-    )
+    KanshuText(text = label, style = KanshuTheme.typography.labelLarge)
     Box(
       modifier =
         Modifier.fillMaxWidth()
@@ -109,7 +106,7 @@ private fun LabeledTextField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
-        textStyle = KanshuTheme.typography.body.copy(color = KanshuTheme.colors.onBackground),
+        textStyle = KanshuTheme.typography.bodyLarge.copy(color = KanshuTheme.colors.onBackground),
         cursorBrush = SolidColor(KanshuTheme.colors.onBackground),
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
@@ -133,9 +130,9 @@ private fun StatusText(status: TestStatus) {
       is TestStatus.Error -> errorMessage(status)
     }
   if (text.isEmpty()) return
-  BasicText(
+  KanshuText(
     text = text,
-    style = KanshuTheme.typography.body.copy(color = KanshuTheme.colors.onBackground),
+    style = KanshuTheme.typography.bodyLarge,
     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
   )
 }

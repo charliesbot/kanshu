@@ -57,7 +57,7 @@ A few hardcoded fallbacks worth knowing:
 | `columnCount`     | `ColumnCount.AUTO`           |
 | `spread`          | `Spread.NEVER`               |
 
-If Kanshu's `EpubDefaults` doesn't set a field, the engine still ships _something_ — usually fine, occasionally surprising (e.g., `publisherStyles` defaults to `true` upstream, so leaving it `null` is the opposite of "strip publisher CSS").
+If Kanshu's `EpubDefaults` doesn't set a field, the engine still ships _something_ — usually fine, occasionally surprising. Kanshu intentionally sets `publisherStyles = true` (matching Readium's upstream default) so the book's own CSS shapes layout, and our `EpubDefaults` / `RsProperties` values act as fallbacks for properties the publisher didn't specify rather than overrides. See `EpubTypography.kt` and `docs/KINDLE_TYPOGRAPHY.md` §5 for the model.
 
 ### `EpubDefaults` — every field
 
@@ -341,6 +341,27 @@ Constructor knobs worth knowing (`util/DirectionalNavigationAdapter.kt`):
 - `animatedTransition` — default `false`. Already what we want for e-ink; leave it.
 
 The adapter is an `InputListener`, not a `Listener.onTap` callback. The old `VisualNavigator.Listener.onTap` / `onDrag` are deprecated as of 3.x — use `InputListener` everywhere.
+
+## TOC navigation: no upstream API for "current chapter from locator"
+
+3.1.2 ships `Publication.locatorFromLink(link)` — TOC → Locator (used to navigate _to_ a chapter once the user has picked one) — but no inverse. Specifically, **none** of these exist:
+
+- `Publication.findCurrentTocEntry(locator)`
+- `Navigator.nextChapter()` / `previousChapter()`
+- `Publication.linkWithHref(href)` searching the TOC (it only walks `readingOrder` / `resources` / `links`).
+
+The TestApp's outline screen confirms this: it only handles the easy direction (`onLinkSelected` → `locatorFromLink` → `navigator.go`). It never asks "what TOC entry am I in?"
+
+The canonical pattern, mirrored from `Manifest.linkWithHref`, is to walk the TOC ourselves and compare normalized URLs on both sides:
+
+- Resolve every TOC `Link.href` to a `Url` via `link.url()`.
+- Strip fragment + query, then `normalize()`.
+- Do the same to `locator.href.normalizeForMatch()`.
+- Equality match. Pick `indexOfLast` so a child TOC entry beats its parent when both point at the same resource.
+
+For locators that fall on spine resources that aren't TOC anchors (front-matter, mid-chapter sub-resources), a spine fallback is required: find the locator's index in `publication.readingOrder` and pick the latest TOC entry whose spine index is at or before it. The cover and any pre-TOC pages need a final edge case (no preceding TOC entry → `next = TOC[0]`).
+
+Implementation lives in `features/reader/.../TocIndex.kt`; see `TocIndexTest` for branch coverage.
 
 ## Migration history that shapes the current API
 
