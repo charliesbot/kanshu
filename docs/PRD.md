@@ -79,7 +79,7 @@ Must have:
 - The reader uses generous margins and a black-on-white reading surface.
 - Kavita is implemented as the first source behind a source/repository boundary.
 - Physical Boox page button handling for page turns.
-- Top tap zone reveals a minimal reader overlay.
+- Center tap zone reveals a minimal reader overlay (Kindle-app convention; the original Kindle-device top-zone idea was revised once we tested against the Kindle app on the Boox).
 - Side tap zones turn pages.
 - Immersive reader mode hides system bars.
 
@@ -89,9 +89,9 @@ Must have:
 - High-contrast cover grid.
 - Current-read prominence inspired by Kindle.
 - Zoned reader taps:
-  - top zone toggles reader overlay
   - side zones turn pages
-  - center remains text-first
+  - center zone toggles the reader overlay
+  - top/bottom remain text-first
 - Physical Boox page buttons mapped to page turns.
 - Font size, font weight, and margin controls inspired by Kobo.
 - Boox SDK exploration for refresh behavior if standard Android behavior is not enough.

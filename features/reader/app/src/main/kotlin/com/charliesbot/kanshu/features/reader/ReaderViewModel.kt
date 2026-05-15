@@ -7,11 +7,15 @@ import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 
 @OptIn(ExperimentalReadiumApi::class)
@@ -21,6 +25,14 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
   val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
   private var publication: Publication? = null
+  private var tocIndex: TocIndex? = null
+
+  private val _currentLocator = MutableStateFlow<Locator?>(null)
+
+  val chapterState: StateFlow<ChapterState> =
+    _currentLocator
+      .map { locator -> tocIndex?.chapterStateFor(locator) ?: ChapterState.Empty }
+      .stateIn(viewModelScope, SharingStarted.Eagerly, ChapterState.Empty)
 
   init {
     viewModelScope.launch {
@@ -28,6 +40,7 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
         when (val result = openBook(seriesId)) {
           is ReaderResult.Success -> {
             publication = result.publication
+            tocIndex = TocIndex(result.publication)
             // EpubNavigatorFactory is a thin data holder over Publication + configuration; the
             // heavy lifting (manifest walk, CSS injectables) happens inside the FragmentFactory's
             // instantiate path during commitNow, which the FragmentManager runs on Main anyway.
@@ -47,6 +60,10 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
           ReaderResult.Error.ReadFailed -> ReaderUiState.Error.ReadFailed
         }
     }
+  }
+
+  fun onLocatorChanged(locator: Locator) {
+    _currentLocator.value = locator
   }
 
   override fun onCleared() {
