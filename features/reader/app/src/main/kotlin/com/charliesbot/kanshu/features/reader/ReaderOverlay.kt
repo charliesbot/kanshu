@@ -72,33 +72,39 @@ private fun OverlayTopBar(title: String) {
       Row(modifier = Modifier.weight(1f)) {
         IconKanshuButton(onClick = {}) {
           KanshuIcon(
-            painter = painterResource(com.charliesbot.kanshu.core.R.drawable.arrow_back_24px),
+            painter =
+              painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.arrow_back_24px),
             contentDescription = stringResource(R.string.reader_overlay_back),
           )
         }
       }
       IconKanshuButton(onClick = {}) {
         KanshuIcon(
-          painter = painterResource(com.charliesbot.kanshu.core.R.drawable.match_case_24px),
+          painter =
+            painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.match_case_24px),
           contentDescription = stringResource(R.string.reader_overlay_typography),
         )
       }
       IconKanshuButton(onClick = {}) {
         KanshuIcon(
           painter =
-            painterResource(com.charliesbot.kanshu.core.R.drawable.format_list_bulleted_24px),
+            painterResource(
+              com.charliesbot.kanshu.core.designsystem.R.drawable.format_list_bulleted_24px
+            ),
           contentDescription = stringResource(R.string.reader_overlay_table_of_contents),
         )
       }
       IconKanshuButton(onClick = {}) {
         KanshuIcon(
-          painter = painterResource(com.charliesbot.kanshu.core.R.drawable.search_24px),
+          painter =
+            painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.search_24px),
           contentDescription = stringResource(R.string.reader_overlay_search),
         )
       }
       IconKanshuButton(onClick = {}) {
         KanshuIcon(
-          painter = painterResource(com.charliesbot.kanshu.core.R.drawable.more_vert_24px),
+          painter =
+            painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.more_vert_24px),
           contentDescription = stringResource(R.string.reader_overlay_more),
         )
       }
@@ -134,7 +140,8 @@ private fun OverlayBottomBar(
   ) {
     IconKanshuButton(onClick = onPrev, enabled = prevEnabled) {
       KanshuIcon(
-        painter = painterResource(com.charliesbot.kanshu.core.R.drawable.skip_previous_24px),
+        painter =
+          painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.skip_previous_24px),
         contentDescription = stringResource(R.string.reader_overlay_previous_chapter),
       )
     }
@@ -148,7 +155,8 @@ private fun OverlayBottomBar(
     )
     IconKanshuButton(onClick = onNext, enabled = nextEnabled) {
       KanshuIcon(
-        painter = painterResource(com.charliesbot.kanshu.core.R.drawable.skip_next_24px),
+        painter =
+          painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.skip_next_24px),
         contentDescription = stringResource(R.string.reader_overlay_next_chapter),
       )
     }

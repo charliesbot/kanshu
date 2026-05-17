@@ -25,7 +25,14 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Kanshu">
+            android:theme="@style/Theme.Kanshu"
+            tools:ignore="Instantiatable"><!--
+                False positive: MainActivity extends androidx.fragment.app.FragmentActivity,
+                which transitively extends android.app.Activity. Lint's Instantiatable check
+                doesn't follow the AndroidX inheritance chain when the parent class isn't
+                resolved on the lint classpath. See AGP issue tracker:
+                https://issuetracker.google.com/issues/272493276
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

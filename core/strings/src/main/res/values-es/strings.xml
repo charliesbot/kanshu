@@ -1,3 +1,45 @@
 <resources>
     <string name="app_name">Kanshu</string>
+
+    <!-- Connection screen -->
+    <string name="connection_title">Conectar con Kavita</string>
+    <string name="connection_label_base_url">URL base</string>
+    <string name="connection_label_api_key">Clave de API</string>
+    <string name="connection_button_test">Conectar</string>
+    <string name="connection_status_testing">Probando…</string>
+    <string name="connection_status_connected">Conectado.</string>
+    <string name="connection_status_connected_with_version">Conectado. Kavita %1$s.</string>
+    <string name="connection_error_invalid_url">URL no válida. Usa http(s)://servidor[:puerto].</string>
+    <string name="connection_error_unauthorized">Clave de API no válida.</string>
+    <string name="connection_error_unexpected_response">Respuesta inesperada. Comprueba que la URL base apunte a la raíz de la API.</string>
+    <string name="connection_error_network">No se pudo conectar con el servidor.</string>
+    <string name="connection_error_unknown">Error desconocido.</string>
+
+    <!-- Library screen -->
+    <string name="library_title">Biblioteca</string>
+    <string name="library_status_loading">Cargando biblioteca…</string>
+    <string name="library_status_empty">Aún no hay libros.</string>
+    <string name="library_status_no_credentials">No hay ningún servidor de Kavita conectado.</string>
+    <string name="library_error_unauthorized">Clave de API no válida. Vuelve a conectar con Kavita.</string>
+    <string name="library_error_network">No se pudo conectar con Kavita.</string>
+    <string name="library_error_unexpected_response">Respuesta inesperada de Kavita.</string>
+    <string name="library_error_unknown">No se pudo cargar la biblioteca.</string>
+    <string name="library_cover_content_description">Portada de %1$s</string>
+    <string name="library_downloading_progress">Descargando %1$d%%</string>
+    <string name="library_downloaded_indicator">Descargado</string>
+    <string name="library_book_options_delete">Eliminar descarga</string>
+    <string name="library_book_options_cancel">Cancelar</string>
+
+    <!-- Reader screen -->
+    <string name="reader_status_loading">Abriendo libro…</string>
+    <string name="reader_error_not_found">Libro no encontrado.</string>
+    <string name="reader_error_parse_failed">No se pudo leer este libro.</string>
+    <string name="reader_error_read_failed">No se pudo cargar el archivo del libro.</string>
+    <string name="reader_overlay_back">Cerrar libro</string>
+    <string name="reader_overlay_typography">Ajustes de tipografía</string>
+    <string name="reader_overlay_table_of_contents">Tabla de contenidos</string>
+    <string name="reader_overlay_search">Buscar</string>
+    <string name="reader_overlay_more">Más opciones</string>
+    <string name="reader_overlay_previous_chapter">Capítulo anterior</string>
+    <string name="reader_overlay_next_chapter">Capítulo siguiente</string>
 </resources>
