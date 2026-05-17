@@ -13,7 +13,8 @@ android {
 }
 
 dependencies {
-  implementation(project(":core"))
+  implementation(project(":core:domain"))
+  implementation(project(":core:designsystem"))
   implementation(project(":core:strings"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))

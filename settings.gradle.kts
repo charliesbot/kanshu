@@ -24,7 +24,10 @@ dependencyResolutionManagement {
 
 rootProject.name = "kanshu"
 include(":app")
-include(":core")
+include(":core:model")
+include(":core:domain")
+include(":core:data")
+include(":core:designsystem")
 include(":core:strings")
 
 file("features")
