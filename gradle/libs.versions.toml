@@ -10,20 +10,25 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose = "1.13.0"
 kotlin = "2.3.21"
+# TODO(compose-bom): Drop `compose` and re-let the BOM resolve foundation/ui once a published
+# compose-bom ships foundation-layout 1.12.x (BOM 2026.05.00 still pins 1.11.1). Expected in
+# the next monthly BOM (~2026.06). When you bump composeBom, delete the `compose` version key
+# below and remove every `version.ref = "compose"` from the foundation/ui library entries.
 composeBom = "2026.05.00"
+compose = "1.12.0-alpha02"
 koin = "4.2.1"
 navigation3 = "1.1.1"
-spotless = "8.4.0"
+spotless = "8.5.1"
 composeUnstyled = "1.49.9"
-ktor = "3.4.3"
+ktor = "3.5.0"
 kotlinxSerializationJson = "1.11.0"
 datastore = "1.2.1"
 mockk = "1.14.9"
-coroutines = "1.10.2"
+coroutines = "1.11.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
 coil = "2.7.0"
-readium = "3.1.2"
+readium = "3.2.0"
 desugarJdkLibs = "2.1.5"
 androidxFragment = "1.8.9"
 
@@ -36,12 +41,13 @@ androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecyc
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
-androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
-androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
-androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
-androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "compose" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "compose" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "compose" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version.ref = "compose" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview", version.ref = "compose" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest", version.ref = "compose" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4", version.ref = "compose" }
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
 androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycleRuntimeKtx" }
