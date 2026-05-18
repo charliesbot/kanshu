@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.core.library
 
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
 import com.charliesbot.kanshu.core.connection.KavitaCredentials
+import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.ChapterDto
@@ -36,11 +37,13 @@ class BookRepositoryImplTest {
   private val credentialsRepository: CredentialsRepository = mockk()
   private val api: KavitaApi = mockk()
   private lateinit var booksDir: File
+  private lateinit var bookDao: FakeBookDao
 
   @Before
   fun setUp() {
     booksDir = Files.createTempDirectory("kanshu-books-test").toFile()
     coEvery { credentialsRepository.credentials } returns flowOf(credentials)
+    bookDao = FakeBookDao()
   }
 
   @After
@@ -53,8 +56,37 @@ class BookRepositoryImplTest {
       credentialsRepository = credentialsRepository,
       api = api,
       booksDir = booksDir,
+      bookDao = bookDao,
       downloadScope = scope,
     )
+
+  private fun item(id: Int, title: String = "Title"): LibraryItem =
+    LibraryItem(id = id, title = title, coverUrl = null)
+
+  // Seeds a downloaded row in the fake DAO plus a real file on disk, the way a successful
+  // download would have left things. Tests use this to set up "already downloaded" state.
+  private fun seedDownloaded(seriesId: Int, title: String = "Title"): File {
+    val file = File(booksDir, "$seriesId.epub")
+    file.writeBytes(byteArrayOf(0x1))
+    bookDao =
+      FakeBookDao(
+        initial =
+          mapOf(
+            "kavita:$seriesId" to
+              BookEntity(
+                id = "kavita:$seriesId",
+                source = "kavita",
+                sourceItemId = seriesId.toString(),
+                title = title,
+                localPath = file.absolutePath,
+                byteSize = file.length(),
+                downloadedAt = 1000L,
+                lastOpenedAt = null,
+              )
+          )
+      )
+    return file
+  }
 
   @Test
   fun `observeBooks overlays download state on the snapshot`() = runTest {
@@ -63,7 +95,7 @@ class BookRepositoryImplTest {
         SeriesDto(id = 1, name = "A", coverImage = null),
         SeriesDto(id = 2, name = "B", coverImage = null),
       )
-    File(booksDir, "1.epub").writeBytes(byteArrayOf(0x1))
+    seedDownloaded(1, "A")
 
     val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
 
@@ -74,9 +106,8 @@ class BookRepositoryImplTest {
   }
 
   @Test
-  fun `fileFor returns the file when present`() = runTest {
-    val target = File(booksDir, "42.epub")
-    target.writeBytes(byteArrayOf(0xA))
+  fun `fileFor returns the file when DAO and disk agree`() = runTest {
+    val target = seedDownloaded(42)
     val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
 
     assertEquals(target.absolutePath, repo.fileFor(42)?.absolutePath)
@@ -84,7 +115,31 @@ class BookRepositoryImplTest {
   }
 
   @Test
-  fun `download writes the file and ends in Downloaded`() = runTest {
+  fun `fileFor returns null when DAO points at a missing file`() = runTest {
+    // DAO row claims a download but the file is gone (e.g., user-side wipe between sessions).
+    bookDao =
+      FakeBookDao(
+        initial =
+          mapOf(
+            "kavita:42" to
+              BookEntity(
+                id = "kavita:42",
+                source = "kavita",
+                sourceItemId = "42",
+                title = "Title",
+                localPath = "/nonexistent/42.epub",
+                byteSize = 1L,
+                downloadedAt = 1000L,
+                lastOpenedAt = null,
+              )
+          )
+      )
+    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+    assertNull(repo.fileFor(42))
+  }
+
+  @Test
+  fun `download writes the file and inserts a books row`() = runTest {
     val dispatcher = StandardTestDispatcher(testScheduler)
     val scope = TestScope(dispatcher)
     coEvery { api.listSeries(any(), any(), any(), any()) } returns
@@ -105,17 +160,22 @@ class BookRepositoryImplTest {
       }
 
     val repo = repo(scope)
-    repo.download(9)
+    repo.download(item(9, "X"))
     scope.advanceUntilIdle()
 
-    assertTrue(File(booksDir, "9.epub").exists())
+    val finalFile = File(booksDir, "9.epub")
+    assertTrue(finalFile.exists())
     assertFalse(File(booksDir, "9.epub.tmp").exists())
+    val row = bookDao.snapshot()["kavita:9"]
+    assertNotNull(row)
+    assertEquals(finalFile.absolutePath, row?.localPath)
+    assertEquals("X", row?.title)
     val result = repo.observeBooks().first() as LibraryResult.Success
     assertEquals(DownloadState.Downloaded, result.items.single { it.id == 9 }.downloadState)
   }
 
   @Test
-  fun `download failure leaves no final file and resets state`() = runTest {
+  fun `download failure inserts no row and resets state`() = runTest {
     val scope = TestScope(StandardTestDispatcher(testScheduler))
     coEvery { api.listSeries(any(), any(), any(), any()) } returns
       listOf(SeriesDto(id = 9, name = "X", coverImage = null))
@@ -125,11 +185,12 @@ class BookRepositoryImplTest {
       KavitaException.NetworkError
 
     val repo = repo(scope)
-    repo.download(9)
+    repo.download(item(9))
     scope.advanceUntilIdle()
 
     assertFalse(File(booksDir, "9.epub").exists())
     assertFalse(File(booksDir, "9.epub.tmp").exists())
+    assertNull(bookDao.snapshot()["kavita:9"])
     val result = repo.observeBooks().first() as LibraryResult.Success
     assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 9 }.downloadState)
   }
@@ -137,11 +198,11 @@ class BookRepositoryImplTest {
   @Test
   fun `download is a no-op when already downloaded`() = runTest {
     val scope = TestScope(StandardTestDispatcher(testScheduler))
-    File(booksDir, "9.epub").writeBytes(byteArrayOf(0x1))
+    seedDownloaded(9)
     coEvery { api.listSeries(any(), any(), any(), any()) } returns emptyList()
 
     val repo = repo(scope)
-    repo.download(9)
+    repo.download(item(9))
     scope.advanceUntilIdle()
 
     // listVolumes/downloadChapter never set up — the test would fail with a missing mock if the
@@ -149,31 +210,54 @@ class BookRepositoryImplTest {
   }
 
   @Test
-  fun `delete removes the file and clears state`() = runTest {
+  fun `delete removes the file and clears the row`() = runTest {
     val scope = TestScope(StandardTestDispatcher(testScheduler))
-    val target = File(booksDir, "9.epub")
-    target.writeBytes(byteArrayOf(0x1))
+    val target = seedDownloaded(9)
     coEvery { api.listSeries(any(), any(), any(), any()) } returns
       listOf(SeriesDto(id = 9, name = "X", coverImage = null))
 
     val repo = repo(scope)
     repo.delete(9)
+    scope.advanceUntilIdle()
 
     assertFalse(target.exists())
+    val row = bookDao.snapshot()["kavita:9"]
+    // Row is kept (reading state may still be valuable) but its download metadata is null.
+    assertNotNull(row)
+    assertNull(row?.localPath)
     val result = repo.observeBooks().first() as LibraryResult.Success
     assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 9 }.downloadState)
   }
 
   @Test
-  fun `scan ignores tmp files`() = runTest {
-    File(booksDir, "9.epub.tmp").writeBytes(byteArrayOf(0x1))
+  fun `reconciliation nulls localPath when the file is missing`() = runTest {
+    bookDao =
+      FakeBookDao(
+        initial =
+          mapOf(
+            "kavita:7" to
+              BookEntity(
+                id = "kavita:7",
+                source = "kavita",
+                sourceItemId = "7",
+                title = "Ghost",
+                localPath = File(booksDir, "ghost.epub").absolutePath,
+                byteSize = 1L,
+                downloadedAt = 1000L,
+                lastOpenedAt = null,
+              )
+          )
+      )
     coEvery { api.listSeries(any(), any(), any(), any()) } returns
-      listOf(SeriesDto(id = 9, name = "X", coverImage = null))
+      listOf(SeriesDto(id = 7, name = "Ghost", coverImage = null))
 
-    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+    val scope = TestScope(StandardTestDispatcher(testScheduler))
+    val repo = repo(scope)
+    scope.advanceUntilIdle() // let reconcileDownloads run
 
+    assertNull(bookDao.snapshot()["kavita:7"]?.localPath)
     val result = repo.observeBooks().first() as LibraryResult.Success
-    assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 9 }.downloadState)
+    assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 7 }.downloadState)
   }
 
   @Test

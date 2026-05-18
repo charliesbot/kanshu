@@ -1,4 +1,8 @@
-plugins { alias(libs.plugins.android.library) }
+plugins {
+  alias(libs.plugins.android.library)
+  alias(libs.plugins.ksp)
+  alias(libs.plugins.androidx.room)
+}
 
 android {
   namespace = "com.charliesbot.kanshu.core.data"
@@ -20,6 +24,10 @@ android {
   testOptions { unitTests { isReturnDefaultValues = true } }
 }
 
+// Schema JSONs are checked in. Bumping KanshuDatabase.version writes a new file here that future
+// migrations are validated against.
+room { schemaDirectory("$projectDir/schemas") }
+
 dependencies {
   coreLibraryDesugaring(libs.android.desugar.jdk.libs)
   api(project(":core:model"))
@@ -33,6 +41,9 @@ dependencies {
   implementation(libs.ktor.serialization.kotlinx.json)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.room.ktx)
+  ksp(libs.androidx.room.compiler)
   // Reader source returns a Readium Publication — `api` so consumers (the reader feature) see
   // the type without re-declaring readium-shared. Streamer is implementation-only; only the
   // KavitaReaderSource calls it.
@@ -47,4 +58,6 @@ dependencies {
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.rules)
   androidTestImplementation(libs.mockk.android)
+  androidTestImplementation(libs.androidx.room.testing)
+  androidTestImplementation(libs.kotlinx.coroutines.test)
 }
