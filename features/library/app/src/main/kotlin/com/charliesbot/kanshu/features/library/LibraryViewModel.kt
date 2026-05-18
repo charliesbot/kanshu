@@ -62,7 +62,7 @@ class LibraryViewModel(
 
   fun onItemTap(item: LibraryItem) {
     when (item.downloadState) {
-      DownloadState.NotDownloaded -> downloadBook(item.id)
+      DownloadState.NotDownloaded -> downloadBook(item)
       is DownloadState.Downloading -> Unit
       DownloadState.Downloaded -> _navigate.tryEmit(item)
     }

@@ -11,13 +11,16 @@ interface BookRepository {
 
   // Fire-and-forget: starts a download in a repo-internal long-lived scope so navigating away
   // from the library doesn't cancel it. Idempotent — already-downloading or downloaded series
-  // are no-ops.
-  fun download(seriesId: Int)
+  // are no-ops. Takes the full LibraryItem so the local DB row can record the title; the UI
+  // already has the item in hand at tap time.
+  fun download(item: LibraryItem)
 
-  // Removes the local file. Safe to call on a not-downloaded series. No-op while a download is
-  // in flight (the UI gates this; the guard is defensive).
+  // Removes the local file and clears the DB row's download metadata. Safe to call on a
+  // not-downloaded series. No-op while a download is in flight (the UI gates this; the guard
+  // is defensive).
   fun delete(seriesId: Int)
 
-  // Returns the on-disk EPUB for a downloaded series, or null. Used by the reader source.
-  fun fileFor(seriesId: Int): File?
+  // Returns the on-disk EPUB for a downloaded series, or null. Suspend because the lookup
+  // hits the DB now — the FS is no longer authoritative for "is this downloaded."
+  suspend fun fileFor(seriesId: Int): File?
 }

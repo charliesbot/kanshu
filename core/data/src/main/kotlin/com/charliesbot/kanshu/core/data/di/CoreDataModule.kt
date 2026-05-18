@@ -1,10 +1,12 @@
 package com.charliesbot.kanshu.core.data.di
 
+import androidx.room.Room
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
 import com.charliesbot.kanshu.core.connection.CredentialsRepositoryImpl
 import com.charliesbot.kanshu.core.connection.kavitaCredentialsDataStore
+import com.charliesbot.kanshu.core.database.KanshuDatabase
 import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.KavitaApiImpl
 import com.charliesbot.kanshu.core.library.BookRepository
@@ -29,11 +31,18 @@ val coreDataModule = module {
   single { androidContext().kavitaCredentialsDataStore }
   single<KeyCipher> { KavitaApiKeyCipher() }
   single<CredentialsRepository> { CredentialsRepositoryImpl(get(), get()) }
+  single {
+    Room.databaseBuilder(androidContext(), KanshuDatabase::class.java, KanshuDatabase.NAME).build()
+  }
+  single { get<KanshuDatabase>().bookDao() }
+  single { get<KanshuDatabase>().readingProgressDao() }
+  single { get<KanshuDatabase>().annotationDao() }
   single<BookRepository> {
     BookRepositoryImpl(
       credentialsRepository = get(),
       api = get(),
       booksDir = File(androidContext().filesDir, "books"),
+      bookDao = get(),
     )
   }
   factory { LoadLibraryUseCase(get()) }

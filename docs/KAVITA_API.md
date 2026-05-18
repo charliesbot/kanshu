@@ -82,15 +82,77 @@ Optional pre-flight: `GET /api/Download/chapter-size?chapterId={id}` returns the
 
 `number` on `ChapterDto` is deprecated. Use `minNumber`, `maxNumber`, or `sortOrder`.
 
+## Reading progress sync — `/api/Reader/progress` (POST) and `/api/Reader/get-progress` (GET)
+
+POST body and GET response are both `ProgressDto`:
+
+```
+ProgressDto {
+  volumeId      : int        // required
+  chapterId     : int        // required
+  pageNum       : int        // required — Kavita's server-side chapter page index
+  seriesId      : int        // required
+  libraryId     : int        // required
+  bookScrollId  : string?    // EPUB anchor id for in-page position
+  lastModifiedUtc : date-time
+}
+```
+
+GET takes `?chapterId=`. Auxiliary: `/api/Reader/has-progress?seriesId=` returns `bool`; `/api/Reader/first-progress-date?userId=` returns a timestamp.
+
+**Locator format mismatch — read this before touching sync code.** Kavita stores `pageNum + bookScrollId`, not a Readium locator. Kanshu's reader emits Readium `Locator`s. Pushing up means deriving a best-effort `pageNum` (from `totalProgression`) and a `bookScrollId` (from the nearest id'd element to the user's position in the rendered DOM). Pulling down means looking up the element by `bookScrollId` and reconstructing a `Locator`. The conversion is structurally lossy:
+
+- Kavita's `pageNum` depends on Kavita's render width/font — it's not portable across renderers. Treat it as a hint, not a truth.
+- `bookScrollId` precision depends on the EPUB's id authoring (paragraph-level ids → good; chapter-level ids → land at the top of the section).
+- `progression` (0..1) is the only field that round-trips cleanly between renderers — use it as the comparable when implementing conflict resolution.
+
+Local source of truth on Kanshu is the Readium locator. The Kavita-shaped projection (chapterId, seriesId, volumeId, libraryId, pageNum, bookScrollId) is written by the Kavita provider into `reading_progress.sync_metadata` — an opaque JSON column the schema does not interpret. Pulling from Kavita is best-effort: apply the locator only if we can resolve `bookScrollId`; otherwise keep the local position. The `sync_metadata` column is deliberately schemaless so a future provider can store its own shape without a migration — see `ReadingProgressEntity` for the rationale.
+
+## Annotations (highlights + notes) — `/api/Annotation/*`
+
+Kavita supports text annotations as a first-class API. **Highlights and notes are the same entity** — an annotation is always anchored to a selection (xPath is required) and optionally carries a comment.
+
+Endpoints:
+
+- `POST /api/Annotation/create` — body `AnnotationDto`, returns the created `AnnotationDto`
+- `POST /api/Annotation/update` — modify spoiler flag, highlight slot, and comment fields
+- `DELETE /api/Annotation?annotationId=` — delete
+- `GET /api/Annotation/{id}` — by id
+- `GET /api/Annotation/all?chapterId=` — list for a chapter
+- `GET /api/Annotation/all-for-series?seriesId=` — list across a series
+
+Plus filter/export/like endpoints we don't use.
+
+`AnnotationDto` key fields:
+
+```
+xPath, endingXPath   : string    // DOM range, REQUIRED — Kavita uses XPath not Readium locators
+selectedText         : string    // the highlighted text
+comment              : string?   // the note body (and commentHtml/commentPlainText variants)
+selectedSlotIndex    : int       // color slot
+containsSpoiler      : bool
+pageNumber           : int       // chapter page where the annotation lives
+chapterId/volumeId/
+seriesId/libraryId   : int       // required, scoping
+ownerUserId          : int       // server-derived from the api key
+createdUtc           : date-time
+```
+
+**Cannot model "note without a highlight"** — `xPath` is required server-side. If we want local-only freeform notes, that's a separate construct that can't sync to Kavita.
+
+Same xPath-vs-Readium-locator mismatch as progress. The conversion (Readium `Locator.locations.domRange` ↔ XPath start/end) is mechanical DOM traversal but real work; lands in the sync layer, not the data layer.
+
 ## Endpoints we don't use yet
 
 Listed so we don't re-evaluate them every time.
 
 - **`POST /api/Plugin/authenticate`** — JWT exchange. Not needed; `x-api-key` covers our endpoints.
 - **`GET /api/Plugin/version?apiKey=`** — legacy plugin handshake. Logs unauthorized hits to the security log; don't probe it for connection tests.
-- **`/api/Reader/*` (streaming)** — server-side paginated reading. Kanshu renders EPUBs locally, so we download the file and skip these.
-- **`/api/Reader/progress`, `/api/Reader/mark-*`** — reading progress sync. On the post-Phase-0 roadmap; works with `x-api-key` when we get there.
+- **`/api/Reader/*` (streaming)** — server-side paginated reading (`/api/Reader/pdf`, `/api/Reader/image`, `getBookPage`). Kanshu renders EPUBs locally with Readium, so we download the file and skip these. Inkita uses this pipeline; we explicitly don't because it breaks the offline-first and source-agnostic goals in the PRD.
+- **`/api/Reader/mark-*`** — mark read/unread. Useful for batch ops post-Phase-0.
+- **`/api/Reader/*-bookmarks`** — Kavita's bookmark feature is page-image bookmarks for manga/comics, not EPUB text annotations. Wrong tool for our use case.
 - **`POST /api/Series/v2`** — per-library filtered listing. Useful later if we add library-scoped views; for now `all-v2` is enough.
+- **`/api/Koreader/{apiKey}/syncs/progress`** — KOReader sync compatibility shim. Uses `ebookHash` as identity and a simpler payload. We have full access to the native endpoints; no reason to use the shim.
 - **`/api/Health`** — unauthenticated Docker liveness probe. Useless for our purposes; documented above as a footgun.
 
 ## Footguns reference
@@ -108,3 +170,6 @@ Quick scannable list of the gotchas already covered above:
 - `Download/chapter` returns `application/epub+zip` for single-file chapters and `application/zip` for multi-file ones — inspect `Content-Type`.
 - `ChapterDto.number` is deprecated — use `minNumber` / `maxNumber` / `sortOrder`.
 - Prefer `-v2` paths; non-v2 variants are often deprecated.
+- Kavita stores progress as `pageNum + bookScrollId` (its own pagination) and annotations as XPath — neither is wire-compatible with Readium locators. Conversion is lossy; treat `progression` (0..1) as the only comparable that round-trips cleanly.
+- `AnnotationDto.xPath` is required — there is no way to sync a freeform "note without a highlight" to Kavita.
+- `/api/Reader/bookmark*` is for manga page-image bookmarks, not EPUB text — don't confuse it with `/api/Annotation/*`.

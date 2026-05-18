@@ -122,9 +122,10 @@ class LibraryViewModelTest {
     val viewModel = viewModel()
     advanceUntilIdle()
 
-    viewModel.onItemTap(LibraryItem(id = 5, title = "X", coverUrl = null))
+    val item = LibraryItem(id = 5, title = "X", coverUrl = null)
+    viewModel.onItemTap(item)
 
-    verify { downloadBook(5) }
+    verify { downloadBook(item) }
   }
 
   @Test
