@@ -23,7 +23,7 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.foundation)
   implementation(libs.androidx.compose.ui.tooling.preview)
-  api(libs.composeunstyled)
+  api(libs.composeunstyled.button)
   implementation(libs.coil.compose)
   debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -20,7 +20,6 @@ dependencies {
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.foundation)
-  implementation(libs.composeunstyled)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.koin.compose)

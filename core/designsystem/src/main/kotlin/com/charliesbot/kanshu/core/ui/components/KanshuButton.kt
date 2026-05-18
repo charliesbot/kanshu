@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.core.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -52,12 +55,13 @@ fun KanshuButton(
   CompositionLocalProvider(LocalKanshuContentColor provides contentColor) {
     UnstyledButton(
       onClick = onClick,
-      modifier = modifier.heightIn(min = 48.dp),
+      modifier =
+        modifier
+          .heightIn(min = 48.dp)
+          .clip(KanshuTheme.shapes.button)
+          .background(backgroundColor)
+          .border(1.dp, borderColor, KanshuTheme.shapes.button),
       enabled = enabled,
-      shape = KanshuTheme.shapes.button,
-      backgroundColor = backgroundColor,
-      borderColor = borderColor,
-      borderWidth = 1.dp,
       contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
       interactionSource = interactionSource,
     ) {

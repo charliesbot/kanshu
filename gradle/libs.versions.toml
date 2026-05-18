@@ -19,7 +19,7 @@ compose = "1.12.0-alpha02"
 koin = "4.2.1"
 navigation3 = "1.1.1"
 spotless = "8.5.1"
-composeUnstyled = "1.49.9"
+composeUnstyled = "2.2.0"
 ktor = "3.5.0"
 kotlinxSerializationJson = "1.11.0"
 datastore = "1.2.1"
@@ -53,7 +53,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
 androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycleRuntimeKtx" }
-composeunstyled = { group = "com.composables", name = "composeunstyled", version.ref = "composeUnstyled" }
+composeunstyled-button = { group = "com.composables", name = "composeunstyled-button", version.ref = "composeUnstyled" }
 koin-android = { group = "io.insert-koin", name = "koin-android" }
 koin-bom = { group = "io.insert-koin", name = "koin-bom", version.ref = "koin" }
 koin-compose = { group = "io.insert-koin", name = "koin-compose" }

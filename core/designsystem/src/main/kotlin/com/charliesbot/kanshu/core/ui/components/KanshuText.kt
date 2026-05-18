@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.ui.components
 
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -8,7 +9,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.core.ui.theme.LocalKanshuContentColor
-import com.composeunstyled.UnstyledText
 
 // Theme-aware text primitive. Mirrors what Material's `Text` does over `BasicText`: if the given
 // style has no color (Color.Unspecified), fall back to LocalKanshuContentColor — which
@@ -30,7 +30,7 @@ fun KanshuText(
     if (textAlign != null) s = s.copy(textAlign = textAlign)
     s
   }
-  UnstyledText(
+  BasicText(
     text = text,
     modifier = modifier,
     style = resolvedStyle,
