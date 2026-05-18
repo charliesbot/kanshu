@@ -108,6 +108,47 @@ GET takes `?chapterId=`. Auxiliary: `/api/Reader/has-progress?seriesId=` returns
 
 Local source of truth on Kanshu is the Readium locator. The Kavita-shaped projection (chapterId, seriesId, volumeId, libraryId, pageNum, bookScrollId) is written by the Kavita provider into `reading_progress.sync_metadata` — an opaque JSON column the schema does not interpret. Pulling from Kavita is best-effort: apply the locator only if we can resolve `bookScrollId`; otherwise keep the local position. The `sync_metadata` column is deliberately schemaless so a future provider can store its own shape without a migration — see `ReadingProgressEntity` for the rationale.
 
+## kosync — `/api/Koreader/{apiKey}/syncs/progress`
+
+Kavita implements the KOReader sync server protocol as an alternative pathway into the same progress storage the native `/api/Reader/progress` writes. Verified by reading Kavita's server source (`KoreaderController`, `KoreaderService`, `KoreaderHelper`).
+
+```
+PUT /api/Koreader/{apiKey}/syncs/progress
+Body (KoreaderBookDto):
+  document    : string   // ebook content hash — identifies the book
+  device_id   : string
+  device      : string
+  percentage  : float    // 0..1
+  progress    : string   // XPointer, e.g. "/body/DocFragment[10]/body/section/p[3].0"
+  timestamp   : int64    // epoch seconds
+
+GET /api/Koreader/{apiKey}/syncs/progress/{ebookHash}
+Returns the same shape.
+```
+
+### How it relates to /api/Reader/progress
+
+Both endpoints write to the same `AppUserProgress` row. The kosync controller translates the XPointer into Kavita's `ProgressDto` (pageNum + bookScrollId) and calls the same `SaveReadingProgress` as the native endpoint. On GET, it reconstructs an XPointer from the stored pageNum/scrollId. So:
+
+- The web reader writes via `/api/Reader/progress` (not kosync directly).
+- A kosync GET returns whatever the web reader stored, translated to XPointer.
+- A kosync PUT updates the row the web reader reads from.
+
+### Precision
+
+The XPointer wire format can carry character offsets (`/path/text().42`), but Kavita's storage is element-level — `bookScrollId` is the xpath tail only. Character offsets are **dropped on PUT** and **always reconstructed as `.0` on GET**. So kosync and the native endpoint give the same effective precision when synced via a Kavita server. Against a non-Kavita kosync server (a self-hosted kosync instance, KOReader's official server), the full XPointer round-trips.
+
+### Why kosync is the better choice for our source-agnostic goal
+
+- **Identity is `HashContents(file)`** — a custom partial-MD5 reading 1KB chunks at offsets `1024 << 2i` for i ∈ [-1, 10] (so ~10KB total, capped). The same EPUB pulled from Kavita today and sideloaded locally tomorrow hashes to the same `document`. Native progress is keyed by Kavita series/chapter ids, which don't survive across sources.
+- **XPointer maps to Readium `Locator.domRange` mechanically.** Same conceptual shape: element selector + child position. Cleaner conversion than "find the nearest id'd element" for `bookScrollId`.
+- **Cross-reader.** KOReader, Plato, Foliate, and other kosync-compatible clients sync against the same row when pointed at Kavita.
+
+### Cost of going kosync
+
+- We have to compute the kosync hash ourselves, bit-for-bit matching KOReader's (and therefore Kavita's) algorithm. See `KoreaderHelper.HashContents` for the reference implementation. Not hard, just needs verification.
+- The auth model uses `apiKey` in the URL path (Kavita's variant). Standard kosync uses hashed username+password headers. We support Kavita today; if we ever point at a non-Kavita kosync server, that's another auth path to handle.
+
 ## Annotations (highlights + notes) — `/api/Annotation/*`
 
 Kavita supports text annotations as a first-class API. **Highlights and notes are the same entity** — an annotation is always anchored to a selection (xPath is required) and optionally carries a comment.
@@ -152,7 +193,7 @@ Listed so we don't re-evaluate them every time.
 - **`/api/Reader/mark-*`** — mark read/unread. Useful for batch ops post-Phase-0.
 - **`/api/Reader/*-bookmarks`** — Kavita's bookmark feature is page-image bookmarks for manga/comics, not EPUB text annotations. Wrong tool for our use case.
 - **`POST /api/Series/v2`** — per-library filtered listing. Useful later if we add library-scoped views; for now `all-v2` is enough.
-- **`/api/Koreader/{apiKey}/syncs/progress`** — KOReader sync compatibility shim. Uses `ebookHash` as identity and a simpler payload. We have full access to the native endpoints; no reason to use the shim.
+- **`/api/Koreader/{apiKey}/syncs/progress`** — kosync-compatible endpoint. See the section below before assuming it's "just a shim"; it's a real alternative protocol with materially better identity semantics for our source-agnostic goals.
 - **`/api/Health`** — unauthenticated Docker liveness probe. Useless for our purposes; documented above as a footgun.
 
 ## Footguns reference
@@ -173,3 +214,5 @@ Quick scannable list of the gotchas already covered above:
 - Kavita stores progress as `pageNum + bookScrollId` (its own pagination) and annotations as XPath — neither is wire-compatible with Readium locators. Conversion is lossy; treat `progression` (0..1) as the only comparable that round-trips cleanly.
 - `AnnotationDto.xPath` is required — there is no way to sync a freeform "note without a highlight" to Kavita.
 - `/api/Reader/bookmark*` is for manga page-image bookmarks, not EPUB text — don't confuse it with `/api/Annotation/*`.
+- `/api/Koreader/*` is **not just a shim** — it writes to the same progress row as the web reader does via `/api/Reader/progress`, and gives us source-agnostic identity via file hash. See the kosync section above.
+- XPointer character offsets (the `.42` suffix) are **dropped by Kavita on PUT and always `.0` on GET**. Against a Kavita server, kosync and native progress have the same effective precision.
