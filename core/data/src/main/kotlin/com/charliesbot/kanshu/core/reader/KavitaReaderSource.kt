@@ -17,40 +17,40 @@ private const val TAG = "KavitaReaderSource"
 // triggers a network fetch — by the time we navigate, the file is on disk (the library screen
 // gates tap-to-open on Downloaded state).
 class KavitaReaderSource(private val context: Context, private val books: BookRepository) :
-  ReaderSource {
-  private val httpClient by lazy { DefaultHttpClient() }
-  private val retriever by lazy { AssetRetriever(context.contentResolver, httpClient) }
-  private val parser by lazy { EpubParser() }
+    ReaderSource {
+    private val httpClient by lazy { DefaultHttpClient() }
+    private val retriever by lazy { AssetRetriever(context.contentResolver, httpClient) }
+    private val parser by lazy { EpubParser() }
 
-  override suspend fun openBook(seriesId: Int): ReaderResult =
-    withContext(Dispatchers.IO) {
-      val file = books.fileFor(seriesId) ?: return@withContext ReaderResult.Error.NotFound
+    override suspend fun openBook(seriesId: Int): ReaderResult =
+        withContext(Dispatchers.IO) {
+            val file = books.fileFor(seriesId) ?: return@withContext ReaderResult.Error.NotFound
 
-      val asset =
-        try {
-          retriever.retrieve(file.toUrl()).getOrNull()
-            ?: return@withContext ReaderResult.Error.ReadFailed
-        } catch (e: CancellationException) {
-          throw e
-        } catch (e: Exception) {
-          Log.w(TAG, "AssetRetriever failed", e)
-          return@withContext ReaderResult.Error.ReadFailed
+            val asset =
+                try {
+                    retriever.retrieve(file.toUrl(isDirectory = false)).getOrNull()
+                        ?: return@withContext ReaderResult.Error.ReadFailed
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "AssetRetriever failed", e)
+                    return@withContext ReaderResult.Error.ReadFailed
+                }
+
+            val builder =
+                try {
+                    parser.parse(asset, warnings = null).getOrNull()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "EpubParser failed", e)
+                    null
+                }
+
+            if (builder == null) {
+                asset.close()
+                return@withContext ReaderResult.Error.ParseFailed
+            }
+            ReaderResult.Success(builder.build())
         }
-
-      val builder =
-        try {
-          parser.parse(asset, warnings = null).getOrNull()
-        } catch (e: CancellationException) {
-          throw e
-        } catch (e: Exception) {
-          Log.w(TAG, "EpubParser failed", e)
-          null
-        }
-
-      if (builder == null) {
-        asset.close()
-        return@withContext ReaderResult.Error.ParseFailed
-      }
-      ReaderResult.Success(builder.build())
-    }
 }

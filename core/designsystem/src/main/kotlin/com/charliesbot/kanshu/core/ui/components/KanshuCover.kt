@@ -39,7 +39,7 @@ fun KanshuCover(
       AsyncImage(
         model = imageUrl,
         contentDescription = contentDescription,
-        contentScale = ContentScale.Fit,
+        contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxWidth(),
       )
     } else {
