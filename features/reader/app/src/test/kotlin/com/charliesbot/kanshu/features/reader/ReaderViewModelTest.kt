@@ -2,9 +2,12 @@ package com.charliesbot.kanshu.features.reader
 
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.core.sync.InitialPosition
+import com.charliesbot.kanshu.core.sync.SyncRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -26,6 +29,11 @@ class ReaderViewModelTest {
 
   private val testDispatcher = StandardTestDispatcher()
   private val openBook: OpenBookUseCase = mockk()
+  private val sync: SyncRepository =
+    mockk(relaxed = true) {
+      coEvery { resolveInitialPosition(any(), any(), any()) } returns InitialPosition.UseLocal(null)
+    }
+  private val fakeFile = File("/dev/null/fake.epub")
 
   @Before
   fun setUp() {
@@ -47,9 +55,9 @@ class ReaderViewModelTest {
   @Test
   fun `success result becomes Ready with title and factory`() = runTest {
     val publication = fakePublication(title = "A Book")
-    coEvery { openBook(any()) } returns ReaderResult.Success(publication)
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
 
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
     advanceUntilIdle()
 
     val state = viewModel.uiState.value
@@ -62,7 +70,7 @@ class ReaderViewModelTest {
   @Test
   fun `parse failed result becomes ParseFailed state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.ParseFailed
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.ParseFailed, viewModel.uiState.value)
   }
@@ -70,7 +78,7 @@ class ReaderViewModelTest {
   @Test
   fun `read failed result becomes ReadFailed state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.ReadFailed
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.ReadFailed, viewModel.uiState.value)
   }
@@ -78,7 +86,7 @@ class ReaderViewModelTest {
   @Test
   fun `not found result becomes NotFound state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.NotFound
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook)
+    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
   }

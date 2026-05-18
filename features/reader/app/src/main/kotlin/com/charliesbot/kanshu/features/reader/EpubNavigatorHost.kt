@@ -21,6 +21,7 @@ import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
 
 // Hosts Readium's EpubNavigatorFragment inside Compose. The Fragment owns paginated rendering
@@ -39,6 +40,7 @@ fun EpubNavigatorHost(
   factory: EpubNavigatorFactory,
   onNavigatorReady: (EpubNavigatorFragment) -> Unit,
   onCenterTap: () -> Unit,
+  initialLocator: Locator? = null,
   modifier: Modifier = Modifier,
 ) {
   val activity = LocalActivity.current as? FragmentActivity ?: return
@@ -61,7 +63,7 @@ fun EpubNavigatorHost(
     }
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
-        initialLocator = null,
+        initialLocator = initialLocator,
         initialPreferences = EpubTypography.initialPreferences,
         listener = NoopNavigatorListener,
         configuration = EpubTypography.fragmentConfiguration,

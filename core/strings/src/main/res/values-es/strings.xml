@@ -42,4 +42,11 @@
     <string name="reader_overlay_more">Más opciones</string>
     <string name="reader_overlay_previous_chapter">Capítulo anterior</string>
     <string name="reader_overlay_next_chapter">Capítulo siguiente</string>
+    <string name="reader_overlay_sync_to_furthest">Sincronizar con el punto más avanzado</string>
+    <string name="reader_sync_already_at_furthest">Ya estás en el punto más avanzado</string>
+    <string name="reader_sync_prompt_title">¿Continuar desde otro dispositivo?</string>
+    <string name="reader_sync_prompt_body_with_device">%1$s ha leído hasta el %2$d %%. ¿Aplicar esta posición?</string>
+    <string name="reader_sync_prompt_body_no_device">Otro dispositivo ha leído hasta el %1$d %%. ¿Aplicar esta posición?</string>
+    <string name="reader_sync_prompt_apply">Aplicar</string>
+    <string name="reader_sync_prompt_stay">Quedarme aquí</string>
 </resources>
