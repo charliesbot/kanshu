@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.core.data.di
 
+import android.os.Build
+import android.provider.Settings
 import androidx.room.Room
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
@@ -20,6 +22,11 @@ import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.security.KavitaApiKeyCipher
 import com.charliesbot.kanshu.core.security.KeyCipher
+import com.charliesbot.kanshu.core.sync.DeviceIdentity
+import com.charliesbot.kanshu.core.sync.KavitaProgressSync
+import com.charliesbot.kanshu.core.sync.ProgressSync
+import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.core.sync.SyncRepositoryImpl
 import java.io.File
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
@@ -50,4 +57,15 @@ val coreDataModule = module {
   factory { DeleteDownloadUseCase(get()) }
   single<ReaderSource> { KavitaReaderSource(androidContext(), get()) }
   factory { OpenBookUseCase(get()) }
+
+  single {
+    DeviceIdentity(
+      id =
+        Settings.Secure.getString(androidContext().contentResolver, Settings.Secure.ANDROID_ID)
+          ?: "unknown",
+      name = Build.MODEL ?: "Android",
+    )
+  }
+  single<ProgressSync> { KavitaProgressSync(api = get(), credentials = get(), device = get()) }
+  single<SyncRepository> { SyncRepositoryImpl(progressSync = get(), progressDao = get()) }
 }

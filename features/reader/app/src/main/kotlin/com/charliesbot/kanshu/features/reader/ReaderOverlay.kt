@@ -1,7 +1,9 @@
 package com.charliesbot.kanshu.features.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -19,7 +25,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.charliesbot.kanshu.core.ui.components.IconKanshuButton
+import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuIcon
 import com.charliesbot.kanshu.core.ui.components.KanshuText
@@ -37,11 +45,13 @@ fun ReaderOverlay(
   nextChapterEnabled: Boolean,
   onPrevChapter: () -> Unit,
   onNextChapter: () -> Unit,
+  onSyncToFurthest: () -> Unit,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  var moreMenuOpen by remember { mutableStateOf(false) }
   Column(modifier.fillMaxSize()) {
-    OverlayTopBar(title = title)
+    OverlayTopBar(title = title, onMoreOptions = { moreMenuOpen = true })
     KanshuDivider(thickness = 2.dp)
     Box(Modifier.fillMaxWidth().weight(1f).clickable(onClick = onDismiss))
     KanshuDivider(thickness = 2.dp)
@@ -51,6 +61,15 @@ fun ReaderOverlay(
       nextEnabled = nextChapterEnabled,
       onPrev = onPrevChapter,
       onNext = onNextChapter,
+    )
+  }
+  if (moreMenuOpen) {
+    MoreOptionsMenu(
+      onSyncToFurthest = {
+        moreMenuOpen = false
+        onSyncToFurthest()
+      },
+      onDismiss = { moreMenuOpen = false },
     )
   }
 }
@@ -66,7 +85,7 @@ private fun OverlayChromeBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun OverlayTopBar(title: String) {
+private fun OverlayTopBar(title: String, onMoreOptions: () -> Unit) {
   Column(Modifier.background(KanshuTheme.colors.background)) {
     OverlayChromeBar {
       Row(modifier = Modifier.weight(1f)) {
@@ -101,7 +120,7 @@ private fun OverlayTopBar(title: String) {
           contentDescription = stringResource(R.string.reader_overlay_search),
         )
       }
-      IconKanshuButton(onClick = {}) {
+      IconKanshuButton(onClick = onMoreOptions) {
         KanshuIcon(
           painter =
             painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.more_vert_24px),
@@ -163,6 +182,29 @@ private fun OverlayBottomBar(
   }
 }
 
+// The 3-dot menu surface. Using a Dialog (same pattern as BookOptionsDialog) keeps the chrome
+// minimal and consistent — a floating anchored popup would need its own primitives in the
+// design system, and the menu items are few enough that a centered card reads fine.
+@Composable
+private fun MoreOptionsMenu(onSyncToFurthest: () -> Unit, onDismiss: () -> Unit) {
+  Dialog(onDismissRequest = onDismiss) {
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(KanshuTheme.colors.background)
+          .border(1.dp, KanshuTheme.colors.border)
+          .padding(24.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      KanshuButton(
+        text = stringResource(R.string.reader_overlay_sync_to_furthest),
+        onClick = onSyncToFurthest,
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
+  }
+}
+
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun ReaderOverlayPreview() {
@@ -174,6 +216,7 @@ private fun ReaderOverlayPreview() {
       nextChapterEnabled = true,
       onPrevChapter = {},
       onNextChapter = {},
+      onSyncToFurthest = {},
       onDismiss = {},
     )
   }

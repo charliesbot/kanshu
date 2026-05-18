@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.features.reader
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -24,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.system.FullScreenMode
@@ -35,6 +38,7 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Locator
 
 // Reading mode defaults to zero persistent app UI per the PRD: system bars are hidden via
 // FullScreenMode for the lifetime of this screen, and pagination is driven by swipe gestures
@@ -51,6 +55,7 @@ fun ReaderScreen(
   FullScreenMode(enabled = !overlayVisible)
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val chapterState by viewModel.chapterState.collectAsStateWithLifecycle()
+  val remoteSuggestion by viewModel.remoteSuggestion.collectAsStateWithLifecycle()
   ReaderContent(
     uiState = uiState,
     fallbackTitle = title,
@@ -58,6 +63,12 @@ fun ReaderScreen(
     onOverlayVisibleChange = { overlayVisible = it },
     chapterState = chapterState,
     onLocatorChanged = viewModel::onLocatorChanged,
+    navigateTo = viewModel.navigateTo,
+    alreadyAtFurthest = viewModel.alreadyAtFurthest,
+    remoteSuggestion = remoteSuggestion,
+    onAcceptSuggestion = viewModel::acceptRemoteSuggestion,
+    onDismissSuggestion = viewModel::dismissRemoteSuggestion,
+    onSyncToFurthest = viewModel::syncToFurthestPageRead,
   )
 }
 
@@ -69,7 +80,13 @@ private fun ReaderContent(
   overlayVisible: Boolean,
   onOverlayVisibleChange: (Boolean) -> Unit,
   chapterState: ChapterState,
-  onLocatorChanged: (org.readium.r2.shared.publication.Locator) -> Unit,
+  onLocatorChanged: (Locator) -> Unit,
+  navigateTo: kotlinx.coroutines.flow.SharedFlow<Locator>,
+  alreadyAtFurthest: kotlinx.coroutines.flow.SharedFlow<Unit>,
+  remoteSuggestion: RemoteProgress?,
+  onAcceptSuggestion: () -> Unit,
+  onDismissSuggestion: () -> Unit,
+  onSyncToFurthest: () -> Unit,
 ) {
   KanshuScaffold {
     when (uiState) {
@@ -83,6 +100,12 @@ private fun ReaderContent(
           onOverlayVisibleChange = onOverlayVisibleChange,
           chapterState = chapterState,
           onLocatorChanged = onLocatorChanged,
+          navigateTo = navigateTo,
+          alreadyAtFurthest = alreadyAtFurthest,
+          remoteSuggestion = remoteSuggestion,
+          onAcceptSuggestion = onAcceptSuggestion,
+          onDismissSuggestion = onDismissSuggestion,
+          onSyncToFurthest = onSyncToFurthest,
         )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
@@ -102,16 +125,29 @@ private fun ReaderBody(
   overlayVisible: Boolean,
   onOverlayVisibleChange: (Boolean) -> Unit,
   chapterState: ChapterState,
-  onLocatorChanged: (org.readium.r2.shared.publication.Locator) -> Unit,
+  onLocatorChanged: (Locator) -> Unit,
+  navigateTo: kotlinx.coroutines.flow.SharedFlow<Locator>,
+  alreadyAtFurthest: kotlinx.coroutines.flow.SharedFlow<Unit>,
+  remoteSuggestion: RemoteProgress?,
+  onAcceptSuggestion: () -> Unit,
+  onDismissSuggestion: () -> Unit,
+  onSyncToFurthest: () -> Unit,
 ) {
   var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
   val scope = rememberCoroutineScope()
+  val context = LocalContext.current
+  val toastText = stringResource(R.string.reader_sync_already_at_furthest)
   LaunchedEffect(navigator) { navigator?.currentLocator?.collect(onLocatorChanged) }
+  LaunchedEffect(navigator) { navigateTo.collect { target -> navigator?.go(target) } }
+  LaunchedEffect(Unit) {
+    alreadyAtFurthest.collect { Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show() }
+  }
   Box(Modifier.fillMaxSize()) {
     EpubNavigatorHost(
       factory = uiState.factory,
       onNavigatorReady = { navigator = it },
       onCenterTap = { onOverlayVisibleChange(true) },
+      initialLocator = uiState.initialLocator,
       modifier =
         Modifier.fillMaxSize()
           .horizontalSwipeToPageTurn(
@@ -132,7 +168,15 @@ private fun ReaderBody(
         onNextChapter = {
           chapterState.nextLocator?.let { target -> scope.launch { navigator?.go(target) } }
         },
+        onSyncToFurthest = onSyncToFurthest,
         onDismiss = { onOverlayVisibleChange(false) },
+      )
+    }
+    if (remoteSuggestion != null) {
+      RemoteProgressPrompt(
+        suggestion = remoteSuggestion,
+        onApply = onAcceptSuggestion,
+        onDismiss = onDismissSuggestion,
       )
     }
   }
@@ -216,6 +260,12 @@ private fun ReaderScreenLoadingPreview() {
       onOverlayVisibleChange = {},
       chapterState = ChapterState.Empty,
       onLocatorChanged = {},
+      navigateTo = kotlinx.coroutines.flow.MutableSharedFlow(),
+      alreadyAtFurthest = kotlinx.coroutines.flow.MutableSharedFlow(),
+      remoteSuggestion = null,
+      onAcceptSuggestion = {},
+      onDismissSuggestion = {},
+      onSyncToFurthest = {},
     )
   }
 }
@@ -231,6 +281,12 @@ private fun ReaderScreenErrorPreview() {
       onOverlayVisibleChange = {},
       chapterState = ChapterState.Empty,
       onLocatorChanged = {},
+      navigateTo = kotlinx.coroutines.flow.MutableSharedFlow(),
+      alreadyAtFurthest = kotlinx.coroutines.flow.MutableSharedFlow(),
+      remoteSuggestion = null,
+      onAcceptSuggestion = {},
+      onDismissSuggestion = {},
+      onSyncToFurthest = {},
     )
   }
 }

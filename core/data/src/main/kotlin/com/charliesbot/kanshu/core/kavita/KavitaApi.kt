@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.kavita
 
 import android.util.Log
+import com.charliesbot.kanshu.core.kavita.dto.KoreaderBookDto
 import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.ServerInfoSlim
 import com.charliesbot.kanshu.core.kavita.dto.VolumeDto
@@ -55,6 +56,19 @@ interface KavitaApi {
     target: File,
     onProgress: (bytesSoFar: Long, totalBytes: Long?) -> Unit,
   )
+
+  // PUT the book's current reading position via Kavita's kosync-compatible endpoint. The apiKey
+  // is path-encoded (not a header) per the kosync protocol; Kavita's AuthKeyAuthenticationHandler
+  // resolves it the same way as the x-api-key header. See docs/KAVITA_API.md.
+  suspend fun putKoreaderProgress(baseUrl: String, apiKey: String, body: KoreaderBookDto)
+
+  // GET the book's stored progress, identified by kosync file hash. Returns null on 400 (Kavita
+  // signals "no progress yet" with that status). Throws KavitaException for transport/auth errors.
+  suspend fun getKoreaderProgress(
+    baseUrl: String,
+    apiKey: String,
+    document: String,
+  ): KoreaderBookDto?
 }
 
 class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
@@ -126,6 +140,45 @@ class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
         throw KavitaException.UnexpectedResponse
       }
       streamToFile(response.bodyAsChannel(), target, response.contentLength(), onProgress)
+    }
+  }
+
+  override suspend fun putKoreaderProgress(baseUrl: String, apiKey: String, body: KoreaderBookDto) {
+    // apiKey is URL-encoded so reserved chars (& + = # /) don't break the path. The same key
+    // pattern is used everywhere in Kavita's kosync routes.
+    val encodedKey = java.net.URLEncoder.encode(apiKey, Charsets.UTF_8.name())
+    val url = "${baseUrl.trimEnd('/')}/api/Koreader/$encodedKey/syncs/progress"
+    val response =
+      executeRequest(url, HttpMethod.Put) {
+        contentType(ContentType.Application.Json)
+        setBody(body)
+      }
+    when (response.status) {
+      HttpStatusCode.Unauthorized,
+      HttpStatusCode.Forbidden -> throw KavitaException.Unauthorized
+      HttpStatusCode.OK -> Unit
+      else -> throw KavitaException.Unknown("HTTP ${response.status.value}")
+    }
+  }
+
+  override suspend fun getKoreaderProgress(
+    baseUrl: String,
+    apiKey: String,
+    document: String,
+  ): KoreaderBookDto? {
+    val encodedKey = java.net.URLEncoder.encode(apiKey, Charsets.UTF_8.name())
+    val encodedDoc = java.net.URLEncoder.encode(document, Charsets.UTF_8.name())
+    val url = "${baseUrl.trimEnd('/')}/api/Koreader/$encodedKey/syncs/progress/$encodedDoc"
+    val response = executeRequest(url, HttpMethod.Get) {}
+    return when (response.status) {
+      HttpStatusCode.Unauthorized,
+      HttpStatusCode.Forbidden -> throw KavitaException.Unauthorized
+      // Kavita's controller returns BadRequest for "no progress yet" / "unknown book hash."
+      // Both translate to "no remote progress" for our purposes.
+      HttpStatusCode.BadRequest,
+      HttpStatusCode.NotFound -> null
+      HttpStatusCode.OK -> decodeJsonBody(response)
+      else -> throw KavitaException.Unknown("HTTP ${response.status.value}")
     }
   }
 
