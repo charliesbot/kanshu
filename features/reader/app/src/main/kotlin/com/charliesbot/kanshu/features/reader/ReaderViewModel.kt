@@ -4,11 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.core.sync.InitialPosition
+import com.charliesbot.kanshu.core.sync.RemoteProgress
+import com.charliesbot.kanshu.core.sync.SyncRepository
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -19,15 +26,36 @@ import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 
 @OptIn(ExperimentalReadiumApi::class)
-class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookUseCase) :
-  ViewModel() {
+class ReaderViewModel(
+  private val seriesId: Int,
+  private val openBook: OpenBookUseCase,
+  private val sync: SyncRepository,
+) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
   val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
   private var publication: Publication? = null
+  private var bookFile: File? = null
   private var tocIndex: TocIndex? = null
+  private val bookId: String = "kavita:$seriesId"
 
   private val _currentLocator = MutableStateFlow<Locator?>(null)
+
+  // The "Continue from page X on (device)?" prompt. Non-null while the dialog is showing;
+  // the screen observes this and renders or hides the dialog accordingly.
+  private val _remoteSuggestion = MutableStateFlow<RemoteProgress?>(null)
+  val remoteSuggestion: StateFlow<RemoteProgress?> = _remoteSuggestion.asStateFlow()
+
+  // One-shot navigation commands for the screen to forward to the Readium navigator. Used by
+  // the prompt's Apply action and by the manual "Sync to Furthest Page Read" menu item.
+  // SharedFlow with a small buffer survives a slow collector during config change.
+  private val _navigateTo = MutableSharedFlow<Locator>(extraBufferCapacity = 1)
+  val navigateTo: SharedFlow<Locator> = _navigateTo.asSharedFlow()
+
+  // One-shot "manual sync didn't find a further position" feedback for the screen to surface
+  // as a toast or similar. Same buffering rationale as navigateTo.
+  private val _alreadyAtFurthest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+  val alreadyAtFurthest: SharedFlow<Unit> = _alreadyAtFurthest.asSharedFlow()
 
   val chapterState: StateFlow<ChapterState> =
     _currentLocator
@@ -36,15 +64,19 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
 
   init {
     viewModelScope.launch {
-      _uiState.value =
-        when (val result = openBook(seriesId)) {
-          is ReaderResult.Success -> {
-            publication = result.publication
-            tocIndex = TocIndex(result.publication)
-            // EpubNavigatorFactory is a thin data holder over Publication + configuration; the
-            // heavy lifting (manifest walk, CSS injectables) happens inside the FragmentFactory's
-            // instantiate path during commitNow, which the FragmentManager runs on Main anyway.
-            // Constructing the factory here is cheap.
+      when (val result = openBook(seriesId)) {
+        is ReaderResult.Success -> {
+          publication = result.publication
+          bookFile = result.file
+          tocIndex = TocIndex(result.publication)
+          val initial = sync.resolveInitialPosition(bookId, result.file, result.publication)
+          val (initialLocator, remote) =
+            when (initial) {
+              is InitialPosition.UseLocal -> initial.locator to null
+              is InitialPosition.PromptForRemote -> initial.local to initial.remote
+            }
+          _remoteSuggestion.value = remote
+          _uiState.value =
             ReaderUiState.Ready(
               title = result.publication.metadata.title,
               factory =
@@ -53,24 +85,55 @@ class ReaderViewModel(private val seriesId: Int, private val openBook: OpenBookU
                   configuration =
                     EpubNavigatorFactory.Configuration(defaults = EpubTypography.defaults),
                 ),
+              initialLocator = initialLocator,
             )
-          }
-          ReaderResult.Error.NotFound -> ReaderUiState.Error.NotFound
-          ReaderResult.Error.ParseFailed -> ReaderUiState.Error.ParseFailed
-          ReaderResult.Error.ReadFailed -> ReaderUiState.Error.ReadFailed
         }
+        ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
+        ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.ParseFailed
+        ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
+      }
     }
   }
 
   fun onLocatorChanged(locator: Locator) {
     _currentLocator.value = locator
+    val pub = publication ?: return
+    val file = bookFile ?: return
+    sync.setProgress(bookId, file, locator, pub)
+  }
+
+  fun acceptRemoteSuggestion() {
+    val remote = _remoteSuggestion.value ?: return
+    _remoteSuggestion.value = null
+    _navigateTo.tryEmit(remote.locator)
+  }
+
+  fun dismissRemoteSuggestion() {
+    _remoteSuggestion.value = null
+  }
+
+  fun syncToFurthestPageRead() {
+    val pub = publication ?: return
+    val file = bookFile ?: return
+    viewModelScope.launch {
+      val remote = sync.pullFurthestPosition(bookId, file, pub)
+      if (remote != null) _navigateTo.tryEmit(remote.locator) else _alreadyAtFurthest.tryEmit(Unit)
+    }
   }
 
   override fun onCleared() {
     val pub = publication ?: return
+    val file = bookFile
+    val current = _currentLocator.value
     publication = null
-    // Publication.close() releases container/asset handles via blocking I/O. onCleared runs on
-    // Main and viewModelScope is already cancelled here, so fire-and-forget on IO.
-    CoroutineScope(Dispatchers.IO).launch { pub.close() }
+    bookFile = null
+    // viewModelScope is already cancelled. Use a fresh scope so the flush + close survive long
+    // enough to complete. flushProgress has its own internal timeout; pub.close runs after.
+    CoroutineScope(Dispatchers.IO).launch {
+      if (file != null && current != null) {
+        sync.flushProgress(bookId, file, current, pub)
+      }
+      pub.close()
+    }
   }
 }

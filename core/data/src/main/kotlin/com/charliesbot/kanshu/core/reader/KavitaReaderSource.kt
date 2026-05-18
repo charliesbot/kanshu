@@ -51,6 +51,6 @@ class KavitaReaderSource(private val context: Context, private val books: BookRe
         asset.close()
         return@withContext ReaderResult.Error.ParseFailed
       }
-      ReaderResult.Success(builder.build())
+      ReaderResult.Success(builder.build(), file)
     }
 }
