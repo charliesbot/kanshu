@@ -27,7 +27,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.charliesbot.kanshu.core.ui.components.IconKanshuButton
-import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuIcon
@@ -47,15 +46,15 @@ fun ReaderOverlay(
   onPrevChapter: () -> Unit,
   onNextChapter: () -> Unit,
   onSyncToFurthest: () -> Unit,
+  onOpenReaderPrefs: () -> Unit,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var moreMenuOpen by remember { mutableStateOf(false) }
-  var readerPrefsOpen by remember { mutableStateOf(false) }
   Column(modifier.fillMaxSize()) {
     OverlayTopBar(
       title = title,
-      onOpenReaderPrefs = { readerPrefsOpen = true },
+      onOpenReaderPrefs = onOpenReaderPrefs,
       onMoreOptions = { moreMenuOpen = true },
     )
     KanshuDivider(thickness = 2.dp)
@@ -77,11 +76,6 @@ fun ReaderOverlay(
       },
       onDismiss = { moreMenuOpen = false },
     )
-  }
-  KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
-    // Placeholder so the sheet has presence. Real content (Font / Layout / Themes / More)
-    // lands in a follow-up PR.
-    KanshuText(text = "hi", modifier = Modifier.padding(24.dp))
   }
 }
 
@@ -228,6 +222,7 @@ private fun ReaderOverlayPreview() {
       onPrevChapter = {},
       onNextChapter = {},
       onSyncToFurthest = {},
+      onOpenReaderPrefs = {},
       onDismiss = {},
     )
   }
