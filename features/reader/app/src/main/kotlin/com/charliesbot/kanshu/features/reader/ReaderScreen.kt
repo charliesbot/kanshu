@@ -165,17 +165,8 @@ private fun ReaderBody(
   }
   // Apply live preference changes once the navigator is mounted. The first emission matches the
   // initialPreferences we passed to the fragment factory, so it's a no-op on the first frame.
-  // The Log.d is temporary instrumentation while we confirm submitPreferences is actually
-  // reaching the navigator on font-tap (font-size already updates the page; font-family was
-  // observed not to). Remove once the path is verified end-to-end.
   LaunchedEffect(navigator, readerPrefs) {
-    val nav = navigator ?: return@LaunchedEffect
-    val epubPrefs = EpubTypography.toEpubPreferences(readerPrefs)
-    android.util.Log.d(
-      "KanshuReaderPrefs",
-      "submitPreferences font=${epubPrefs.fontFamily?.name} size=${epubPrefs.fontSize}",
-    )
-    nav.submitPreferences(epubPrefs)
+    navigator?.submitPreferences(EpubTypography.toEpubPreferences(readerPrefs))
   }
   Box(Modifier.fillMaxSize()) {
     EpubNavigatorHost(

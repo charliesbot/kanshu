@@ -35,6 +35,16 @@ internal object EpubTypography {
   val literata = FontFamily("Literata")
   val openDyslexic = FontFamily("OpenDyslexic")
 
+  // WORKAROUND for Readium PR #787 (CORS on @font-face). The kanshu* families resolve to the
+  // `-Kanshu`-suffixed @font-face rules that core/data/.../fontworkaround/EpubFontInjector.kt
+  // injects directly into chapter HTML. When the upstream fix lands, delete these four lines
+  // and the wired-in `kanshu*` mappings in `readiumFamily` below — the unsuffixed FontFamily
+  // values above will then route through Readium's own addFontFamilyDeclaration blocks.
+  private val kanshuLiterata = FontFamily("Literata-Kanshu")
+  private val kanshuBitter = FontFamily("Bitter-Kanshu")
+  private val kanshuLibreBaskerville = FontFamily("Libre Baskerville-Kanshu")
+  private val kanshuOpenDyslexic = FontFamily("OpenDyslexic-Kanshu")
+
   val defaults =
     EpubDefaults(
       publisherStyles = true,
@@ -62,12 +72,15 @@ internal object EpubTypography {
       columnCount = ColumnCount.ONE,
     )
 
+  // WORKAROUND for Readium PR #787: returns the Kanshu-suffixed family so our injected
+  // @font-face rule wins. Restore the commented unsuffixed branches when the upstream fix
+  // releases.
   private fun readiumFamily(font: ReaderFont): FontFamily =
     when (font) {
-      ReaderFont.Literata -> literata
-      ReaderFont.Bitter -> bitter
-      ReaderFont.LibreBaskerville -> libreBaskerville
-      ReaderFont.OpenDyslexic -> openDyslexic
+      ReaderFont.Literata -> kanshuLiterata // -> literata
+      ReaderFont.Bitter -> kanshuBitter // -> bitter
+      ReaderFont.LibreBaskerville -> kanshuLibreBaskerville // -> libreBaskerville
+      ReaderFont.OpenDyslexic -> kanshuOpenDyslexic // -> openDyslexic
     }
 
   // Lazy so JVM unit tests that touch other members (e.g. ReaderViewModelTest exercising

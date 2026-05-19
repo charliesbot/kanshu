@@ -29,7 +29,10 @@ class EpubTypographyTest {
   @Test
   fun `default reader preferences map to the bundled serif font`() {
     val prefs = EpubTypography.toEpubPreferences(ReaderPreferences())
-    assertEquals(EpubTypography.literata, prefs.fontFamily)
+    // Workaround active: the resolved name carries the `-Kanshu` suffix so our injected
+    // @font-face rule wins (see EpubFontInjector.kt). Drop the suffix here when Readium PR #787
+    // ships and the suffix is removed in EpubTypography.readiumFamily.
+    assertEquals("Literata-Kanshu", prefs.fontFamily?.name)
     assertEquals(1.0, prefs.fontSize!!, 0.0001)
   }
 

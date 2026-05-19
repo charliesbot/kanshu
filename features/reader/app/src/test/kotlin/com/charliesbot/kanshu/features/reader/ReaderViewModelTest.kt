@@ -111,7 +111,8 @@ class ReaderViewModelTest {
     advanceUntilIdle()
 
     val state = viewModel.uiState.value as ReaderUiState.Ready
-    assertEquals(EpubTypography.openDyslexic, state.initialPreferences.fontFamily)
+    // Workaround active: family name carries `-Kanshu` suffix. Drop the suffix when PR #787 lands.
+    assertEquals("OpenDyslexic-Kanshu", state.initialPreferences.fontFamily?.name)
     assertEquals(1.4, state.initialPreferences.fontSize!!, 0.0001)
   }
 

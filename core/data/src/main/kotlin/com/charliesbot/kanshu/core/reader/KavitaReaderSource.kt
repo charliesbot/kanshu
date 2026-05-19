@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.core.reader
 import android.content.Context
 import android.util.Log
 import com.charliesbot.kanshu.core.library.BookRepository
+import com.charliesbot.kanshu.core.reader.fontworkaround.wrapWithKanshuFontInjection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,6 +52,9 @@ class KavitaReaderSource(private val context: Context, private val books: BookRe
         asset.close()
         return@withContext ReaderResult.Error.ParseFailed
       }
-      ReaderResult.Success(builder.build(), file)
+      // Workaround for Readium PR #787 (CORS on @font-face). Remove this call and the
+      // fontworkaround package when the upstream fix lands.
+      val patched = wrapWithKanshuFontInjection(builder, context)
+      ReaderResult.Success(patched.build(), file)
     }
 }
