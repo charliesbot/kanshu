@@ -20,26 +20,16 @@ import org.readium.r2.shared.util.Either
 // `EpubDefaults` and `RsProperties` values below are therefore *fallbacks*, not overrides:
 // publisher rules at equal specificity beat them, so they only take effect for properties the
 // publisher didn't specify. Font-family is the one user pref that wins regardless because
-// ReadiumCSS applies it with `!important`. Readium plumbs `fontFamily` only through
-// `EpubPreferences`, never `EpubDefaults` — that's why the seed font lives in the
-// `toEpubPreferences` mapping and not in `defaults`.
+// ReadiumCSS applies it with `!important` once `--USER__fontOverride: readium-font-on` is set —
+// which the toolkit derives from the presence of a non-null fontFamily in `EpubPreferences`.
 //
 // Adding a new font is a three-step process documented in
 // features/reader/app/src/main/assets/fonts/_HOW_TO_ADD_FONTS.txt: drop the .ttf, add a
 // ReaderFont enum entry, and register the face in `fragmentConfiguration` plus the mapper
 // below.
-//
-// Escape hatch: when ReadiumCSS + RsProperties no longer cover a rule we need (drop caps,
-// blockquote ornament, vertical body padding in paginated mode, etc.), the documented path in
-// Readium 3.1.2 is a Streamer-side `TransformingContainer` that rewrites spine HTML to inject
-// a <link>. The navigator surface has no `<link>` injection hook. See docs/READIUM_API.md
-// ("The Streamer escape hatch: TransformingContainer" and "What `body` actually gets") for the
-// pattern and caveats.
 @OptIn(ExperimentalReadiumApi::class)
 internal object EpubTypography {
 
-  val inter = FontFamily("Inter")
-  val notoSerif = FontFamily("Noto Serif")
   val bitter = FontFamily("Bitter")
   val libreBaskerville = FontFamily("Libre Baskerville")
   val literata = FontFamily("Literata")
@@ -74,11 +64,9 @@ internal object EpubTypography {
 
   private fun readiumFamily(font: ReaderFont): FontFamily =
     when (font) {
-      ReaderFont.NotoSerif -> notoSerif
-      ReaderFont.Inter -> inter
+      ReaderFont.Literata -> literata
       ReaderFont.Bitter -> bitter
       ReaderFont.LibreBaskerville -> libreBaskerville
-      ReaderFont.Literata -> literata
       ReaderFont.OpenDyslexic -> openDyslexic
     }
 
@@ -90,27 +78,14 @@ internal object EpubTypography {
       servedAssets += "fonts/.*"
       readiumCssRsProperties = rsProperties
 
-      addFontFamilyDeclaration(inter) {
+      addFontFamilyDeclaration(literata) {
         addFontFace {
-          addSource("fonts/Inter-Variable.ttf", preload = true)
+          addSource("fonts/Literata-VariableFont_opsz,wght.ttf", preload = true)
           setFontStyle(FontStyle.NORMAL)
           setFontWeight(100..900)
         }
         addFontFace {
-          addSource("fonts/Inter-Italic-Variable.ttf")
-          setFontStyle(FontStyle.ITALIC)
-          setFontWeight(100..900)
-        }
-      }
-
-      addFontFamilyDeclaration(notoSerif) {
-        addFontFace {
-          addSource("fonts/NotoSerif-Variable.ttf", preload = true)
-          setFontStyle(FontStyle.NORMAL)
-          setFontWeight(100..900)
-        }
-        addFontFace {
-          addSource("fonts/NotoSerif-Italic-Variable.ttf")
+          addSource("fonts/Literata-Italic-VariableFont_opsz,wght.ttf")
           setFontStyle(FontStyle.ITALIC)
           setFontWeight(100..900)
         }
@@ -137,19 +112,6 @@ internal object EpubTypography {
         }
         addFontFace {
           addSource("fonts/LibreBaskerville-Italic-VariableFont_wght.ttf")
-          setFontStyle(FontStyle.ITALIC)
-          setFontWeight(100..900)
-        }
-      }
-
-      addFontFamilyDeclaration(literata) {
-        addFontFace {
-          addSource("fonts/Literata-VariableFont_opsz,wght.ttf", preload = true)
-          setFontStyle(FontStyle.NORMAL)
-          setFontWeight(100..900)
-        }
-        addFontFace {
-          addSource("fonts/Literata-Italic-VariableFont_opsz,wght.ttf")
           setFontStyle(FontStyle.ITALIC)
           setFontWeight(100..900)
         }

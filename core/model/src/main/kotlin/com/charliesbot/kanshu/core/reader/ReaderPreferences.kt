@@ -5,7 +5,7 @@ package com.charliesbot.kanshu.core.reader
 // constants and clamped when persisted; values outside the range are not meaningful in the UI
 // (the slider can't reach them) but the clamp guards against stale stored values.
 data class ReaderPreferences(
-  val font: ReaderFont = ReaderFont.NotoSerif,
+  val font: ReaderFont = ReaderFont.Literata,
   val fontScale: Float = SCALE_DEFAULT,
 ) {
   companion object {

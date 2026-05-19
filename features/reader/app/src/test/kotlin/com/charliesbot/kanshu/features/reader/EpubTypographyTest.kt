@@ -29,7 +29,7 @@ class EpubTypographyTest {
   @Test
   fun `default reader preferences map to the bundled serif font`() {
     val prefs = EpubTypography.toEpubPreferences(ReaderPreferences())
-    assertEquals(EpubTypography.notoSerif, prefs.fontFamily)
+    assertEquals(EpubTypography.literata, prefs.fontFamily)
     assertEquals(1.0, prefs.fontSize!!, 0.0001)
   }
 
