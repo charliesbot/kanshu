@@ -79,7 +79,9 @@ fun ReaderOverlay(
     )
   }
   KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
-    // Reader preferences (Font / Layout / Themes / More) land in a follow-up PR.
+    // Placeholder so the sheet has presence. Real content (Font / Layout / Themes / More)
+    // lands in a follow-up PR.
+    KanshuText(text = "hi", modifier = Modifier.padding(24.dp))
   }
 }
 
