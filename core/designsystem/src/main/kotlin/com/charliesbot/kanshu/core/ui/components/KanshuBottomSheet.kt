@@ -52,7 +52,9 @@ fun KanshuBottomSheet(
 
   UnstyledModalBottomSheet(
     state = state,
-    overlay = { Scrim(scrimColor = Color.Black.copy(alpha = 0.3f)) },
+    // Transparent scrim instead of a dimmed one: a gray wash adds nothing on e-ink and
+    // degrades the page contrast. The Scrim still intercepts taps for outside-to-dismiss.
+    overlay = { Scrim(scrimColor = Color.Transparent) },
   ) {
     Sheet(
       modifier =
