@@ -10,17 +10,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
-import com.composeunstyled.DragIndication
 import com.composeunstyled.Sheet
 import com.composeunstyled.SheetDetent
 import com.composeunstyled.UnstyledBottomSheet
@@ -33,8 +28,9 @@ import com.composeunstyled.rememberBottomSheetState
 // on e-ink where every recomposition is a visible refresh.
 //
 // A transparent tap blocker stands in for the scrim a modal sheet would provide. It absorbs
-// taps on the page behind the sheet (so a stray tap doesn't turn a page) and offers
-// outside-to-dismiss without a dimmed wash, which would degrade contrast on e-ink.
+// taps on the page behind the sheet (so a stray tap doesn't turn a page) and is the only way
+// to dismiss the sheet — there's no drag handle and only one detent, since smooth drag
+// animations don't render well on e-ink anyway.
 @Composable
 fun KanshuBottomSheet(
   isOpen: Boolean,
@@ -49,11 +45,9 @@ fun KanshuBottomSheet(
   val state =
     rememberBottomSheetState(
       initialDetent = SheetDetent.FullyExpanded,
-      detents = listOf(SheetDetent.Hidden, SheetDetent.FullyExpanded),
+      detents = listOf(SheetDetent.FullyExpanded),
       animationSpec = snap(),
     )
-
-  LaunchedEffect(state.currentDetent) { if (state.currentDetent == SheetDetent.Hidden) onDismiss() }
 
   UnstyledBottomSheet(state = state, modifier = Modifier.fillMaxSize()) {
     Sheet(
@@ -63,18 +57,7 @@ fun KanshuBottomSheet(
           .background(KanshuTheme.colors.background)
           .border(2.dp, KanshuTheme.colors.border)
     ) {
-      Column(Modifier.fillMaxWidth()) {
-        Box(
-          modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          DragIndication(
-            modifier =
-              Modifier.size(width = 40.dp, height = 4.dp).background(KanshuTheme.colors.border)
-          )
-        }
-        content()
-      }
+      Column(Modifier.fillMaxWidth(), content = content)
     }
   }
 }
