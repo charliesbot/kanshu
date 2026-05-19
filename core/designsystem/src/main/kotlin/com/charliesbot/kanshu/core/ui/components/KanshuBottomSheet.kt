@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.ui.components
 
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,11 @@ import com.composeunstyled.SheetDetent
 import com.composeunstyled.UnstyledModalBottomSheet
 import com.composeunstyled.rememberModalBottomSheetState
 
-// Modal sheet anchored to the bottom of the reader. `jumpTo` is used everywhere instead of
-// `animateTo`/`targetDetent` — sliding animations ghost on e-ink, so the sheet must cut in/out.
-// `DragIndication` keeps drag-to-dismiss working; the LaunchedEffect on `currentDetent` mirrors
-// that user-initiated dismiss back to the parent's `isOpen` flag.
+// Modal sheet anchored to the bottom of the reader. The sheet only mounts when `isOpen` is true
+// and uses `FullyExpanded` as its initial detent, so it appears at full height on the first
+// composition. Combined with `snap()` as the animation spec, this means every transition (open,
+// dismiss, drag) resolves in a single frame — required on e-ink where every recomposition is a
+// visible refresh.
 @Composable
 fun KanshuBottomSheet(
   isOpen: Boolean,
@@ -36,19 +38,16 @@ fun KanshuBottomSheet(
   modifier: Modifier = Modifier,
   content: @Composable ColumnScope.() -> Unit,
 ) {
+  if (!isOpen) return
+
   val state =
     rememberModalBottomSheetState(
-      initialDetent = SheetDetent.Hidden,
+      initialDetent = SheetDetent.FullyExpanded,
       detents = listOf(SheetDetent.Hidden, SheetDetent.FullyExpanded),
+      animationSpec = snap(),
     )
 
-  LaunchedEffect(isOpen) {
-    state.jumpTo(if (isOpen) SheetDetent.FullyExpanded else SheetDetent.Hidden)
-  }
-
-  LaunchedEffect(state.currentDetent) {
-    if (isOpen && state.currentDetent == SheetDetent.Hidden) onDismiss()
-  }
+  LaunchedEffect(state.currentDetent) { if (state.currentDetent == SheetDetent.Hidden) onDismiss() }
 
   UnstyledModalBottomSheet(
     state = state,
