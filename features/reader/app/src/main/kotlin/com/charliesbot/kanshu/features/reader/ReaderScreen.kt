@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.charliesbot.kanshu.core.sync.RemoteProgress
+import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.system.FullScreenMode
@@ -134,6 +135,11 @@ private fun ReaderBody(
   onSyncToFurthest: () -> Unit,
 ) {
   var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
+  var readerPrefsOpen by remember { mutableStateOf(false) }
+  val openReaderPrefs = {
+    onOverlayVisibleChange(false)
+    readerPrefsOpen = true
+  }
   val scope = rememberCoroutineScope()
   val context = LocalContext.current
   val toastText = stringResource(R.string.reader_sync_already_at_furthest)
@@ -169,8 +175,12 @@ private fun ReaderBody(
           chapterState.nextLocator?.let { target -> scope.launch { navigator?.go(target) } }
         },
         onSyncToFurthest = onSyncToFurthest,
+        onOpenReaderPrefs = openReaderPrefs,
         onDismiss = { onOverlayVisibleChange(false) },
       )
+    }
+    KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
+      KanshuText(text = "hi", modifier = Modifier.padding(24.dp))
     }
     if (remoteSuggestion != null) {
       RemoteProgressPrompt(

@@ -46,12 +46,17 @@ fun ReaderOverlay(
   onPrevChapter: () -> Unit,
   onNextChapter: () -> Unit,
   onSyncToFurthest: () -> Unit,
+  onOpenReaderPrefs: () -> Unit,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var moreMenuOpen by remember { mutableStateOf(false) }
   Column(modifier.fillMaxSize()) {
-    OverlayTopBar(title = title, onMoreOptions = { moreMenuOpen = true })
+    OverlayTopBar(
+      title = title,
+      onOpenReaderPrefs = onOpenReaderPrefs,
+      onMoreOptions = { moreMenuOpen = true },
+    )
     KanshuDivider(thickness = 2.dp)
     Box(Modifier.fillMaxWidth().weight(1f).clickable(onClick = onDismiss))
     KanshuDivider(thickness = 2.dp)
@@ -85,7 +90,7 @@ private fun OverlayChromeBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun OverlayTopBar(title: String, onMoreOptions: () -> Unit) {
+private fun OverlayTopBar(title: String, onOpenReaderPrefs: () -> Unit, onMoreOptions: () -> Unit) {
   Column(Modifier.background(KanshuTheme.colors.background)) {
     OverlayChromeBar {
       Row(modifier = Modifier.weight(1f)) {
@@ -97,7 +102,7 @@ private fun OverlayTopBar(title: String, onMoreOptions: () -> Unit) {
           )
         }
       }
-      IconKanshuButton(onClick = {}) {
+      IconKanshuButton(onClick = onOpenReaderPrefs) {
         KanshuIcon(
           painter =
             painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.match_case_24px),
@@ -217,6 +222,7 @@ private fun ReaderOverlayPreview() {
       onPrevChapter = {},
       onNextChapter = {},
       onSyncToFurthest = {},
+      onOpenReaderPrefs = {},
       onDismiss = {},
     )
   }
