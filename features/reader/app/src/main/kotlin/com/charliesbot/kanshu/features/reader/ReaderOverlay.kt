@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.charliesbot.kanshu.core.ui.components.IconKanshuButton
+import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuButton
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuIcon
@@ -50,8 +51,13 @@ fun ReaderOverlay(
   modifier: Modifier = Modifier,
 ) {
   var moreMenuOpen by remember { mutableStateOf(false) }
+  var readerPrefsOpen by remember { mutableStateOf(false) }
   Column(modifier.fillMaxSize()) {
-    OverlayTopBar(title = title, onMoreOptions = { moreMenuOpen = true })
+    OverlayTopBar(
+      title = title,
+      onOpenReaderPrefs = { readerPrefsOpen = true },
+      onMoreOptions = { moreMenuOpen = true },
+    )
     KanshuDivider(thickness = 2.dp)
     Box(Modifier.fillMaxWidth().weight(1f).clickable(onClick = onDismiss))
     KanshuDivider(thickness = 2.dp)
@@ -72,6 +78,9 @@ fun ReaderOverlay(
       onDismiss = { moreMenuOpen = false },
     )
   }
+  KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
+    // Reader preferences (Font / Layout / Themes / More) land in a follow-up PR.
+  }
 }
 
 @Composable
@@ -85,7 +94,7 @@ private fun OverlayChromeBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun OverlayTopBar(title: String, onMoreOptions: () -> Unit) {
+private fun OverlayTopBar(title: String, onOpenReaderPrefs: () -> Unit, onMoreOptions: () -> Unit) {
   Column(Modifier.background(KanshuTheme.colors.background)) {
     OverlayChromeBar {
       Row(modifier = Modifier.weight(1f)) {
@@ -97,7 +106,7 @@ private fun OverlayTopBar(title: String, onMoreOptions: () -> Unit) {
           )
         }
       }
-      IconKanshuButton(onClick = {}) {
+      IconKanshuButton(onClick = onOpenReaderPrefs) {
         KanshuIcon(
           painter =
             painterResource(com.charliesbot.kanshu.core.designsystem.R.drawable.match_case_24px),
