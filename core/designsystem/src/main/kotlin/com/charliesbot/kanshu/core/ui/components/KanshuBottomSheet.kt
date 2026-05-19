@@ -3,34 +3,38 @@ package com.charliesbot.kanshu.core.ui.components
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.composeunstyled.DragIndication
-import com.composeunstyled.Scrim
 import com.composeunstyled.Sheet
 import com.composeunstyled.SheetDetent
-import com.composeunstyled.UnstyledModalBottomSheet
-import com.composeunstyled.rememberModalBottomSheetState
+import com.composeunstyled.UnstyledBottomSheet
+import com.composeunstyled.rememberBottomSheetState
 
-// Modal sheet anchored to the bottom of the reader. The sheet only mounts when `isOpen` is true
-// and uses `FullyExpanded` as its initial detent, so it appears at full height on the first
-// composition. Combined with `snap()` as the animation spec, this means every transition (open,
-// dismiss, drag) resolves in a single frame — required on e-ink where every recomposition is a
-// visible refresh.
+// Non-modal sheet anchored to the bottom of the parent Box. The non-modal variant is chosen so
+// the sheet renders in the same window as the reader and FullScreenMode keeps the status/nav
+// bars hidden. The mounted-only-when-open shape, FullyExpanded initial detent, and snap()
+// animation spec together ensure every transition resolves in a single composition — required
+// on e-ink where every recomposition is a visible refresh.
+//
+// A transparent tap blocker stands in for the scrim a modal sheet would provide. It absorbs
+// taps on the page behind the sheet (so a stray tap doesn't turn a page) and offers
+// outside-to-dismiss without a dimmed wash, which would degrade contrast on e-ink.
 @Composable
 fun KanshuBottomSheet(
   isOpen: Boolean,
@@ -40,8 +44,10 @@ fun KanshuBottomSheet(
 ) {
   if (!isOpen) return
 
+  Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onDismiss() } })
+
   val state =
-    rememberModalBottomSheetState(
+    rememberBottomSheetState(
       initialDetent = SheetDetent.FullyExpanded,
       detents = listOf(SheetDetent.Hidden, SheetDetent.FullyExpanded),
       animationSpec = snap(),
@@ -49,12 +55,7 @@ fun KanshuBottomSheet(
 
   LaunchedEffect(state.currentDetent) { if (state.currentDetent == SheetDetent.Hidden) onDismiss() }
 
-  UnstyledModalBottomSheet(
-    state = state,
-    // Transparent scrim instead of a dimmed one: a gray wash adds nothing on e-ink and
-    // degrades the page contrast. The Scrim still intercepts taps for outside-to-dismiss.
-    overlay = { Scrim(scrimColor = Color.Transparent) },
-  ) {
+  UnstyledBottomSheet(state = state, modifier = Modifier.fillMaxSize()) {
     Sheet(
       modifier =
         modifier
