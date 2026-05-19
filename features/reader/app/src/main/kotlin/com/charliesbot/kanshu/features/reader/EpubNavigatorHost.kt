@@ -17,6 +17,7 @@ import androidx.fragment.app.commit
 import androidx.fragment.app.commitNow
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
@@ -29,8 +30,11 @@ import org.readium.r2.shared.util.AbsoluteUrl
 // DirectionalNavigationAdapter tap zones installed below — there is no on-screen button UI.
 //
 // Typography is centralized in EpubTypography — defaults flow in via the factory configuration
-// (set in ReaderViewModel), while initialPreferences and the fragment configuration (font-face
-// declarations + servedAssets) flow in here. See docs/KINDLE_TYPOGRAPHY.md.
+// (set in ReaderViewModel), `initialPreferences` comes from persisted reader prefs (mapped in
+// the ViewModel before transitioning to ReaderUiState.Ready), and the fragment configuration
+// (font-face declarations + servedAssets) flows in here. Live preference updates after mount
+// happen via navigator.submitPreferences from ReaderScreen, not here. See
+// docs/KINDLE_TYPOGRAPHY.md.
 //
 // The host writes to the activity's global supportFragmentManager.fragmentFactory — fine for
 // our single-ReaderScreen-at-a-time setup, would clobber under concurrent fragment users.
@@ -38,6 +42,7 @@ import org.readium.r2.shared.util.AbsoluteUrl
 @Composable
 fun EpubNavigatorHost(
   factory: EpubNavigatorFactory,
+  initialPreferences: EpubPreferences,
   onNavigatorReady: (EpubNavigatorFragment) -> Unit,
   onCenterTap: () -> Unit,
   initialLocator: Locator? = null,
@@ -64,7 +69,7 @@ fun EpubNavigatorHost(
     fragmentManager.fragmentFactory =
       factory.createFragmentFactory(
         initialLocator = initialLocator,
-        initialPreferences = EpubTypography.initialPreferences,
+        initialPreferences = initialPreferences,
         listener = NoopNavigatorListener,
         configuration = EpubTypography.fragmentConfiguration,
       )

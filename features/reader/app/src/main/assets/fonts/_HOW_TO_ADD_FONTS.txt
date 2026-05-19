@@ -1,0 +1,58 @@
+HOW TO ADD A FONT TO KANSHU
+===========================
+
+Drop your .ttf files in THIS directory, then wire them up in two more places. The
+file is purposely named with a leading underscore so it sorts above the .ttf
+files when you `ls` and is easy to spot.
+
+Files to drop here
+------------------
+Use variable fonts when available — one file per axis (regular + italic). Naming
+convention, matching the existing Inter / Noto Serif files:
+
+    <Family>-Variable.ttf
+    <Family>-Italic-Variable.ttf
+    <Family>-OFL.txt    (or whichever license the font ships with)
+
+Example for a font called "Atkinson Hyperlegible":
+
+    AtkinsonHyperlegible-Variable.ttf
+    AtkinsonHyperlegible-Italic-Variable.ttf
+    AtkinsonHyperlegible-OFL.txt
+
+LICENSE FILES ARE REQUIRED. Keep the upstream license text in this folder —
+don't strip it.
+
+Three-step wire-up
+------------------
+1) :core:model — add an enum entry
+   File:  core/model/src/main/kotlin/com/charliesbot/kanshu/core/reader/ReaderFont.kt
+   Add:   AtkinsonHyperlegible,
+
+2) :features:reader — register the font face with Readium
+   File:  features/reader/app/src/main/kotlin/com/charliesbot/kanshu/features/reader/EpubTypography.kt
+   Add a `val atkinson = FontFamily("Atkinson Hyperlegible")` constant, then
+   inside `fragmentConfiguration` add a parallel `addFontFamilyDeclaration`
+   block pointing at the two .ttf files above. Match the existing Inter /
+   Noto Serif blocks for weight ranges and italic mapping.
+
+3) :features:reader — map the enum to the Readium FontFamily
+   In the same EpubTypography.kt, extend `toEpubPreferences` (or whichever
+   ReaderFont → FontFamily mapper is in place) so the new enum value resolves
+   to the `atkinson` constant.
+
+If you only do (1), the chip will render in the bottom sheet but tapping it
+will silently fall back to the default font — there is no compile-time check
+that every enum value is registered.
+
+Display name
+------------
+The chip label in ReaderPrefsBottomSheet comes from the enum's `displayName` or
+an equivalent property. Keep it human-readable ("Atkinson Hyperlegible"), not
+the file stem ("AtkinsonHyperlegible").
+
+Asset path served by Readium
+----------------------------
+EpubTypography.fragmentConfiguration declares `servedAssets += "fonts/.*"`, so
+anything you drop in this directory is reachable at `fonts/<filename>` inside
+the Readium WebView. No further manifest or build-file changes needed.

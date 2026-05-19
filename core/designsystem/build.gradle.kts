@@ -25,6 +25,7 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   api(libs.composeunstyled.button)
   api(libs.composeunstyled.bottom.sheet)
+  api(libs.composeunstyled.slider)
   implementation(libs.coil.compose)
   debugImplementation(libs.androidx.compose.ui.tooling)
 }

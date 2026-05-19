@@ -26,6 +26,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
@@ -57,6 +59,7 @@ fun ReaderScreen(
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val chapterState by viewModel.chapterState.collectAsStateWithLifecycle()
   val remoteSuggestion by viewModel.remoteSuggestion.collectAsStateWithLifecycle()
+  val readerPrefs by viewModel.readerPreferences.collectAsStateWithLifecycle()
   ReaderContent(
     uiState = uiState,
     fallbackTitle = title,
@@ -70,6 +73,9 @@ fun ReaderScreen(
     onAcceptSuggestion = viewModel::acceptRemoteSuggestion,
     onDismissSuggestion = viewModel::dismissRemoteSuggestion,
     onSyncToFurthest = viewModel::syncToFurthestPageRead,
+    readerPrefs = readerPrefs,
+    onFontChange = viewModel::setFont,
+    onFontScaleChange = viewModel::setFontScale,
   )
 }
 
@@ -88,6 +94,9 @@ private fun ReaderContent(
   onAcceptSuggestion: () -> Unit,
   onDismissSuggestion: () -> Unit,
   onSyncToFurthest: () -> Unit,
+  readerPrefs: ReaderPreferences,
+  onFontChange: (ReaderFont) -> Unit,
+  onFontScaleChange: (Float) -> Unit,
 ) {
   KanshuScaffold {
     when (uiState) {
@@ -107,6 +116,9 @@ private fun ReaderContent(
           onAcceptSuggestion = onAcceptSuggestion,
           onDismissSuggestion = onDismissSuggestion,
           onSyncToFurthest = onSyncToFurthest,
+          readerPrefs = readerPrefs,
+          onFontChange = onFontChange,
+          onFontScaleChange = onFontScaleChange,
         )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
@@ -133,6 +145,9 @@ private fun ReaderBody(
   onAcceptSuggestion: () -> Unit,
   onDismissSuggestion: () -> Unit,
   onSyncToFurthest: () -> Unit,
+  readerPrefs: ReaderPreferences,
+  onFontChange: (ReaderFont) -> Unit,
+  onFontScaleChange: (Float) -> Unit,
 ) {
   var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
   var readerPrefsOpen by remember { mutableStateOf(false) }
@@ -148,9 +163,15 @@ private fun ReaderBody(
   LaunchedEffect(Unit) {
     alreadyAtFurthest.collect { Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show() }
   }
+  // Apply live preference changes once the navigator is mounted. The first emission matches the
+  // initialPreferences we passed to the fragment factory, so it's a no-op on the first frame.
+  LaunchedEffect(navigator, readerPrefs) {
+    navigator?.submitPreferences(EpubTypography.toEpubPreferences(readerPrefs))
+  }
   Box(Modifier.fillMaxSize()) {
     EpubNavigatorHost(
       factory = uiState.factory,
+      initialPreferences = uiState.initialPreferences,
       onNavigatorReady = { navigator = it },
       onCenterTap = { onOverlayVisibleChange(true) },
       initialLocator = uiState.initialLocator,
@@ -180,7 +201,11 @@ private fun ReaderBody(
       )
     }
     KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
-      KanshuText(text = "hi", modifier = Modifier.padding(24.dp))
+      ReaderPrefsBottomSheet(
+        prefs = readerPrefs,
+        onFontChange = onFontChange,
+        onFontScaleChange = onFontScaleChange,
+      )
     }
     if (remoteSuggestion != null) {
       RemoteProgressPrompt(
@@ -276,6 +301,9 @@ private fun ReaderScreenLoadingPreview() {
       onAcceptSuggestion = {},
       onDismissSuggestion = {},
       onSyncToFurthest = {},
+      readerPrefs = ReaderPreferences(),
+      onFontChange = {},
+      onFontScaleChange = {},
     )
   }
 }
@@ -297,6 +325,9 @@ private fun ReaderScreenErrorPreview() {
       onAcceptSuggestion = {},
       onDismissSuggestion = {},
       onSyncToFurthest = {},
+      readerPrefs = ReaderPreferences(),
+      onFontChange = {},
+      onFontScaleChange = {},
     )
   }
 }

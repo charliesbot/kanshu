@@ -1,5 +1,8 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
@@ -10,6 +13,9 @@ import io.mockk.mockk
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -34,10 +40,12 @@ class ReaderViewModelTest {
       coEvery { resolveInitialPosition(any(), any(), any()) } returns InitialPosition.UseLocal(null)
     }
   private val fakeFile = File("/dev/null/fake.epub")
+  private lateinit var preferences: FakeReaderPreferencesRepository
 
   @Before
   fun setUp() {
     Dispatchers.setMain(testDispatcher)
+    preferences = FakeReaderPreferencesRepository()
   }
 
   @After
@@ -52,12 +60,15 @@ class ReaderViewModelTest {
       every { it.metadata } returns metadata
     }
 
+  private fun newViewModel(): ReaderViewModel =
+    ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync, preferences = preferences)
+
   @Test
   fun `success result becomes Ready with title and factory`() = runTest {
     val publication = fakePublication(title = "A Book")
     coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
 
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
+    val viewModel = newViewModel()
     advanceUntilIdle()
 
     val state = viewModel.uiState.value
@@ -70,7 +81,7 @@ class ReaderViewModelTest {
   @Test
   fun `parse failed result becomes ParseFailed state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.ParseFailed
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
+    val viewModel = newViewModel()
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.ParseFailed, viewModel.uiState.value)
   }
@@ -78,7 +89,7 @@ class ReaderViewModelTest {
   @Test
   fun `read failed result becomes ReadFailed state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.ReadFailed
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
+    val viewModel = newViewModel()
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.ReadFailed, viewModel.uiState.value)
   }
@@ -86,8 +97,75 @@ class ReaderViewModelTest {
   @Test
   fun `not found result becomes NotFound state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.NotFound
-    val viewModel = ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync)
+    val viewModel = newViewModel()
     advanceUntilIdle()
     assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
+  }
+
+  @Test
+  fun `persisted preferences seed Ready_initialPreferences`() = runTest {
+    preferences.seed(ReaderPreferences(font = ReaderFont.OpenDyslexic, fontScale = 1.4f))
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(EpubTypography.openDyslexic, state.initialPreferences.fontFamily)
+    assertEquals(1.4, state.initialPreferences.fontSize!!, 0.0001)
+  }
+
+  @Test
+  fun `setFont persists the chosen family`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setFont(ReaderFont.OpenDyslexic)
+    advanceUntilIdle()
+
+    assertEquals(ReaderFont.OpenDyslexic, viewModel.readerPreferences.value.font)
+  }
+
+  @Test
+  fun `setFontScale clamps below the min`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setFontScale(0.1f)
+    advanceUntilIdle()
+
+    assertEquals(ReaderPreferences.SCALE_MIN, viewModel.readerPreferences.value.fontScale, 0.0001f)
+  }
+
+  @Test
+  fun `setFontScale clamps above the max`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setFontScale(5.0f)
+    advanceUntilIdle()
+
+    assertEquals(ReaderPreferences.SCALE_MAX, viewModel.readerPreferences.value.fontScale, 0.0001f)
+  }
+
+  private class FakeReaderPreferencesRepository : ReaderPreferencesRepository {
+    private val state = MutableStateFlow(ReaderPreferences())
+    override val preferences: Flow<ReaderPreferences> = state.asStateFlow()
+
+    fun seed(value: ReaderPreferences) {
+      state.value = value
+    }
+
+    override suspend fun setFont(font: ReaderFont) {
+      state.value = state.value.copy(font = font)
+    }
+
+    override suspend fun setFontScale(scale: Float) {
+      val clamped = scale.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
+      state.value = state.value.copy(fontScale = clamped)
+    }
   }
 }
