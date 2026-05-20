@@ -10,7 +10,7 @@ import org.readium.r2.shared.publication.Publication
 
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
-fun BookViewer(
+fun ReadiumBookViewer(
   publication: Publication,
   initialLocator: Locator?,
   initialPreferences: ReaderPreferences,

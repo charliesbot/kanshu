@@ -43,7 +43,7 @@ import org.readium.r2.shared.publication.Locator
 // FullScreenMode for the lifetime of this screen, and pagination is driven by swipe gestures
 // and Readium's tap-edge adapter. A center tap reveals the ReaderOverlay (top chrome + bottom
 // chrome), which dismisses on tap of the middle zone. Pagination, chapter advancement, and
-// rendering are owned by BookViewer.
+// rendering are owned by ReadiumBookViewer.
 @Composable
 fun ReaderScreen(
   seriesId: Int,
@@ -159,7 +159,7 @@ private fun ReaderBody(
   // Apply live preference changes once the controller is mounted.
   LaunchedEffect(controller, readerPrefs) { controller?.submitPreferences(readerPrefs) }
   Box(Modifier.fillMaxSize()) {
-    BookViewer(
+    ReadiumBookViewer(
       publication = uiState.publication,
       initialPreferences = uiState.initialPreferences,
       onControllerReady = { controller = it },
