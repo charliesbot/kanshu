@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -93,14 +92,9 @@ class ReaderViewModel(
           _uiState.value =
             ReaderUiState.Ready(
               title = result.publication.metadata.title,
-              factory =
-                EpubNavigatorFactory(
-                  publication = result.publication,
-                  configuration =
-                    EpubNavigatorFactory.Configuration(defaults = EpubTypography.defaults),
-                ),
+              publication = result.publication,
               initialLocator = initialLocator,
-              initialPreferences = EpubTypography.toEpubPreferences(storedPrefs),
+              initialPreferences = storedPrefs,
             )
         }
         ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
