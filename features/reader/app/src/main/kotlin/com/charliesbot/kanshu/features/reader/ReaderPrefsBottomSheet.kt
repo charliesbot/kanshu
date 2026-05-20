@@ -72,9 +72,11 @@ fun ReaderPrefsBottomSheet(
 
             PrefsTab.Layout,
             PrefsTab.Themes,
-            PrefsTab.More -> Box(Modifier
-                .fillMaxWidth()
-                .height(96.dp))
+            PrefsTab.More -> Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+            )
         }
     }
 }
@@ -211,36 +213,22 @@ private fun FontChip(font: ReaderFont, selected: Boolean, onClick: () -> Unit) {
         }
     Column(
         Modifier
+            .width(IntrinsicSize.Max)
             .clickable(onClick = onClick)
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Fixed-size Aa container so every chip's preview sits at the same vertical anchor
-        // regardless of the font's intrinsic ascent/descent metrics. Using `height` (not
-        // `heightIn`) keeps the Box from growing for taller faces like OpenDyslexic; the
-        // glyph may extend slightly above the Box but downstream siblings stay aligned.
-        // Explicit fontSize + lineHeight pins the line box per font; includeFontPadding =
-        // false strips Android's legacy leading.
         Box(
             modifier = Modifier
                 .height(40.dp)
-                .widthIn(min = 60.dp),
+                .widthIn(min = 50.dp, max = 100.dp),
             contentAlignment = Alignment.Center,
         ) {
-            // Selected state is signalled by the underline below; we deliberately don't flip
-            // FontWeight here. Swapping a glyph's stroke weight on e-ink triggers ghosting
-            // because the panel has to redraw every pixel inside the character. The underline
-            // changes one thin strip of pixels and is cheaper to refresh.
             KanshuText(
                 text = stringResource(R.string.reader_prefs_font_sample),
                 style =
                     KanshuTheme.typography.headlineMedium.copy(
                         fontFamily = sampleFontFamily,
-                        // OpenDyslexic has a much larger x-height and heavier strokes than
-                        // the other faces by design (accessibility), so at the same point
-                        // size it renders visibly bigger than the serifs. Drop its preview
-                        // size so the chips look visually balanced. Other faces share a
-                        // single value because their x-heights are within a normal range.
                         fontSize = if (font == ReaderFont.OpenDyslexic) 18.sp else 22.sp,
                         lineHeight = 28.sp,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),
@@ -250,7 +238,6 @@ private fun FontChip(font: ReaderFont, selected: Boolean, onClick: () -> Unit) {
         KanshuText(
             text = font.displayName,
             style = KanshuTheme.typography.labelMedium.copy(fontSize = 14.sp),
-            modifier = Modifier.padding(top = 4.dp),
         )
         // Selection underline. 3dp so it reads as a deliberate indicator on e-ink (2dp is at
         // the edge of perceptible at typical Boox densities). Sits close to the label so the
