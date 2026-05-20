@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,14 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
@@ -48,113 +53,130 @@ import kotlin.math.roundToInt
 // tab UI.
 @Composable
 fun ReaderPrefsBottomSheet(
-  prefs: ReaderPreferences,
-  onFontChange: (ReaderFont) -> Unit,
-  onFontScaleChange: (Float) -> Unit,
-  modifier: Modifier = Modifier,
+    prefs: ReaderPreferences,
+    onFontChange: (ReaderFont) -> Unit,
+    onFontScaleChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-  var activeTab by remember { mutableStateOf(PrefsTab.Font) }
-  Column(modifier.fillMaxWidth()) {
-    TabStrip(activeTab = activeTab, onSelect = { activeTab = it })
-    KanshuDivider()
-    when (activeTab) {
-      PrefsTab.Font ->
-        FontTab(prefs = prefs, onFontChange = onFontChange, onFontScaleChange = onFontScaleChange)
-      PrefsTab.Layout,
-      PrefsTab.Themes,
-      PrefsTab.More -> Box(Modifier.fillMaxWidth().height(96.dp))
+    var activeTab by remember { mutableStateOf(PrefsTab.Font) }
+    Column(modifier.fillMaxWidth()) {
+        TabStrip(activeTab = activeTab, onSelect = { activeTab = it })
+        KanshuDivider()
+        when (activeTab) {
+            PrefsTab.Font ->
+                FontTab(
+                    prefs = prefs,
+                    onFontChange = onFontChange,
+                    onFontScaleChange = onFontScaleChange
+                )
+
+            PrefsTab.Layout,
+            PrefsTab.Themes,
+            PrefsTab.More -> Box(Modifier
+                .fillMaxWidth()
+                .height(96.dp))
+        }
     }
-  }
 }
 
 private enum class PrefsTab(val labelRes: Int) {
-  Font(R.string.reader_prefs_tab_font),
-  Layout(R.string.reader_prefs_tab_layout),
-  Themes(R.string.reader_prefs_tab_themes),
-  More(R.string.reader_prefs_tab_more),
+    Font(R.string.reader_prefs_tab_font),
+    Layout(R.string.reader_prefs_tab_layout),
+    Themes(R.string.reader_prefs_tab_themes),
+    More(R.string.reader_prefs_tab_more),
 }
 
 @Composable
 private fun TabStrip(activeTab: PrefsTab, onSelect: (PrefsTab) -> Unit) {
-  Row(
-    Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-    horizontalArrangement = Arrangement.spacedBy(32.dp),
-  ) {
-    PrefsTab.entries.forEach { tab ->
-      val active = tab == activeTab
-      Column(
-        Modifier.width(IntrinsicSize.Min).clickable { onSelect(tab) },
-        horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-        KanshuText(
-          text = stringResource(tab.labelRes),
-          style =
-            KanshuTheme.typography.titleMedium.copy(
-              fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
-            ),
-          modifier = Modifier.padding(vertical = 16.dp),
-        )
-        Box(
-          Modifier.fillMaxWidth()
-            .height(2.dp)
-            .background(if (active) KanshuTheme.colors.onBackground else Color.Transparent)
-        )
-      }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(32.dp),
+    ) {
+        PrefsTab.entries.forEach { tab ->
+            val active = tab == activeTab
+            Column(
+                Modifier
+                    .width(IntrinsicSize.Min)
+                    .clickable { onSelect(tab) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Active state is signalled by the underline below; no FontWeight swap to
+                // avoid e-ink ghosting on tab change.
+                KanshuText(
+                    text = stringResource(tab.labelRes),
+                    style = KanshuTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(if (active) KanshuTheme.colors.onBackground else Color.Transparent)
+                )
+            }
+        }
     }
-  }
 }
 
 @Composable
 private fun FontTab(
-  prefs: ReaderPreferences,
-  onFontChange: (ReaderFont) -> Unit,
-  onFontScaleChange: (Float) -> Unit,
+    prefs: ReaderPreferences,
+    onFontChange: (ReaderFont) -> Unit,
+    onFontScaleChange: (Float) -> Unit,
 ) {
-  Column(Modifier.fillMaxWidth()) {
-    Row(
-      Modifier.fillMaxWidth()
-        .horizontalScroll(rememberScrollState())
-        .padding(horizontal = 16.dp, vertical = 20.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      ReaderFont.entries.forEach { font ->
-        FontChip(font = font, selected = font == prefs.font, onClick = { onFontChange(font) })
-      }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ReaderFont.entries.forEach { font ->
+                FontChip(
+                    font = font,
+                    selected = font == prefs.font,
+                    onClick = { onFontChange(font) })
+            }
+        }
+        KanshuDivider()
+        // Steps math: discrete stops from SCALE_MIN..SCALE_MAX in SCALE_STEP increments. Slider's
+        // `steps` is the count of stops *between* endpoints, so we subtract one then drop the two
+        // endpoints (-2 + 1 = -1).
+        val totalStops =
+            ((ReaderPreferences.SCALE_MAX - ReaderPreferences.SCALE_MIN) / ReaderPreferences.SCALE_STEP)
+                .roundToInt() + 1
+        KanshuSlider(
+            value = prefs.fontScale,
+            onValueChange = onFontScaleChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            valueRange = ReaderPreferences.SCALE_MIN..ReaderPreferences.SCALE_MAX,
+            steps = (totalStops - 2).coerceAtLeast(0),
+            leading = {
+                // clearAndSetSemantics so TalkBack reads the descriptive string instead of "A".
+                val description = stringResource(R.string.reader_prefs_font_size_smaller)
+                Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
+                    KanshuText(
+                        text = stringResource(R.string.reader_prefs_font_sample).take(1),
+                        style = KanshuTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            trailing = {
+                val description = stringResource(R.string.reader_prefs_font_size_larger)
+                Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
+                    KanshuText(
+                        text = stringResource(R.string.reader_prefs_font_sample).take(1),
+                        style = KanshuTheme.typography.headlineMedium,
+                    )
+                }
+            },
+        )
     }
-    KanshuDivider()
-    // Steps math: discrete stops from SCALE_MIN..SCALE_MAX in SCALE_STEP increments. Slider's
-    // `steps` is the count of stops *between* endpoints, so we subtract one then drop the two
-    // endpoints (-2 + 1 = -1).
-    val totalStops =
-      ((ReaderPreferences.SCALE_MAX - ReaderPreferences.SCALE_MIN) / ReaderPreferences.SCALE_STEP)
-        .roundToInt() + 1
-    KanshuSlider(
-      value = prefs.fontScale,
-      onValueChange = onFontScaleChange,
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
-      valueRange = ReaderPreferences.SCALE_MIN..ReaderPreferences.SCALE_MAX,
-      steps = (totalStops - 2).coerceAtLeast(0),
-      leading = {
-        // clearAndSetSemantics so TalkBack reads the descriptive string instead of "A".
-        val description = stringResource(R.string.reader_prefs_font_size_smaller)
-        Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
-          KanshuText(
-            text = stringResource(R.string.reader_prefs_font_sample).take(1),
-            style = KanshuTheme.typography.bodyMedium,
-          )
-        }
-      },
-      trailing = {
-        val description = stringResource(R.string.reader_prefs_font_size_larger)
-        Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
-          KanshuText(
-            text = stringResource(R.string.reader_prefs_font_sample).take(1),
-            style = KanshuTheme.typography.headlineMedium,
-          )
-        }
-      },
-    )
-  }
 }
 
 // Renders an "Aa" preview in the font itself plus the display name below. Compose's `Font(file)`
@@ -164,56 +186,93 @@ private fun FontTab(
 // Compose at the cached File. Italic + bold faces aren't loaded here — the chip only needs to
 // show what reading in this typeface will roughly look like, and the regular weight is the most
 // representative preview.
+//
+// In `@Preview`, `LocalInspectionMode` is true and `Context.cacheDir` returns a path the
+// preview sandbox can't write to. We short-circuit to the system default so the preview still
+// lays out — the chip won't show the actual face, but the surrounding layout is what previews
+// are useful for anyway.
 @Composable
 private fun FontChip(font: ReaderFont, selected: Boolean, onClick: () -> Unit) {
-  val context = LocalContext.current
-  val sampleFontFamily =
-    remember(font) {
-      val cached = File(context.cacheDir, "font-preview-${font.name}")
-      if (!cached.exists()) {
-        context.assets.open(font.regularAssetPath).use { input ->
-          cached.outputStream().use { output -> input.copyTo(output) }
+    val context = LocalContext.current
+    val isPreview = LocalInspectionMode.current
+    val sampleFontFamily =
+        remember(font, isPreview) {
+            if (isPreview) {
+                FontFamily.Default
+            } else {
+                val cached = File(context.cacheDir, "font-preview-${font.name}")
+                if (!cached.exists()) {
+                    context.assets.open(font.regularAssetPath).use { input ->
+                        cached.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+                FontFamily(Font(cached))
+            }
         }
-      }
-      FontFamily(Font(cached))
+    Column(
+        Modifier
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Fixed-size Aa container so every chip's preview sits at the same vertical anchor
+        // regardless of the font's intrinsic ascent/descent metrics. Using `height` (not
+        // `heightIn`) keeps the Box from growing for taller faces like OpenDyslexic; the
+        // glyph may extend slightly above the Box but downstream siblings stay aligned.
+        // Explicit fontSize + lineHeight pins the line box per font; includeFontPadding =
+        // false strips Android's legacy leading.
+        Box(
+            modifier = Modifier
+                .height(40.dp)
+                .widthIn(min = 60.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Selected state is signalled by the underline below; we deliberately don't flip
+            // FontWeight here. Swapping a glyph's stroke weight on e-ink triggers ghosting
+            // because the panel has to redraw every pixel inside the character. The underline
+            // changes one thin strip of pixels and is cheaper to refresh.
+            KanshuText(
+                text = stringResource(R.string.reader_prefs_font_sample),
+                style =
+                    KanshuTheme.typography.headlineMedium.copy(
+                        fontFamily = sampleFontFamily,
+                        // OpenDyslexic has a much larger x-height and heavier strokes than
+                        // the other faces by design (accessibility), so at the same point
+                        // size it renders visibly bigger than the serifs. Drop its preview
+                        // size so the chips look visually balanced. Other faces share a
+                        // single value because their x-heights are within a normal range.
+                        fontSize = if (font == ReaderFont.OpenDyslexic) 18.sp else 22.sp,
+                        lineHeight = 28.sp,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    ),
+            )
+        }
+        KanshuText(
+            text = font.displayName,
+            style = KanshuTheme.typography.labelMedium.copy(fontSize = 14.sp),
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        // Selection underline. 3dp so it reads as a deliberate indicator on e-ink (2dp is at
+        // the edge of perceptible at typical Boox densities). Sits close to the label so the
+        // pairing is obvious.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
+                .height(3.dp)
+                .background(if (selected) KanshuTheme.colors.onBackground else Color.Transparent)
+        )
     }
-  Column(
-    Modifier.width(IntrinsicSize.Min).clickable(onClick = onClick).padding(8.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-  ) {
-    KanshuText(
-      text = stringResource(R.string.reader_prefs_font_sample),
-      style =
-        KanshuTheme.typography.headlineMedium.copy(
-          fontFamily = sampleFontFamily,
-          fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        ),
-    )
-    KanshuText(
-      text = font.displayName,
-      style =
-        KanshuTheme.typography.labelMedium.copy(
-          fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-        ),
-      modifier = Modifier.padding(top = 4.dp),
-    )
-    Box(
-      Modifier.fillMaxWidth()
-        .padding(top = 4.dp)
-        .height(2.dp)
-        .background(if (selected) KanshuTheme.colors.onBackground else Color.Transparent)
-    )
-  }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun ReaderPrefsBottomSheetPreview() {
-  KanshuTheme {
-    ReaderPrefsBottomSheet(
-      prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
-      onFontChange = {},
-      onFontScaleChange = {},
-    )
-  }
+    KanshuTheme {
+        ReaderPrefsBottomSheet(
+            prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
+            onFontChange = {},
+            onFontScaleChange = {},
+        )
+    }
 }
