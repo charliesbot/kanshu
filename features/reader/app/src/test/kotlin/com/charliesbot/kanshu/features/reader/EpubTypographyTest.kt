@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,7 +27,20 @@ class EpubTypographyTest {
   }
 
   @Test
-  fun `initial preferences seed the bundled serif font`() {
-    assertEquals(EpubTypography.notoSerif, EpubTypography.initialPreferences.fontFamily)
+  fun `default reader preferences map to the bundled serif font`() {
+    val prefs = EpubTypography.toEpubPreferences(ReaderPreferences())
+    // Workaround active: the resolved name carries the `-Kanshu` suffix so our injected
+    // @font-face rule wins (see EpubFontInjector.kt). Drop the suffix here when Readium PR #787
+    // ships and the suffix is removed in EpubTypography.readiumFamily.
+    assertEquals("Literata-Kanshu", prefs.fontFamily?.name)
+    assertEquals(1.0, prefs.fontSize!!, 0.0001)
+  }
+
+  @Test
+  fun `each ReaderFont resolves to a registered family`() {
+    // Guards against an enum addition without the corresponding readiumFamily mapping update.
+    val families =
+      ReaderFont.entries.map { EpubTypography.toEpubPreferences(ReaderPreferences(font = it)) }
+    assertEquals(ReaderFont.entries.size, families.distinctBy { it.fontFamily }.size)
   }
 }

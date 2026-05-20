@@ -49,4 +49,13 @@
     <string name="reader_sync_prompt_body_no_device">Another device read up to %1$d%%. Apply this position?</string>
     <string name="reader_sync_prompt_apply">Apply</string>
     <string name="reader_sync_prompt_stay">Stay here</string>
+
+    <!-- Reader preferences bottom sheet -->
+    <string name="reader_prefs_tab_font">Font</string>
+    <string name="reader_prefs_tab_layout">Layout</string>
+    <string name="reader_prefs_tab_themes">Themes</string>
+    <string name="reader_prefs_tab_more">More</string>
+    <string name="reader_prefs_font_sample">Aa</string>
+    <string name="reader_prefs_font_size_smaller">Smaller font size</string>
+    <string name="reader_prefs_font_size_larger">Larger font size</string>
 </resources>

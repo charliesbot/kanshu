@@ -49,4 +49,13 @@
     <string name="reader_sync_prompt_body_no_device">Otro dispositivo ha leído hasta el %1$d %%. ¿Aplicar esta posición?</string>
     <string name="reader_sync_prompt_apply">Aplicar</string>
     <string name="reader_sync_prompt_stay">Quedarme aquí</string>
+
+    <!-- Reader preferences bottom sheet -->
+    <string name="reader_prefs_tab_font">Fuente</string>
+    <string name="reader_prefs_tab_layout">Diseño</string>
+    <string name="reader_prefs_tab_themes">Temas</string>
+    <string name="reader_prefs_tab_more">Más</string>
+    <string name="reader_prefs_font_sample">Aa</string>
+    <string name="reader_prefs_font_size_smaller">Tamaño de fuente menor</string>
+    <string name="reader_prefs_font_size_larger">Tamaño de fuente mayor</string>
 </resources>

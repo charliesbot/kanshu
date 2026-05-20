@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.readium.r2.navigator.epub.EpubDefaults
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubPreferences
@@ -18,21 +20,30 @@ import org.readium.r2.shared.util.Either
 // `EpubDefaults` and `RsProperties` values below are therefore *fallbacks*, not overrides:
 // publisher rules at equal specificity beat them, so they only take effect for properties the
 // publisher didn't specify. Font-family is the one user pref that wins regardless because
-// ReadiumCSS applies it with `!important`. Readium plumbs `fontFamily` only through
-// `EpubPreferences`, never `EpubDefaults` — that's why the seed font lives in
-// `initialPreferences` and not in `defaults`.
+// ReadiumCSS applies it with `!important` once `--USER__fontOverride: readium-font-on` is set —
+// which the toolkit derives from the presence of a non-null fontFamily in `EpubPreferences`.
 //
-// Escape hatch: when ReadiumCSS + RsProperties no longer cover a rule we need (drop caps,
-// blockquote ornament, vertical body padding in paginated mode, etc.), the documented path in
-// Readium 3.1.2 is a Streamer-side `TransformingContainer` that rewrites spine HTML to inject
-// a <link>. The navigator surface has no `<link>` injection hook. See docs/READIUM_API.md
-// ("The Streamer escape hatch: TransformingContainer" and "What `body` actually gets") for the
-// pattern and caveats.
+// Adding a new font is a three-step process documented in
+// features/reader/app/src/main/assets/fonts/_HOW_TO_ADD_FONTS.txt: drop the .ttf, add a
+// ReaderFont enum entry, and register the face in `fragmentConfiguration` plus the mapper
+// below.
 @OptIn(ExperimentalReadiumApi::class)
 internal object EpubTypography {
 
-  val inter = FontFamily("Inter")
-  val notoSerif = FontFamily("Noto Serif")
+  val bitter = FontFamily("Bitter")
+  val libreBaskerville = FontFamily("Libre Baskerville")
+  val literata = FontFamily("Literata")
+  val openDyslexic = FontFamily("OpenDyslexic")
+
+  // WORKAROUND for Readium PR #787 (CORS on @font-face). The kanshu* families resolve to the
+  // `-Kanshu`-suffixed @font-face rules that core/data/.../fontworkaround/EpubFontInjector.kt
+  // injects directly into chapter HTML. When the upstream fix lands, delete these four lines
+  // and the wired-in `kanshu*` mappings in `readiumFamily` below — the unsuffixed FontFamily
+  // values above will then route through Readium's own addFontFamilyDeclaration blocks.
+  private val kanshuLiterata = FontFamily("Literata-Kanshu")
+  private val kanshuBitter = FontFamily("Bitter-Kanshu")
+  private val kanshuLibreBaskerville = FontFamily("Libre Baskerville-Kanshu")
+  private val kanshuOpenDyslexic = FontFamily("OpenDyslexic-Kanshu")
 
   val defaults =
     EpubDefaults(
@@ -54,7 +65,23 @@ internal object EpubTypography {
       baseLineHeight = Either.Right(1.4),
     )
 
-  val initialPreferences = EpubPreferences(fontFamily = notoSerif, columnCount = ColumnCount.ONE)
+  fun toEpubPreferences(prefs: ReaderPreferences): EpubPreferences =
+    EpubPreferences(
+      fontFamily = readiumFamily(prefs.font),
+      fontSize = prefs.fontScale.toDouble(),
+      columnCount = ColumnCount.ONE,
+    )
+
+  // WORKAROUND for Readium PR #787: returns the Kanshu-suffixed family so our injected
+  // @font-face rule wins. Restore the commented unsuffixed branches when the upstream fix
+  // releases.
+  private fun readiumFamily(font: ReaderFont): FontFamily =
+    when (font) {
+      ReaderFont.Literata -> kanshuLiterata // -> literata
+      ReaderFont.Bitter -> kanshuBitter // -> bitter
+      ReaderFont.LibreBaskerville -> kanshuLibreBaskerville // -> libreBaskerville
+      ReaderFont.OpenDyslexic -> kanshuOpenDyslexic // -> openDyslexic
+    }
 
   // Lazy so JVM unit tests that touch other members (e.g. ReaderViewModelTest exercising
   // EpubTypography.defaults) don't trigger Readium's addSource → android.net.Uri.encode path,
@@ -64,29 +91,69 @@ internal object EpubTypography {
       servedAssets += "fonts/.*"
       readiumCssRsProperties = rsProperties
 
-      addFontFamilyDeclaration(inter) {
+      addFontFamilyDeclaration(literata) {
         addFontFace {
-          addSource("fonts/Inter-Variable.ttf", preload = true)
+          addSource("fonts/Literata-VariableFont_opsz,wght.ttf", preload = true)
           setFontStyle(FontStyle.NORMAL)
           setFontWeight(100..900)
         }
         addFontFace {
-          addSource("fonts/Inter-Italic-Variable.ttf")
+          addSource("fonts/Literata-Italic-VariableFont_opsz,wght.ttf")
           setFontStyle(FontStyle.ITALIC)
           setFontWeight(100..900)
         }
       }
 
-      addFontFamilyDeclaration(notoSerif) {
+      addFontFamilyDeclaration(bitter) {
         addFontFace {
-          addSource("fonts/NotoSerif-Variable.ttf", preload = true)
+          addSource("fonts/Bitter-VariableFont_wght.ttf", preload = true)
           setFontStyle(FontStyle.NORMAL)
           setFontWeight(100..900)
         }
         addFontFace {
-          addSource("fonts/NotoSerif-Italic-Variable.ttf")
+          addSource("fonts/Bitter-Italic-VariableFont_wght.ttf")
           setFontStyle(FontStyle.ITALIC)
           setFontWeight(100..900)
+        }
+      }
+
+      addFontFamilyDeclaration(libreBaskerville) {
+        addFontFace {
+          addSource("fonts/LibreBaskerville-VariableFont_wght.ttf", preload = true)
+          setFontStyle(FontStyle.NORMAL)
+          setFontWeight(100..900)
+        }
+        addFontFace {
+          addSource("fonts/LibreBaskerville-Italic-VariableFont_wght.ttf")
+          setFontStyle(FontStyle.ITALIC)
+          setFontWeight(100..900)
+        }
+      }
+
+      // OpenDyslexic ships as four static faces rather than variable axes, so each weight/style
+      // pairing gets its own addFontFace entry. Regular + bold both register the full 100..900
+      // weight range so ReadiumCSS picks the right face when boldface CSS targets a heading or
+      // <strong>.
+      addFontFamilyDeclaration(openDyslexic) {
+        addFontFace {
+          addSource("fonts/OpenDyslexic-Regular.otf", preload = true)
+          setFontStyle(FontStyle.NORMAL)
+          setFontWeight(100..500)
+        }
+        addFontFace {
+          addSource("fonts/OpenDyslexic-Italic.otf")
+          setFontStyle(FontStyle.ITALIC)
+          setFontWeight(100..500)
+        }
+        addFontFace {
+          addSource("fonts/OpenDyslexic-Bold.otf")
+          setFontStyle(FontStyle.NORMAL)
+          setFontWeight(600..900)
+        }
+        addFontFace {
+          addSource("fonts/OpenDyslexic-BoldItalic.otf")
+          setFontStyle(FontStyle.ITALIC)
+          setFontWeight(600..900)
         }
       }
     }

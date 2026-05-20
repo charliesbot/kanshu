@@ -2,6 +2,9 @@ package com.charliesbot.kanshu.features.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
@@ -17,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -30,6 +34,7 @@ class ReaderViewModel(
   private val seriesId: Int,
   private val openBook: OpenBookUseCase,
   private val sync: SyncRepository,
+  private val preferences: ReaderPreferencesRepository,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
   val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -62,8 +67,17 @@ class ReaderViewModel(
       .map { locator -> tocIndex?.chapterStateFor(locator) ?: ChapterState.Empty }
       .stateIn(viewModelScope, SharingStarted.Eagerly, ChapterState.Empty)
 
+  // Live prefs surfaced to the UI. Eagerly started so the bottom sheet shows the persisted
+  // values immediately when opened, without a per-collector cold start. WhileSubscribed isn't
+  // worth the cost here — there's only ever one screen observing.
+  val readerPreferences: StateFlow<ReaderPreferences> =
+    preferences.preferences.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderPreferences())
+
   init {
     viewModelScope.launch {
+      // Resolve persisted preferences before mounting the navigator so the initial frame already
+      // uses the stored font/scale. On a warm DataStore this is a single in-memory read.
+      val storedPrefs = preferences.preferences.first()
       when (val result = openBook(seriesId)) {
         is ReaderResult.Success -> {
           publication = result.publication
@@ -86,6 +100,7 @@ class ReaderViewModel(
                     EpubNavigatorFactory.Configuration(defaults = EpubTypography.defaults),
                 ),
               initialLocator = initialLocator,
+              initialPreferences = EpubTypography.toEpubPreferences(storedPrefs),
             )
         }
         ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
@@ -93,6 +108,14 @@ class ReaderViewModel(
         ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
       }
     }
+  }
+
+  fun setFont(font: ReaderFont) {
+    viewModelScope.launch { preferences.setFont(font) }
+  }
+
+  fun setFontScale(scale: Float) {
+    viewModelScope.launch { preferences.setFontScale(scale) }
   }
 
   fun onLocatorChanged(locator: Locator) {
