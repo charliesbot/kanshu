@@ -137,7 +137,30 @@ internal object KanshuFontWorkaround {
           """
             .trimIndent()
         }
-      val built = "<style id=\"kanshu-fonts\">\n$rules\n</style>"
+      // ReadiumCSS only forces `font-family: inherit !important` on body/dd/div/dt/li/p
+      // (see ReadiumCSS-after.css), so a publisher's `h1 { font-family: ... }` rule wins
+      // for headings and the user-selected font silently doesn't apply to titles. We extend
+      // the inherit list to the heading + common structural elements that publishers
+      // typically style. `pre` and `code` are intentionally excluded so monospace stays
+      // monospace. Reads `var(--USER__fontFamily)` so it works for whichever font the user
+      // picks — no per-font duplication.
+      val headingOverride =
+        """
+        :root[style*="--USER__fontFamily"] h1,
+        :root[style*="--USER__fontFamily"] h2,
+        :root[style*="--USER__fontFamily"] h3,
+        :root[style*="--USER__fontFamily"] h4,
+        :root[style*="--USER__fontFamily"] h5,
+        :root[style*="--USER__fontFamily"] h6,
+        :root[style*="--USER__fontFamily"] header,
+        :root[style*="--USER__fontFamily"] footer,
+        :root[style*="--USER__fontFamily"] blockquote,
+        :root[style*="--USER__fontFamily"] figcaption {
+          font-family: inherit !important;
+        }
+        """
+          .trimIndent()
+      val built = "<style id=\"kanshu-fonts\">\n$rules\n$headingOverride\n</style>"
       cachedStyleBlock = built
       return built
     }
