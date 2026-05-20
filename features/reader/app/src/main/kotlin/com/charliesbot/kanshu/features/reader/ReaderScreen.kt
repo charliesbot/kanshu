@@ -9,7 +9,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,18 +35,15 @@ import com.charliesbot.kanshu.core.ui.system.FullScreenMode
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
-import org.readium.r2.navigator.epub.EpubNavigatorFragment
-import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 
 // Reading mode defaults to zero persistent app UI per the PRD: system bars are hidden via
 // FullScreenMode for the lifetime of this screen, and pagination is driven by swipe gestures
 // and Readium's tap-edge adapter. A center tap reveals the ReaderOverlay (top chrome + bottom
 // chrome), which dismisses on tap of the middle zone. Pagination, chapter advancement, and
-// rendering are owned by EpubNavigatorFragment via Readium.
+// rendering are owned by BookViewer.
 @Composable
 fun ReaderScreen(
   seriesId: Int,
@@ -79,7 +75,6 @@ fun ReaderScreen(
   )
 }
 
-@OptIn(ExperimentalReadiumApi::class)
 @Composable
 private fun ReaderContent(
   uiState: ReaderUiState,
@@ -130,7 +125,6 @@ private fun ReaderContent(
   }
 }
 
-@OptIn(ExperimentalReadiumApi::class)
 @Composable
 private fun ReaderBody(
   uiState: ReaderUiState.Ready,
@@ -149,38 +143,34 @@ private fun ReaderBody(
   onFontChange: (ReaderFont) -> Unit,
   onFontScaleChange: (Float) -> Unit,
 ) {
-  var navigator by remember { mutableStateOf<EpubNavigatorFragment?>(null) }
+  var controller by remember { mutableStateOf<BookViewController?>(null) }
   var readerPrefsOpen by remember { mutableStateOf(false) }
   val openReaderPrefs = {
     onOverlayVisibleChange(false)
     readerPrefsOpen = true
   }
-  val scope = rememberCoroutineScope()
   val context = LocalContext.current
   val toastText = stringResource(R.string.reader_sync_already_at_furthest)
-  LaunchedEffect(navigator) { navigator?.currentLocator?.collect(onLocatorChanged) }
-  LaunchedEffect(navigator) { navigateTo.collect { target -> navigator?.go(target) } }
+  LaunchedEffect(controller) { controller?.currentLocator?.collect(onLocatorChanged) }
+  LaunchedEffect(controller) { navigateTo.collect { target -> controller?.go(target) } }
   LaunchedEffect(Unit) {
     alreadyAtFurthest.collect { Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show() }
   }
-  // Apply live preference changes once the navigator is mounted. The first emission matches the
-  // initialPreferences we passed to the fragment factory, so it's a no-op on the first frame.
-  LaunchedEffect(navigator, readerPrefs) {
-    navigator?.submitPreferences(EpubTypography.toEpubPreferences(readerPrefs))
-  }
+  // Apply live preference changes once the controller is mounted.
+  LaunchedEffect(controller, readerPrefs) { controller?.submitPreferences(readerPrefs) }
   Box(Modifier.fillMaxSize()) {
-    EpubNavigatorHost(
-      factory = uiState.factory,
+    BookViewer(
+      publication = uiState.publication,
       initialPreferences = uiState.initialPreferences,
-      onNavigatorReady = { navigator = it },
+      onControllerReady = { controller = it },
       onCenterTap = { onOverlayVisibleChange(true) },
       initialLocator = uiState.initialLocator,
       modifier =
         Modifier.fillMaxSize()
           .horizontalSwipeToPageTurn(
-            enabled = navigator != null,
-            onSwipeForward = { scope.launch { navigator?.goForward() } },
-            onSwipeBackward = { scope.launch { navigator?.goBackward() } },
+            enabled = controller != null,
+            onSwipeForward = { controller?.goForward() },
+            onSwipeBackward = { controller?.goBackward() },
           ),
     )
     if (overlayVisible) {
@@ -189,12 +179,8 @@ private fun ReaderBody(
         chapterTitle = chapterState.title,
         prevChapterEnabled = chapterState.prevLocator != null,
         nextChapterEnabled = chapterState.nextLocator != null,
-        onPrevChapter = {
-          chapterState.prevLocator?.let { target -> scope.launch { navigator?.go(target) } }
-        },
-        onNextChapter = {
-          chapterState.nextLocator?.let { target -> scope.launch { navigator?.go(target) } }
-        },
+        onPrevChapter = { chapterState.prevLocator?.let { target -> controller?.go(target) } },
+        onNextChapter = { chapterState.nextLocator?.let { target -> controller?.go(target) } },
         onSyncToFurthest = onSyncToFurthest,
         onOpenReaderPrefs = openReaderPrefs,
         onDismiss = { onOverlayVisibleChange(false) },

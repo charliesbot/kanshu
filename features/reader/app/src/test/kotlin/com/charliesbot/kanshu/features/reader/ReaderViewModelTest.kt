@@ -23,7 +23,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -64,7 +63,7 @@ class ReaderViewModelTest {
     ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync, preferences = preferences)
 
   @Test
-  fun `success result becomes Ready with title and factory`() = runTest {
+  fun `success result becomes Ready with title and publication`() = runTest {
     val publication = fakePublication(title = "A Book")
     coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
 
@@ -75,7 +74,7 @@ class ReaderViewModelTest {
     assertTrue(state is ReaderUiState.Ready)
     state as ReaderUiState.Ready
     assertEquals("A Book", state.title)
-    assertNotNull(state.factory)
+    assertEquals(publication, state.publication)
   }
 
   @Test
@@ -111,9 +110,8 @@ class ReaderViewModelTest {
     advanceUntilIdle()
 
     val state = viewModel.uiState.value as ReaderUiState.Ready
-    // Workaround active: family name carries `-Kanshu` suffix. Drop the suffix when PR #787 lands.
-    assertEquals("OpenDyslexic-Kanshu", state.initialPreferences.fontFamily?.name)
-    assertEquals(1.4, state.initialPreferences.fontSize!!, 0.0001)
+    assertEquals(ReaderFont.OpenDyslexic, state.initialPreferences.font)
+    assertEquals(1.4f, state.initialPreferences.fontScale, 0.0001f)
   }
 
   @Test
