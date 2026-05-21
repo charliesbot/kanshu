@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.database
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
@@ -11,7 +12,8 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 
 @Database(
   entities = [BookEntity::class, ReadingProgressEntity::class, AnnotationEntity::class],
-  version = 1,
+  version = 2,
+  autoMigrations = [AutoMigration(from = 1, to = 2)],
   exportSchema = true,
 )
 abstract class KanshuDatabase : RoomDatabase() {
