@@ -60,4 +60,27 @@ class EpubTypographyTest {
       ReaderFont.entries.map { EpubTypography.toEpubPreferences(ReaderPreferences(font = it)) }
     assertEquals(ReaderFont.entries.size, families.distinctBy { it.fontFamily }.size)
   }
+
+  @Test
+  fun `reader preferences map spacing options to epub preferences`() {
+    val defaultPrefs = EpubTypography.toEpubPreferences(ReaderPreferences())
+    assertEquals(1.4, defaultPrefs.lineHeight!!, 0.0001)
+    assertEquals(0.0, defaultPrefs.paragraphSpacing!!, 0.0001)
+    assertEquals(0.0, defaultPrefs.wordSpacing!!, 0.0001)
+    assertEquals(0.0, defaultPrefs.letterSpacing!!, 0.0001)
+
+    val customPrefs =
+      EpubTypography.toEpubPreferences(
+        ReaderPreferences(
+          lineSpacing = 1.6f,
+          paragraphSpacing = 0.5f,
+          wordSpacing = 0.2f,
+          letterSpacing = 0.1f,
+        )
+      )
+    assertEquals(1.6, customPrefs.lineHeight!!, 0.0001)
+    assertEquals(0.5, customPrefs.paragraphSpacing!!, 0.0001)
+    assertEquals(0.2, customPrefs.wordSpacing!!, 0.0001)
+    assertEquals(0.1, customPrefs.letterSpacing!!, 0.0001)
+  }
 }

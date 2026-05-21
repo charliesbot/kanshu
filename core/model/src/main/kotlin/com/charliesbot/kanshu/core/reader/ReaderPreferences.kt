@@ -9,11 +9,35 @@ data class ReaderPreferences(
   val fontScale: Float = SCALE_DEFAULT,
   val margins: ReaderMargins = ReaderMargins.Medium,
   val alignment: ReaderAlignment = ReaderAlignment.Justify,
+  val lineSpacing: Float = LINE_SPACING_DEFAULT,
+  val paragraphSpacing: Float = PARAGRAPH_SPACING_DEFAULT,
+  val wordSpacing: Float = WORD_SPACING_DEFAULT,
+  val letterSpacing: Float = LETTER_SPACING_DEFAULT,
 ) {
   companion object {
     const val SCALE_MIN: Float = 0.5f
     const val SCALE_MAX: Float = 2.0f
     const val SCALE_DEFAULT: Float = 1.0f
     const val SCALE_STEP: Float = 0.1f
+
+    const val LINE_SPACING_MIN: Float = 1.0f
+    const val LINE_SPACING_MAX: Float = 1.8f
+    const val LINE_SPACING_DEFAULT: Float = 1.4f
+    const val LINE_SPACING_STEP: Float = 0.2f
+
+    const val PARAGRAPH_SPACING_MIN: Float = 0.0f
+    const val PARAGRAPH_SPACING_MAX: Float = 2.0f
+    const val PARAGRAPH_SPACING_DEFAULT: Float = 0.0f
+    const val PARAGRAPH_SPACING_STEP: Float = 0.5f
+
+    const val WORD_SPACING_MIN: Float = 0.0f
+    const val WORD_SPACING_MAX: Float = 0.4f
+    const val WORD_SPACING_DEFAULT: Float = 0.0f
+    const val WORD_SPACING_STEP: Float = 0.1f
+
+    const val LETTER_SPACING_MIN: Float = 0.0f
+    const val LETTER_SPACING_MAX: Float = 0.2f
+    const val LETTER_SPACING_DEFAULT: Float = 0.0f
+    const val LETTER_SPACING_STEP: Float = 0.05f
   }
 }
