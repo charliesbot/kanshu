@@ -58,6 +58,11 @@ fun ReaderPrefsBottomSheet(
   onFontScaleChange: (Float) -> Unit,
   onMarginsChange: (ReaderMargins) -> Unit,
   onAlignmentChange: (ReaderAlignment) -> Unit,
+  onLineSpacingChange: (Float) -> Unit,
+  onParagraphSpacingChange: (Float) -> Unit,
+  onWordSpacingChange: (Float) -> Unit,
+  onLetterSpacingChange: (Float) -> Unit,
+  onResetSpacing: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var activeTab by remember { mutableStateOf(PrefsTab.Font) }
@@ -76,6 +81,16 @@ fun ReaderPrefsBottomSheet(
           onAlignmentChange = onAlignmentChange,
         )
 
+      PrefsTab.Spacing ->
+        SpacingTab(
+          prefs = prefs,
+          onLineSpacingChange = onLineSpacingChange,
+          onParagraphSpacingChange = onParagraphSpacingChange,
+          onWordSpacingChange = onWordSpacingChange,
+          onLetterSpacingChange = onLetterSpacingChange,
+          onResetSpacing = onResetSpacing,
+        )
+
       PrefsTab.Themes,
       PrefsTab.More -> Box(Modifier.fillMaxWidth().height(96.dp))
     }
@@ -85,6 +100,7 @@ fun ReaderPrefsBottomSheet(
 private enum class PrefsTab(val labelRes: Int) {
   Font(R.string.reader_prefs_tab_font),
   Layout(R.string.reader_prefs_tab_layout),
+  Spacing(R.string.reader_prefs_tab_spacing),
   Themes(R.string.reader_prefs_tab_themes),
   More(R.string.reader_prefs_tab_more),
 }
@@ -246,6 +262,11 @@ private fun ReaderPrefsBottomSheetPreview() {
       onFontScaleChange = {},
       onMarginsChange = {},
       onAlignmentChange = {},
+      onLineSpacingChange = {},
+      onParagraphSpacingChange = {},
+      onWordSpacingChange = {},
+      onLetterSpacingChange = {},
+      onResetSpacing = {},
     )
   }
 }

@@ -15,14 +15,15 @@ import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.util.Either
 
-// Kanshu's EPUB typography. Models the "layout-theirs, fonts-ours" split from
-// docs/KINDLE_TYPOGRAPHY.md §5: publisher CSS shapes the book (publisherStyles = true) and
-// user preferences override only the legibility layer — typeface, size, hyphenation. The
-// `EpubDefaults` and `RsProperties` values below are therefore *fallbacks*, not overrides:
-// publisher rules at equal specificity beat them, so they only take effect for properties the
-// publisher didn't specify. Font-family is the one user pref that wins regardless because
-// ReadiumCSS applies it with `!important` once `--USER__fontOverride: readium-font-on` is set —
-// which the toolkit derives from the presence of a non-null fontFamily in `EpubPreferences`.
+// Models the Kindle-style typography layer from docs/KINDLE_TYPOGRAPHY.md: publisher CSS
+// shapes structural elements (lists, headings, blockquotes) but user preferences override the
+// legibility *and* spacing layer — typeface, size, line-height, margins, alignment, word/letter
+// spacing. `publisherStyles = true` still means the publisher's rules apply where the user
+// hasn't taken a position, but the spacing knobs in EpubPreferences are deliberate overrides.
+//
+// Font-family is the one user pref that wins regardless because ReadiumCSS applies it with
+// `!important` once `--USER__fontOverride: readium-font-on` is set — which the toolkit derives
+// from the presence of a non-null fontFamily in `EpubPreferences`.
 //
 // Adding a new font is a three-step process documented in
 // features/reader/app/src/main/assets/fonts/_HOW_TO_ADD_FONTS.txt: drop the .ttf, add a
@@ -46,6 +47,8 @@ internal object EpubTypography {
   private val kanshuLibreBaskerville = FontFamily("Libre Baskerville-Kanshu")
   private val kanshuOpenDyslexic = FontFamily("OpenDyslexic-Kanshu")
 
+  // Note: Spacing and line height defaults duplicate what toEpubPreferences unconditionally
+  // emits. They act as a fallback safety net for future code paths bypassing preferences.
   val defaults =
     EpubDefaults(
       publisherStyles = true,
@@ -77,6 +80,10 @@ internal object EpubTypography {
           ReaderAlignment.Justify -> TextAlign.JUSTIFY
           ReaderAlignment.Left -> TextAlign.LEFT
         },
+      lineHeight = prefs.lineSpacing.toDouble(),
+      paragraphSpacing = prefs.paragraphSpacing.toDouble(),
+      wordSpacing = prefs.wordSpacing.toDouble(),
+      letterSpacing = prefs.letterSpacing.toDouble(),
     )
 
   // WORKAROUND for Readium PR #787: returns the Kanshu-suffixed family so our injected

@@ -176,6 +176,82 @@ class ReaderViewModelTest {
     assertEquals(ReaderAlignment.Left, viewModel.readerPreferences.value.alignment)
   }
 
+  @Test
+  fun `setLineSpacing persists the chosen line spacing`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setLineSpacing(1.6f)
+    advanceUntilIdle()
+
+    assertEquals(1.6f, viewModel.readerPreferences.value.lineSpacing, 0.0001f)
+  }
+
+  @Test
+  fun `setParagraphSpacing persists the chosen paragraph spacing`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setParagraphSpacing(1.0f)
+    advanceUntilIdle()
+
+    assertEquals(1.0f, viewModel.readerPreferences.value.paragraphSpacing, 0.0001f)
+  }
+
+  @Test
+  fun `setWordSpacing persists the chosen word spacing`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setWordSpacing(0.3f)
+    advanceUntilIdle()
+
+    assertEquals(0.3f, viewModel.readerPreferences.value.wordSpacing, 0.0001f)
+  }
+
+  @Test
+  fun `setLetterSpacing persists the chosen letter spacing`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setLetterSpacing(0.15f)
+    advanceUntilIdle()
+
+    assertEquals(0.15f, viewModel.readerPreferences.value.letterSpacing, 0.0001f)
+  }
+
+  @Test
+  fun `resetSpacing resets all spacing parameters`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    preferences.seed(
+      ReaderPreferences(
+        lineSpacing = 1.8f,
+        paragraphSpacing = 1.5f,
+        wordSpacing = 0.4f,
+        letterSpacing = 0.2f,
+      )
+    )
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.resetSpacing()
+    advanceUntilIdle()
+
+    val currentPrefs = viewModel.readerPreferences.value
+    assertEquals(ReaderPreferences.LINE_SPACING_DEFAULT, currentPrefs.lineSpacing, 0.0001f)
+    assertEquals(
+      ReaderPreferences.PARAGRAPH_SPACING_DEFAULT,
+      currentPrefs.paragraphSpacing,
+      0.0001f,
+    )
+    assertEquals(ReaderPreferences.WORD_SPACING_DEFAULT, currentPrefs.wordSpacing, 0.0001f)
+    assertEquals(ReaderPreferences.LETTER_SPACING_DEFAULT, currentPrefs.letterSpacing, 0.0001f)
+  }
+
   private class FakeReaderPreferencesRepository : ReaderPreferencesRepository {
     private val state = MutableStateFlow(ReaderPreferences())
     override val preferences: Flow<ReaderPreferences> = state.asStateFlow()
@@ -199,6 +275,43 @@ class ReaderViewModelTest {
 
     override suspend fun setAlignment(alignment: ReaderAlignment) {
       state.value = state.value.copy(alignment = alignment)
+    }
+
+    override suspend fun setLineSpacing(value: Float) {
+      val clamped =
+        value.coerceIn(ReaderPreferences.LINE_SPACING_MIN, ReaderPreferences.LINE_SPACING_MAX)
+      state.value = state.value.copy(lineSpacing = clamped)
+    }
+
+    override suspend fun setParagraphSpacing(value: Float) {
+      val clamped =
+        value.coerceIn(
+          ReaderPreferences.PARAGRAPH_SPACING_MIN,
+          ReaderPreferences.PARAGRAPH_SPACING_MAX,
+        )
+      state.value = state.value.copy(paragraphSpacing = clamped)
+    }
+
+    override suspend fun setWordSpacing(value: Float) {
+      val clamped =
+        value.coerceIn(ReaderPreferences.WORD_SPACING_MIN, ReaderPreferences.WORD_SPACING_MAX)
+      state.value = state.value.copy(wordSpacing = clamped)
+    }
+
+    override suspend fun setLetterSpacing(value: Float) {
+      val clamped =
+        value.coerceIn(ReaderPreferences.LETTER_SPACING_MIN, ReaderPreferences.LETTER_SPACING_MAX)
+      state.value = state.value.copy(letterSpacing = clamped)
+    }
+
+    override suspend fun resetSpacing() {
+      state.value =
+        state.value.copy(
+          lineSpacing = ReaderPreferences.LINE_SPACING_DEFAULT,
+          paragraphSpacing = ReaderPreferences.PARAGRAPH_SPACING_DEFAULT,
+          wordSpacing = ReaderPreferences.WORD_SPACING_DEFAULT,
+          letterSpacing = ReaderPreferences.LETTER_SPACING_DEFAULT,
+        )
     }
   }
 }

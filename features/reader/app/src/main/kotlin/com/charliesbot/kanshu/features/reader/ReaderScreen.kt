@@ -76,6 +76,11 @@ fun ReaderScreen(
     onFontScaleChange = viewModel::setFontScale,
     onMarginsChange = viewModel::setMargins,
     onAlignmentChange = viewModel::setAlignment,
+    onLineSpacingChange = viewModel::setLineSpacing,
+    onParagraphSpacingChange = viewModel::setParagraphSpacing,
+    onWordSpacingChange = viewModel::setWordSpacing,
+    onLetterSpacingChange = viewModel::setLetterSpacing,
+    onResetSpacing = viewModel::resetSpacing,
   )
 }
 
@@ -98,6 +103,11 @@ private fun ReaderContent(
   onFontScaleChange: (Float) -> Unit,
   onMarginsChange: (ReaderMargins) -> Unit,
   onAlignmentChange: (ReaderAlignment) -> Unit,
+  onLineSpacingChange: (Float) -> Unit,
+  onParagraphSpacingChange: (Float) -> Unit,
+  onWordSpacingChange: (Float) -> Unit,
+  onLetterSpacingChange: (Float) -> Unit,
+  onResetSpacing: () -> Unit,
 ) {
   KanshuScaffold {
     when (uiState) {
@@ -122,6 +132,11 @@ private fun ReaderContent(
           onFontScaleChange = onFontScaleChange,
           onMarginsChange = onMarginsChange,
           onAlignmentChange = onAlignmentChange,
+          onLineSpacingChange = onLineSpacingChange,
+          onParagraphSpacingChange = onParagraphSpacingChange,
+          onWordSpacingChange = onWordSpacingChange,
+          onLetterSpacingChange = onLetterSpacingChange,
+          onResetSpacing = onResetSpacing,
         )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
@@ -152,6 +167,11 @@ private fun ReaderBody(
   onFontScaleChange: (Float) -> Unit,
   onMarginsChange: (ReaderMargins) -> Unit,
   onAlignmentChange: (ReaderAlignment) -> Unit,
+  onLineSpacingChange: (Float) -> Unit,
+  onParagraphSpacingChange: (Float) -> Unit,
+  onWordSpacingChange: (Float) -> Unit,
+  onLetterSpacingChange: (Float) -> Unit,
+  onResetSpacing: () -> Unit,
 ) {
   var controller by remember { mutableStateOf<BookViewController?>(null) }
   var readerPrefsOpen by remember { mutableStateOf(false) }
@@ -203,6 +223,11 @@ private fun ReaderBody(
         onFontScaleChange = onFontScaleChange,
         onMarginsChange = onMarginsChange,
         onAlignmentChange = onAlignmentChange,
+        onLineSpacingChange = onLineSpacingChange,
+        onParagraphSpacingChange = onParagraphSpacingChange,
+        onWordSpacingChange = onWordSpacingChange,
+        onLetterSpacingChange = onLetterSpacingChange,
+        onResetSpacing = onResetSpacing,
       )
     }
     if (remoteSuggestion != null) {
@@ -304,6 +329,11 @@ private fun ReaderScreenLoadingPreview() {
       onFontScaleChange = {},
       onMarginsChange = {},
       onAlignmentChange = {},
+      onLineSpacingChange = {},
+      onParagraphSpacingChange = {},
+      onWordSpacingChange = {},
+      onLetterSpacingChange = {},
+      onResetSpacing = {},
     )
   }
 }
@@ -330,6 +360,11 @@ private fun ReaderScreenErrorPreview() {
       onFontScaleChange = {},
       onMarginsChange = {},
       onAlignmentChange = {},
+      onLineSpacingChange = {},
+      onParagraphSpacingChange = {},
+      onWordSpacingChange = {},
+      onLetterSpacingChange = {},
+      onResetSpacing = {},
     )
   }
 }

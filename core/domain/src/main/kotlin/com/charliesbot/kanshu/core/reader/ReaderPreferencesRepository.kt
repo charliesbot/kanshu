@@ -12,4 +12,14 @@ interface ReaderPreferencesRepository {
   suspend fun setMargins(margins: ReaderMargins)
 
   suspend fun setAlignment(alignment: ReaderAlignment)
+
+  suspend fun setLineSpacing(value: Float)
+
+  suspend fun setParagraphSpacing(value: Float)
+
+  suspend fun setWordSpacing(value: Float)
+
+  suspend fun setLetterSpacing(value: Float)
+
+  suspend fun resetSpacing()
 }

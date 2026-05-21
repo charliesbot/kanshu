@@ -122,6 +122,26 @@ class ReaderViewModel(
     viewModelScope.launch { preferences.setAlignment(alignment) }
   }
 
+  fun setLineSpacing(value: Float) {
+    viewModelScope.launch { preferences.setLineSpacing(value) }
+  }
+
+  fun setParagraphSpacing(value: Float) {
+    viewModelScope.launch { preferences.setParagraphSpacing(value) }
+  }
+
+  fun setWordSpacing(value: Float) {
+    viewModelScope.launch { preferences.setWordSpacing(value) }
+  }
+
+  fun setLetterSpacing(value: Float) {
+    viewModelScope.launch { preferences.setLetterSpacing(value) }
+  }
+
+  fun resetSpacing() {
+    viewModelScope.launch { preferences.resetSpacing() }
+  }
+
   fun onLocatorChanged(locator: Locator) {
     _currentLocator.value = locator
     val pub = publication ?: return

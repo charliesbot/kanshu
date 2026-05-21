@@ -42,14 +42,14 @@ The current rendering engine (Amazon brands user-facing features under "Enhanced
 - **Adaptive justification.** When line length shrinks (large font sizes, narrow viewports), the engine can switch from full justify to left-align to avoid awkward word gaps. This behavior is observed and documented by third parties; Amazon describes it in user-facing terms as "improved word spacing."
 - **OpenType kerning and ligatures.** GPOS/GSUB features are honored where the font provides them.
 
-## 5. The Layout vs. Fonts Split
+## 5. The Layout vs. Legibility & Spacing Split
 
 The conceptual separation that makes Kindle's output consistent across publishers:
 
 - **Layout (structural CSS).** Headings, blockquotes, signatures, paragraph indents, list structure — preserved from publisher CSS because they define the _shape_ of the book.
-- **Fonts (legibility CSS).** Typeface, font size, line height, alignment — owned by the user. The "Publisher Font" toggle in the Kindle UI controls whether the publisher's `font-family` is even applied; with it off, the engine uses Bookerly or another Kindle font. Size and line height are always user-driven.
+- **Legibility & Spacing (typography CSS).** Typeface, font size, line height, page margins, alignment, paragraph spacing, and word/letter spacing — owned by the user. The "Publisher Font" toggle in the Kindle UI controls whether the publisher's `font-family` is even applied; with it off, the engine uses Bookerly or another Kindle font. Size, spacing, and line height are always user-driven and take precedence over publisher CSS.
 
-This split is the operative model for a Kindle-quality reader: don't try to honor everything the publisher said about fonts, and don't try to override everything the publisher said about structure.
+This split is the operative model for a Kindle-quality reader: don't try to honor everything the publisher said about typography and spacing, and don't try to override everything the publisher said about structure.
 
 ## 6. Cover Pages — Open Question
 
@@ -64,7 +64,7 @@ To replicate Kindle's quality, a reader should move away from "render the publis
 1. **Honor structural CSS** (headings, blockquotes, indents, list structure).
 2. **Inject robust defaults** for things publishers commonly miss (justification, list padding, heading margins).
 3. **Constrain** known-fragile properties (`position: absolute`, hardcoded widths that don't account for the viewport).
-4. **Override legibility CSS** with user preferences (font family, font size, line height, alignment).
+4. **Override legibility & spacing CSS** with user preferences (font family, font size, line height, margins, alignment, paragraph spacing, and word/letter spacing).
 5. **Treat cover pages as a separate concern** — don't assume publisher CSS will fill the viewport.
 
 ## References
