@@ -7,6 +7,8 @@ package com.charliesbot.kanshu.core.reader
 data class ReaderPreferences(
   val font: ReaderFont = ReaderFont.Literata,
   val fontScale: Float = SCALE_DEFAULT,
+  val margins: ReaderMargins = ReaderMargins.Medium,
+  val alignment: ReaderAlignment = ReaderAlignment.Justify,
 ) {
   companion object {
     const val SCALE_MIN: Float = 0.5f

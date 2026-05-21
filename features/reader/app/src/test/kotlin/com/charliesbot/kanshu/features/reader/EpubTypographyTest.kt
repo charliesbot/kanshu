@@ -1,11 +1,14 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.readium.r2.navigator.preferences.ColumnCount
+import org.readium.r2.navigator.preferences.TextAlign
 import org.readium.r2.shared.ExperimentalReadiumApi
 
 // We deliberately don't assert against EpubTypography.fragmentConfiguration here: materializing
@@ -34,6 +37,20 @@ class EpubTypographyTest {
     // ships and the suffix is removed in EpubTypography.readiumFamily.
     assertEquals("Literata-Kanshu", prefs.fontFamily?.name)
     assertEquals(1.0, prefs.fontSize!!, 0.0001)
+  }
+
+  @Test
+  fun `reader preferences map margins and alignment to epub preferences`() {
+    val defaultPrefs = EpubTypography.toEpubPreferences(ReaderPreferences())
+    assertEquals(ReaderMargins.Medium.value, defaultPrefs.pageMargins!!, 0.0001)
+    assertEquals(TextAlign.JUSTIFY, defaultPrefs.textAlign)
+
+    val compactLeftPrefs =
+      EpubTypography.toEpubPreferences(
+        ReaderPreferences(margins = ReaderMargins.Compact, alignment = ReaderAlignment.Left)
+      )
+    assertEquals(ReaderMargins.Compact.value, compactLeftPrefs.pageMargins!!, 0.0001)
+    assertEquals(TextAlign.LEFT, compactLeftPrefs.textAlign)
   }
 
   @Test
