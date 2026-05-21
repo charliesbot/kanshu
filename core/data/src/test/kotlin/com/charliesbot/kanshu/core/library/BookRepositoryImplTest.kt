@@ -17,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -289,4 +292,103 @@ class BookRepositoryImplTest {
 
     assertEquals(LibraryResult.NoCredentials, repo.observeBooks().first())
   }
+
+  @Test
+  fun `observeBooks offline fallback serving cache`() = runTest {
+    // Seed database cache with books
+    bookDao.upsert(bookEntity(id = "kavita:1", title = "Cached Book 1", coverToken = "cover-1"))
+
+    // Make network call throw exception
+    coEvery { api.listSeries(any(), any(), any(), any()) } throws KavitaException.NetworkError
+
+    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+    val result = repo.observeBooks().first() as LibraryResult.Success
+    assertEquals(1, result.items.size)
+    assertEquals("Cached Book 1", result.items.single().title)
+  }
+
+  @Test
+  fun `observeBooks offline empty db propagates error`() = runTest {
+    // Make network call throw exception
+    coEvery { api.listSeries(any(), any(), any(), any()) } throws KavitaException.NetworkError
+
+    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+    val result = repo.observeBooks().first()
+    assertEquals(LibraryResult.Error.Network, result)
+  }
+
+  @Test
+  fun `observeBooks prunes remote-deleted books only if not downloaded`() = runTest {
+    // Seed one downloaded book and one non-downloaded book
+    val downloadedFile = File(booksDir, "1.epub")
+    downloadedFile.writeBytes(byteArrayOf(0x1))
+    bookDao.upsert(
+      bookEntity(
+        id = "kavita:1",
+        title = "Downloaded Book",
+        localPath = downloadedFile.absolutePath,
+      )
+    )
+    bookDao.upsert(bookEntity(id = "kavita:2", title = "Not Downloaded Book"))
+
+    // Remote returns empty list (both books deleted on remote)
+    coEvery { api.listSeries(any(), any(), any(), any()) } returns emptyList()
+
+    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+    val result = repo.observeBooks().first() as LibraryResult.Success
+
+    // Not Downloaded Book (2) is deleted, Downloaded Book (1) is preserved.
+    assertEquals(1, result.items.size)
+    assertEquals(1, result.items.single().id)
+    assertNotNull(bookDao.snapshot()["kavita:1"])
+    assertNull(bookDao.snapshot()["kavita:2"])
+  }
+
+  @Test
+  fun `observeBooks reactive flow emits updates when database state changes`() = runTest {
+    coEvery { api.listSeries(any(), any(), any(), any()) } returns
+      listOf(SeriesDto(id = 1, name = "Book 1", coverImage = null))
+
+    val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
+
+    // Launch a collector that grabs two emissions
+    val emissions = mutableListOf<LibraryResult>()
+    val job = launch { repo.observeBooks().take(2).toList(emissions) }
+
+    testScheduler.runCurrent()
+
+    // First emission should be Success with DownloadState.NotDownloaded
+    val firstSuccess = emissions.first() as LibraryResult.Success
+    assertEquals(1, firstSuccess.items.size)
+    assertEquals(DownloadState.NotDownloaded, firstSuccess.items.single().downloadState)
+
+    // Simulate db update
+    bookDao.upsert(bookEntity(id = "kavita:1", title = "Book 1", localPath = "/path/to/book.epub"))
+    testScheduler.runCurrent()
+
+    // Second emission should be Success with DownloadState.Downloaded
+    val secondSuccess = emissions.last() as LibraryResult.Success
+    assertEquals(1, secondSuccess.items.size)
+    assertEquals(DownloadState.Downloaded, secondSuccess.items.single().downloadState)
+
+    job.cancel()
+  }
+
+  private fun bookEntity(
+    id: String,
+    title: String,
+    localPath: String? = null,
+    coverToken: String? = null,
+  ) =
+    BookEntity(
+      id = id,
+      source = "kavita",
+      sourceItemId = id.removePrefix("kavita:"),
+      title = title,
+      localPath = localPath,
+      byteSize = if (localPath != null) 100L else null,
+      downloadedAt = if (localPath != null) 1000L else null,
+      lastOpenedAt = null,
+      coverToken = coverToken,
+    )
 }

@@ -7,7 +7,6 @@ import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.KavitaException
-import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
@@ -21,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
@@ -53,12 +53,92 @@ class BookRepositoryImpl(
   // nothing — completed downloads land in the DB; abandoned downloads disappear with the process.
   private val _inFlight = MutableStateFlow<Map<Int, Int>>(emptyMap())
 
-  override fun observeBooks(): Flow<LibraryResult> =
-    flow { emit(loadFromKavita()) }
-      .combine(bookDao.observeDownloaded()) { result, downloaded -> result to downloaded }
-      .combine(_inFlight) { (result, downloaded), inFlight ->
-        overlay(result, downloaded, inFlight)
+  override fun observeBooks(): Flow<LibraryResult> = flow {
+    val creds = credentialsRepository.credentials.first()
+    if (creds == null) {
+      emit(LibraryResult.NoCredentials)
+      return@flow
+    }
+
+    val localBooksSnapshot =
+      try {
+        bookDao.getAll()
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to query local database cache", e)
+        emit(LibraryResult.Error.Unknown)
+        return@flow
       }
+
+    try {
+      val series =
+        api.listSeries(
+          baseUrl = creds.baseUrl,
+          apiKey = creds.apiKey,
+          pageNumber = 1,
+          pageSize = DEFAULT_PAGE_SIZE,
+        )
+      val fetchedIds = series.map { bookIdFor(it.id) }.toSet()
+
+      val remoteBooks =
+        series.map { s ->
+          val bookId = bookIdFor(s.id)
+          BookEntity(
+            id = bookId,
+            source = SOURCE_KAVITA,
+            sourceItemId = s.id.toString(),
+            title = s.name,
+            localPath = null,
+            byteSize = null,
+            downloadedAt = null,
+            lastOpenedAt = null,
+            coverToken = s.coverImage,
+          )
+        }
+
+      bookDao.syncBooks(SOURCE_KAVITA, remoteBooks, fetchedIds)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      Log.w(TAG, "Failed to sync library with Kavita", e)
+      // Offline-first design choice: if the cache is populated, we silently fall back to it
+      // rather than presenting a network error to the user.
+      if (localBooksSnapshot.isEmpty()) {
+        val err = if (e is KavitaException) e.toLibraryError() else LibraryResult.Error.Unknown
+        emit(err)
+        return@flow
+      }
+    }
+
+    emitAll(
+      bookDao.observeAll().combine(_inFlight) { dbBooks, inFlight ->
+        val items =
+          dbBooks
+            .filter { it.source == SOURCE_KAVITA }
+            .map { entity ->
+              val seriesId = seriesIdFromBookId(entity.id) ?: 0
+              val coverUrl =
+                if (entity.coverToken != null) {
+                  buildCoverUrl(creds.baseUrl, seriesId, creds.apiKey)
+                } else {
+                  null
+                }
+              LibraryItem(
+                id = seriesId,
+                title = entity.title,
+                coverUrl = coverUrl,
+                downloadState =
+                  when {
+                    inFlight.containsKey(seriesId) ->
+                      DownloadState.Downloading(progress = inFlight.getValue(seriesId))
+                    entity.localPath != null -> DownloadState.Downloaded
+                    else -> DownloadState.NotDownloaded
+                  },
+              )
+            }
+        if (items.isEmpty()) LibraryResult.Empty else LibraryResult.Success(items)
+      }
+    )
+  }
 
   override fun download(item: LibraryItem) {
     val seriesId = item.id
@@ -131,8 +211,8 @@ class BookRepositoryImpl(
           } else 0
         // Throttle to integer-percent changes — e-ink can't keep up with per-chunk emissions.
         _inFlight.update { current ->
-          val existing = current[seriesId] ?: return@update current
-          if (existing == pct) current else current + (seriesId to pct)
+          val currentPct = current[seriesId] ?: return@update current
+          if (currentPct == pct) current else current + (seriesId to pct)
         }
       }
       // ATOMIC_MOVE + REPLACE_EXISTING gives a single-step replacement so fileFor() never
@@ -155,6 +235,7 @@ class BookRepositoryImpl(
           byteSize = finalFile.length(),
           downloadedAt = System.currentTimeMillis(),
           lastOpenedAt = null,
+          coverToken = existing?.coverToken,
         )
       )
       _inFlight.update { it - seriesId }
@@ -191,54 +272,6 @@ class BookRepositoryImpl(
       ?.id
   }
 
-  private suspend fun loadFromKavita(): LibraryResult {
-    val creds = credentialsRepository.credentials.first() ?: return LibraryResult.NoCredentials
-    return try {
-      val series =
-        api.listSeries(
-          baseUrl = creds.baseUrl,
-          apiKey = creds.apiKey,
-          pageNumber = 1,
-          pageSize = DEFAULT_PAGE_SIZE,
-        )
-      val items = series.map { it.toLibraryItem(creds) }
-      if (items.isEmpty()) LibraryResult.Empty else LibraryResult.Success(items)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: KavitaException) {
-      e.toLibraryError()
-    }
-  }
-
-  private fun overlay(
-    result: LibraryResult,
-    downloaded: List<BookEntity>,
-    inFlight: Map<Int, Int>,
-  ): LibraryResult =
-    when (result) {
-      is LibraryResult.Success -> {
-        val downloadedSeries = downloaded.mapNotNull { seriesIdFromBookId(it.id) }.toSet()
-        LibraryResult.Success(
-          result.items.map { item ->
-            item.copy(downloadState = stateFor(item.id, downloadedSeries, inFlight))
-          }
-        )
-      }
-      else -> result
-    }
-
-  private fun stateFor(
-    seriesId: Int,
-    downloadedSeries: Set<Int>,
-    inFlight: Map<Int, Int>,
-  ): DownloadState =
-    when {
-      inFlight.containsKey(seriesId) ->
-        DownloadState.Downloading(progress = inFlight.getValue(seriesId))
-      seriesId in downloadedSeries -> DownloadState.Downloaded
-      else -> DownloadState.NotDownloaded
-    }
-
   private fun sweepOrphanTmpFiles() {
     booksDir.listFiles()?.forEach { f -> if (f.isFile && f.name.endsWith(".epub.tmp")) f.delete() }
   }
@@ -260,13 +293,6 @@ class BookRepositoryImpl(
 
   private fun tmpFile(seriesId: Int) = File(booksDir, "$seriesId.epub.tmp")
 }
-
-private fun SeriesDto.toLibraryItem(credentials: KavitaCredentials): LibraryItem =
-  LibraryItem(
-    id = id,
-    title = name,
-    coverUrl = coverImage?.let { buildCoverUrl(credentials.baseUrl, id, credentials.apiKey) },
-  )
 
 // Kavita's image endpoints take the api key as a query param so the URL is usable as an <img src>.
 // Encode both values: an api key may contain reserved characters (& + = #) that would otherwise

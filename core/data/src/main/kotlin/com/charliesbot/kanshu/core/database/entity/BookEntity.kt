@@ -22,4 +22,5 @@ data class BookEntity(
   @ColumnInfo(name = "byte_size") val byteSize: Long?,
   @ColumnInfo(name = "downloaded_at") val downloadedAt: Long?,
   @ColumnInfo(name = "last_opened_at") val lastOpenedAt: Long?,
+  @ColumnInfo(name = "cover_token") val coverToken: String? = null,
 )

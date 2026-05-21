@@ -25,6 +25,8 @@ class FakeBookDao(initial: Map<String, BookEntity> = emptyMap()) : BookDao {
   override suspend fun allDownloaded(): List<BookEntity> =
     rows.value.values.filter { it.localPath != null }
 
+  override suspend fun getAll(): List<BookEntity> = rows.value.values.toList()
+
   override suspend fun upsert(book: BookEntity) {
     rows.update { it + (book.id to book) }
   }
