@@ -1,6 +1,8 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
@@ -150,6 +152,30 @@ class ReaderViewModelTest {
     assertEquals(ReaderPreferences.SCALE_MAX, viewModel.readerPreferences.value.fontScale, 0.0001f)
   }
 
+  @Test
+  fun `setMargins persists the chosen margins`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setMargins(ReaderMargins.Compact)
+    advanceUntilIdle()
+
+    assertEquals(ReaderMargins.Compact, viewModel.readerPreferences.value.margins)
+  }
+
+  @Test
+  fun `setAlignment persists the chosen alignment`() = runTest {
+    coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.setAlignment(ReaderAlignment.Left)
+    advanceUntilIdle()
+
+    assertEquals(ReaderAlignment.Left, viewModel.readerPreferences.value.alignment)
+  }
+
   private class FakeReaderPreferencesRepository : ReaderPreferencesRepository {
     private val state = MutableStateFlow(ReaderPreferences())
     override val preferences: Flow<ReaderPreferences> = state.asStateFlow()
@@ -165,6 +191,14 @@ class ReaderViewModelTest {
     override suspend fun setFontScale(scale: Float) {
       val clamped = scale.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
       state.value = state.value.copy(fontScale = clamped)
+    }
+
+    override suspend fun setMargins(margins: ReaderMargins) {
+      state.value = state.value.copy(margins = margins)
+    }
+
+    override suspend fun setAlignment(alignment: ReaderAlignment) {
+      state.value = state.value.copy(alignment = alignment)
     }
   }
 }

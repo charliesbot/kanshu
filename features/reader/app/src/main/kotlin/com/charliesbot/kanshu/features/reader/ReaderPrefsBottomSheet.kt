@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -33,7 +34,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuSlider
@@ -46,25 +49,33 @@ import kotlin.math.roundToInt
 // Reader preferences sheet body. Lives in the reader feature because the prefs surface — fonts,
 // font size — is reader-specific; KanshuBottomSheet stays a reusable design-system primitive
 // that just gives this composable a chrome to sit in. Renders the four-tab strip from the
-// design (Font / Layout / Themes / More) but only the Font tab has content for now; the other
-// three are visible placeholders so the next PR can fill them in without re-introducing the
-// tab UI.
+// design (Font / Layout / Themes / More). Font and Layout tabs have content; Themes and More
+// are visible placeholders.
 @Composable
 fun ReaderPrefsBottomSheet(
   prefs: ReaderPreferences,
   onFontChange: (ReaderFont) -> Unit,
   onFontScaleChange: (Float) -> Unit,
+  onMarginsChange: (ReaderMargins) -> Unit,
+  onAlignmentChange: (ReaderAlignment) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var activeTab by remember { mutableStateOf(PrefsTab.Font) }
-  Column(modifier.fillMaxWidth()) {
+  Column(modifier.fillMaxWidth().heightIn(min = 280.dp)) {
     TabStrip(activeTab = activeTab, onSelect = { activeTab = it })
     KanshuDivider()
     when (activeTab) {
       PrefsTab.Font ->
         FontTab(prefs = prefs, onFontChange = onFontChange, onFontScaleChange = onFontScaleChange)
 
-      PrefsTab.Layout,
+      PrefsTab.Layout ->
+        LayoutTab(
+          margins = prefs.margins,
+          alignment = prefs.alignment,
+          onMarginsChange = onMarginsChange,
+          onAlignmentChange = onAlignmentChange,
+        )
+
       PrefsTab.Themes,
       PrefsTab.More -> Box(Modifier.fillMaxWidth().height(96.dp))
     }
@@ -233,6 +244,8 @@ private fun ReaderPrefsBottomSheetPreview() {
       prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
       onFontChange = {},
       onFontScaleChange = {},
+      onMarginsChange = {},
+      onAlignmentChange = {},
     )
   }
 }

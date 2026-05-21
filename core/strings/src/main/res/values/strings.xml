@@ -58,4 +58,11 @@
     <string name="reader_prefs_font_sample">Aa</string>
     <string name="reader_prefs_font_size_smaller">Smaller font size</string>
     <string name="reader_prefs_font_size_larger">Larger font size</string>
+    <string name="reader_prefs_margins">Margins</string>
+    <string name="reader_prefs_margins_compact">Compact margins</string>
+    <string name="reader_prefs_margins_medium">Medium margins</string>
+    <string name="reader_prefs_margins_wide">Wide margins</string>
+    <string name="reader_prefs_alignment">Alignment</string>
+    <string name="reader_prefs_alignment_justify">Justified alignment</string>
+    <string name="reader_prefs_alignment_left">Left alignment</string>
 </resources>

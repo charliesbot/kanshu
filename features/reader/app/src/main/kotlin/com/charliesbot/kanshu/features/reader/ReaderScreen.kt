@@ -25,7 +25,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
@@ -72,6 +74,8 @@ fun ReaderScreen(
     readerPrefs = readerPrefs,
     onFontChange = viewModel::setFont,
     onFontScaleChange = viewModel::setFontScale,
+    onMarginsChange = viewModel::setMargins,
+    onAlignmentChange = viewModel::setAlignment,
   )
 }
 
@@ -92,6 +96,8 @@ private fun ReaderContent(
   readerPrefs: ReaderPreferences,
   onFontChange: (ReaderFont) -> Unit,
   onFontScaleChange: (Float) -> Unit,
+  onMarginsChange: (ReaderMargins) -> Unit,
+  onAlignmentChange: (ReaderAlignment) -> Unit,
 ) {
   KanshuScaffold {
     when (uiState) {
@@ -114,6 +120,8 @@ private fun ReaderContent(
           readerPrefs = readerPrefs,
           onFontChange = onFontChange,
           onFontScaleChange = onFontScaleChange,
+          onMarginsChange = onMarginsChange,
+          onAlignmentChange = onAlignmentChange,
         )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
@@ -142,6 +150,8 @@ private fun ReaderBody(
   readerPrefs: ReaderPreferences,
   onFontChange: (ReaderFont) -> Unit,
   onFontScaleChange: (Float) -> Unit,
+  onMarginsChange: (ReaderMargins) -> Unit,
+  onAlignmentChange: (ReaderAlignment) -> Unit,
 ) {
   var controller by remember { mutableStateOf<BookViewController?>(null) }
   var readerPrefsOpen by remember { mutableStateOf(false) }
@@ -191,6 +201,8 @@ private fun ReaderBody(
         prefs = readerPrefs,
         onFontChange = onFontChange,
         onFontScaleChange = onFontScaleChange,
+        onMarginsChange = onMarginsChange,
+        onAlignmentChange = onAlignmentChange,
       )
     }
     if (remoteSuggestion != null) {
@@ -290,6 +302,8 @@ private fun ReaderScreenLoadingPreview() {
       readerPrefs = ReaderPreferences(),
       onFontChange = {},
       onFontScaleChange = {},
+      onMarginsChange = {},
+      onAlignmentChange = {},
     )
   }
 }
@@ -314,6 +328,8 @@ private fun ReaderScreenErrorPreview() {
       readerPrefs = ReaderPreferences(),
       onFontChange = {},
       onFontScaleChange = {},
+      onMarginsChange = {},
+      onAlignmentChange = {},
     )
   }
 }

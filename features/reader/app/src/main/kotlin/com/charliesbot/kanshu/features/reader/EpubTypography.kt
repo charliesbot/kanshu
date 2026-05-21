@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.readium.r2.navigator.epub.EpubDefaults
@@ -70,6 +71,12 @@ internal object EpubTypography {
       fontFamily = readiumFamily(prefs.font),
       fontSize = prefs.fontScale.toDouble(),
       columnCount = ColumnCount.ONE,
+      pageMargins = prefs.margins.value,
+      textAlign =
+        when (prefs.alignment) {
+          ReaderAlignment.Justify -> TextAlign.JUSTIFY
+          ReaderAlignment.Left -> TextAlign.LEFT
+        },
     )
 
   // WORKAROUND for Readium PR #787: returns the Kanshu-suffixed family so our injected

@@ -2,7 +2,9 @@ package com.charliesbot.kanshu.features.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
@@ -110,6 +112,14 @@ class ReaderViewModel(
 
   fun setFontScale(scale: Float) {
     viewModelScope.launch { preferences.setFontScale(scale) }
+  }
+
+  fun setMargins(margins: ReaderMargins) {
+    viewModelScope.launch { preferences.setMargins(margins) }
+  }
+
+  fun setAlignment(alignment: ReaderAlignment) {
+    viewModelScope.launch { preferences.setAlignment(alignment) }
   }
 
   fun onLocatorChanged(locator: Locator) {
