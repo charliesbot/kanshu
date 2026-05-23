@@ -4,6 +4,7 @@ import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
+import com.charliesbot.kanshu.core.reader.progress.progressionIn
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,14 +110,7 @@ class SyncRepositoryImpl(
   ) {
     val now = System.currentTimeMillis()
     val locatorJson = jsonSerializer.encodeToString(ReaderPosition.serializer(), position)
-    val progression =
-      if (publication.readingOrder.isNotEmpty()) {
-        ((position.spineIndex.toDouble() + position.progressInSpine.toDouble()) /
-            publication.readingOrder.size)
-          .coerceIn(0.0, 1.0)
-      } else {
-        0.0
-      }
+    val progression = position.progressionIn(publication)
     scope.launch {
       progressDao.upsert(
         ReadingProgressEntity(

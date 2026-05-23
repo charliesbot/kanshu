@@ -8,6 +8,7 @@ import com.charliesbot.kanshu.core.kavita.dto.KoreaderBookDto
 import com.charliesbot.kanshu.core.kosync.KoreaderHash
 import com.charliesbot.kanshu.core.kosync.KoreaderPosition
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
+import com.charliesbot.kanshu.core.reader.progress.progressionIn
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -39,15 +40,7 @@ class KavitaProgressSync(
           document = hash,
           device_id = device.id,
           device = device.name,
-          percentage =
-            if (publication.readingOrder.isNotEmpty()) {
-              ((position.spineIndex.toDouble() + position.progressInSpine.toDouble()) /
-                  publication.readingOrder.size)
-                .toFloat()
-                .coerceIn(0f, 1f)
-            } else {
-              0f
-            },
+          percentage = position.progressionIn(publication).toFloat(),
           progress = KoreaderPosition.encode(position.spineIndex),
           // Kavita's controller ignores the inbound timestamp and stamps its own UTC clock
           // (KoreaderProgressUpdateDto sets Timestamp = DateTime.UtcNow). We still send the
