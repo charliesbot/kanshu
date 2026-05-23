@@ -353,7 +353,7 @@ data class ReaderPosition(
 
 `ReaderPosition` replaces Readium `Locator` as the local reader's runtime position model. The `BookViewController.currentLocator: Flow<Locator>` contract changes to `Flow<ReaderPosition>` in V1; `ReaderViewModel`, `RemoteProgressPrompt`, and the Kavita progress sync path adopt the new type.
 
-Persisted `ReaderPosition` is stored in Room `reading_progress.locator_json` as kotlinx.serialization JSON, replacing the current Readium locator JSON shape. The column name stays `locator_json` as a legacy name to avoid a Room migration; update the entity comment to say it now stores `ReaderPosition` JSON. Decoder config uses `ignoreUnknownKeys = true` so V1 builds tolerate future fields. New fields must be nullable or have defaults; never make older `schemaVersion` values fail to decode. On read, if parsing the JSON fails, the reader falls back silently to `ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0f)`. No legacy migration of existing database formats is performed; reinstalling/clearing storage is acceptable.
+Persisted `ReaderPosition` is stored in Room `reading_progress.locator_json` as kotlinx.serialization JSON, replacing the current Readium locator JSON shape. The column name stays `locator_json` as a legacy name; update the entity comment to say it now stores `ReaderPosition` JSON. Decoder config uses `ignoreUnknownKeys = true` so V1 builds tolerate future fields. New fields must be nullable or have defaults; never make older `schemaVersion` values fail to decode. On read, if parsing the JSON fails, the reader falls back silently to `ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0f)`. Since Kanshu is a solo developer project with no production users, database migrations are skipped entirely; the Room database schema or JSON encoding format can be modified directly, and clearing local app storage or reinstalling the app is the expected method to reset the database when changes are introduced.
 
 `ReaderPosition.schemaVersion` lives inside the JSON blob and tracks the data-class shape. Room's database `schema_version` tracks the SQL schema. The two are unrelated; bumping `ReaderPosition.schemaVersion` does not require a Room migration unless the SQL column shape changes.
 
@@ -556,38 +556,29 @@ class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
 
 ## 4. Migration Plan
 
-### Phase 1: Engine Abstraction
-
-1. Keep the existing `ReadiumBookViewer` intact only while the new pager is being validated.
-2. Reuse the existing `BookViewController` interface (already in `features/reader/app/.../BookViewController.kt`); add a higher-level `ReaderEngine` abstraction only if the swap requires more than a `BookViewController` impl.
-3. Wrap `ReadiumBookViewer` behind `ReadiumEngine` (or leave as-is if no higher-level abstraction is added).
-4. Add `ReaderPosition` and mapping helper for Readium `Locator` (`core/data/.../reader/progress/ReaderPositionMigrator.kt`).
-
-### Phase 2: Custom WebView Pager
-
-1. Implement `CustomBookViewer` using a Compose `AndroidView(factory = { WebView(...) })`.
-2. Implement chapter-document preload, Jsoup allowlist sanitization (§3.10 Bridge Security), lazy sub-resource loading, and synchronous request interception.
-3. Apply the Kanshu shell and pagination stylesheet.
-4. Implement page count measurement, clamping, chapter boundary navigation, physical page-turn hooks, and tap zones.
-5. Implement the WebView-to-Kotlin state bridge for settled page/progress updates.
-6. Implement dynamic settings updates with progression-preserving repagination.
-7. Implement §3.10 lifecycle invariants: renderer-crash recovery, `AndroidView` disposal, and cold-start/Activity-recreation restore from settled position only. This can be one PR, but review each invariant independently against §3.10.
-8. Implement §3.10 command serialization: one in-flight command, queued same-direction repeat tap, latest-wins settings, and TOC/anchor jump cancellation.
-
-### Phase 3: Validation & Flag Rollout
-
-1. Run the custom pager behind a feature flag (debug settings).
-2. Validate pagination correctness, performance on Boox tablet, and custom font loading.
-3. Flip the feature flag to make the custom pager the default after the acceptance criteria below pass.
-4. Keep the dual-reader state short-lived; do not ship both reader surfaces long-term.
-5. Verify §3.10 guardrails on target hardware before flipping the feature flag.
-
-### Phase 4: Clean Up
+### Phase 1: Remove Old Reader
 
 1. Delete the `readium-navigator` gradle dependency.
-2. Remove old `readium-navigator` workarounds (`EpubFontInjector`, `EpubTypography`, `EpubNavigatorHost`, `ReadiumBookViewController`, etc.).
+2. Remove old `readium-navigator` workarounds and classes (`EpubFontInjector`, `EpubTypography`, `EpubNavigatorHost`, `ReadiumBookViewController`, etc.).
 3. Retain only `readium-streamer` and `readium-shared` in build configuration.
-4. Remove `MainActivity`'s dummy `EpubNavigatorFragment` factory and navigator-specific ProGuard rules.
+4. Replace the book reader UI in `:features:reader:app` with a dummy/no-op placeholder screen (e.g. showing a simple loading spinner or basic title) and update routes/factories in `MainActivity` to ensure the project compiles and `./gradlew build` is green.
+5. Introduce the new `ReaderPosition` model (`core/data/.../reader/progress/ReaderPosition.kt`) replacing the old locator JSON. Skip database migrations; clearing local app storage/reinstalling is acceptable.
+
+### Phase 2: Add Stub Reader Scaffolding
+
+1. Expose a dummy reader component/screen (e.g., a simple Compose `Box` or text placeholder showing the title).
+2. Bind the new `ReaderViewModel` to this stub component and register it in the navigation graph.
+3. Establish this compilable, green-building base as the foundation for the new reader implementation.
+4. Begin replacing the placeholder component with the custom `WebView` pager and request interceptor incrementally in the next phase.
+
+### Phase 3: Incremental Custom Reader Implementation
+
+1. **Request Interceptor & Preloader:** Implement the custom request interceptor, path normalization, Jsoup sanitization (§3.10 Bridge Security), lazy sub-resource loading, and synchronous request interception.
+2. **CSS Layout & Styling:** Apply the Kanshu shell, pagination stylesheet, and CSS variables.
+3. **State Bridge & Navigation:** Implement horizontal scrolling, page count measurement, chapter boundaries, and the JS state bridge for position updates.
+4. **Settings & Repagination:** Implement dynamic settings injection and progression-preserving repagination.
+5. **EPD Optimization:** Add the Onyx Maven repository and integrate Boox `EpdController` updates on page turns and reflows.
+6. **Command Serialization & Lifecycle:** Implement command serialization (one in-flight command, queued same-direction repeat tap) and lifecycle invariants (crash recovery, WebView disposal, state restore).
 
 ## 5. Acceptance Criteria
 
@@ -659,4 +650,4 @@ Measured on a Boox Note Air 3 with the acceptance EPUB set:
 - Force-kill restore: verify the app reopens at the last settled page, not `pendingTarget`. This can be manual or automated later with UIAutomator plus `adb shell am force-stop`.
 - Simulate renderer crash and verify recovery resets in-flight command state and reopens from last settled `ReaderPosition`.
 - Capture a before/after page-turn trace with `adb shell dumpsys gfxinfo <package> framestats` for regression reference.
-- Perform manual Boox validation with the acceptance EPUB set before deleting the feature flag.
+- Perform manual Boox validation with the acceptance EPUB set.
