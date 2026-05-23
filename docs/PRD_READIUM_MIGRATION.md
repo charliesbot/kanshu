@@ -50,39 +50,45 @@ Readium's `Resource.read()` API is suspending, while `WebViewClient.shouldInterc
 
 The implementation uses a hybrid resource strategy:
 
-- **Chapter document preload only:** before `WebView.loadUrl(...)`, read the current spine XHTML document once through Readium, sanitize it, wrap it in the Kanshu shell, and store those bytes as the current chapter document response. This gives the ViewModel a synchronous error boundary: if the chapter document cannot be read or wrapped, transition to `ReaderUiState.Error` before WebView displays a blank/network-error surface.
+- **Chapter document preload only:** before `WebView.loadUrl(...)`, read the current spine XHTML document once through Readium, sanitize it, wrap it in the Kanshu shell, and store those bytes as the current chapter document response. This gives the ViewModel a synchronous error boundary: if the chapter document cannot be read or wrapped, transition to `ReaderUiState.Error` before WebView displays a blank/network-error surface. To maintain concurrent-read safety, this preload read must also be serialized through the session-scoped `readLock` Mutex before accessing the Publication container.
 - **Lazy sub-resources:** CSS, images, EPUB fonts, and APK-bundled fonts are loaded on demand through `shouldInterceptRequest(...)`. V1 does not parse XHTML or CSS in Kotlin to discover and warm sub-resources.
 - **Memory safety:** never preload the whole book. Large images and uncommon sub-resources are lazy-loaded.
 - **No disk-backed cache:** assets are read from either the EPUB-backed `Publication` resources or the APK `AssetManager`; duplicating them into a temp cache adds cleanup bugs without clear benefit.
-- **Concurrent-read safety:** Readium 3.x's ZIP-backed containers may share archive state. Lazy fallback reads are serialized through a `Mutex`. Cost is acceptable unless measurement proves otherwise; if it fails, optimize specific hot resources rather than adding broad preloading.
+- **Concurrent-read safety:** Readium 3.x's ZIP-backed containers may share archive state. Lazy fallback reads are serialized through a session-scoped `Mutex` shared by all `KanshuWebViewClient` instances in the reader session. Cost is acceptable unless measurement proves otherwise; if it fails, optimize specific hot resources rather than adding broad preloading.
 - **Reserved asset routing:** app-bundled fonts and Kanshu-owned CSS do not live in the EPUB manifest, so they must be served from `AssetManager` under a reserved path such as `https://kanshu.invalid/__kanshu__/...` before attempting `publication.linkWithHref(...)`. The `__kanshu__` prefix is never resolved against the EPUB manifest, avoiding collisions with common EPUB paths such as `assets/foo.png`.
 - **Kanshu stylesheet:** `features/reader/app/src/main/assets/kanshu-reader.css` is loaded through `<link rel="stylesheet" href="https://kanshu.invalid/__kanshu__/kanshu-reader.css">` in the shell. Bundled `@font-face` rules in that stylesheet reference fonts through `https://kanshu.invalid/__kanshu__/fonts/...`, using the same asset route.
 - **Fragment handling:** `url.path` excludes the fragment (`#anchor`) and query string; WebView resolves fragments client-side after the chapter document loads. The interceptor does not need to serve fragments, but the reader must sync Kotlin `pageIndex` after anchor navigation (§3.8).
+- **Local link routing:** `shouldOverrideUrlLoading(...)` intercepts link clicks:
+  - Same-chapter fragment links (e.g., `chapter.xhtml#section-2` or `#footnote-1`) must return `false` to let WebView perform native anchor scrolling/jumping, which the bridge then reports.
+  - Cross-chapter and cross-book links must return `true` to cancel WebView navigation and route through Kotlin (e.g., calling `go(position)` or triggering TOC/spine transitions).
+  - External/web links must return `true` to block direct WebView loads (though blocked by `blockNetworkLoads`, this provides an early UI/routing hook).
 - **Chapter sanitization:** the preload pass sanitizes publisher chapter bytes with the §3.10 allowlist before WebView sees them, then wraps the sanitized content in the trusted Kanshu shell. The Kanshu shell (including the `__kanshu__/kanshu-reader.css` link and bridge script injection) is added after sanitization and is not subject to publisher-link stripping rules. JavaScript stays enabled because the §3.9 bridge requires Kanshu-injected JS, but only Kanshu's shell script should execute.
-- **Chapter-vs-sub-resource errors:** a failed sub-resource (image, font, sub-CSS) can render as a missing asset. A failed chapter document must route to `ReaderUiState.Error`. Because interception happens off the main thread, error callbacks must dispatch onto the ViewModel/main scope before mutating UI state.
+- **Chapter-vs-sub-resource errors:** a failed sub-resource (image, font, sub-CSS) can render as a missing asset. A failed chapter document must route to `ReaderUiState.Error`. Because interception happens off the main thread, error callbacks must dispatch onto the ViewModel/main scope before mutating UI state. Specifically, the client overrides `onReceivedError(...)` and `onReceivedHttpError(...)`. When `request.isForMainFrame` is `true`, it immediately dispatches the failure to the ViewModel's scope to transition the UI to `ReaderUiState.Error`. Errors on non-main-frame requests (sub-resources) fail silently.
 - **CORS headers:** all local responses should include `Access-Control-Allow-Origin: *`. Same-origin fonts should work without CORS, but WebView/intercepted-response behavior can be strict; adding the header keeps APK-served fonts and EPUB resources on the same reliable path.
 - **Cache headers:** all local responses, including `assetResponse(...)`, set `Cache-Control: no-store`. Kanshu's interceptor remains the deterministic source of truth; WebView should never serve stale intercepted bytes from its heuristic HTTP cache after CSS or asset updates.
 - **Chapter-switch cancellation:** every `webView.loadUrl(...)` uses a chapter URL carrying the current load id, e.g. `https://kanshu.invalid/OEBPS/chapter01.xhtml?__kanshu_load=42`. When intercepting chapter documents, `shouldInterceptRequest(...)` extracts this token and compares it to `activeChapterLoadId`. If the token is stale or missing on a chapter document request, the request is rejected with `notFound()`. Sub-resources (images, fonts, stylesheets) are served without requiring or validating the `__kanshu_load` token, as WebView naturally cancels pending sub-resource requests when navigating to a new page.
-- **Path normalization contract:** before routing, percent-decode the path once, collapse repeated `/`, reject empty paths for chapter loads, reject `.` or `..` segments after decoding, reject backslashes, null bytes, and control characters, then resolve the cleaned path against the active spine item's base path. Return `null` on any rejection. Readium still gates access through `publication.linkWithHref(...)`, but cheap rejection avoids surprising matches from encoded traversal inputs.
+- **Path normalization contract:** before routing, percent-decode the path once, collapse repeated `/`, reject empty paths for chapter loads, reject `.` or `..` segments after decoding, reject backslashes, null bytes, and control characters, resolve relative `.` and `..` segments to clean the path relative to the root, and **strip any leading slash**. Return `null` on any rejection. We do NOT resolve the path against the active spine item's base path, because WebView already resolves relative URLs relative to the document URL before making the request; the interceptor receives a path that is absolute relative to the domain (representing the EPUB archive root). Stripping the leading slash is required because Readium `href` paths (e.g., `currentChapter.path` and manifest links) are relative to the package root and lack leading slashes, so comparison and `publication.linkWithHref(path)` lookup would otherwise fail.
 - **Load URL contract:** Kotlin always loads a concrete spine-item URL such as `https://kanshu.invalid/OEBPS/chapter01.xhtml`; `https://kanshu.invalid/` is invalid and returns 403 rather than redirecting to the first spine item.
 
 ```kotlin
 // Pseudo-code: final implementation must use the exact Readium Url/Resource APIs.
 data class CachedResource(
   val path: String,
-  val loadId: Long,
+  val loadId: Int,
   val bytes: ByteArray,
   val mimeType: String,
 )
 
+// A new client instance is created and assigned to webView.webViewClient on every chapter switch
+// to ensure clean lifecycle isolation and reset the active load ID state. The readLock itself is
+// session-scoped and shared by all clients so Publication reads remain serialized.
 class KanshuWebViewClient(
   private val context: Context,
   private val publication: Publication,
+  private val readLock: Mutex,
   private val currentChapter: CachedResource,
 ) : WebViewClient() {
-  // Serializes Publication reads. See "Concurrent-Read Safety" above.
-  private val readLock = Mutex()
-  @Volatile private var activeChapterLoadId: Long = currentChapter.loadId
+  @Volatile private var activeChapterLoadId: Int = currentChapter.loadId
 
   override fun shouldInterceptRequest(
     view: WebView,
@@ -99,7 +105,7 @@ class KanshuWebViewClient(
 
     val isChapterDoc = path == currentChapter.path
     if (isChapterDoc) {
-      val loadId = url.getQueryParameter("__kanshu_load")?.toLongOrNull()
+      val loadId = url.getQueryParameter("__kanshu_load")?.toIntOrNull()
       if (loadId != activeChapterLoadId) return notFound()
       return ok(currentChapter.mimeType, currentChapter.bytes)
     }
@@ -115,21 +121,21 @@ class KanshuWebViewClient(
     }
 
     return try {
-      val resource = publication.get(link) ?: return notFound()
+      val bytes = publication.get(link)?.use { resource ->
+        runBlocking(Dispatchers.IO) {
+          readLock.withLock { resource.read().getOrNull() }
+        }
+      } ?: return notFound()
+
       val extension = path.substringAfterLast('.', missingDelimiterValue = "")
       val mimeType =
         link.mediaType?.toString()
           ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
           ?: "application/octet-stream"
-      val bytes = runBlocking(Dispatchers.IO) {
-        readLock.withLock { resource.read().getOrNull() }
-      }
-      if (bytes == null) {
-        return notFound()
-      }
+      val encoding = responseEncoding(mimeType)
       WebResourceResponse(
         mimeType,
-        "UTF-8",
+        encoding,
         200,
         "OK",
         localHeaders(),
@@ -164,12 +170,20 @@ class KanshuWebViewClient(
   private fun ok(mimeType: String, bytes: ByteArray): WebResourceResponse =
     WebResourceResponse(
       mimeType,
-      "UTF-8",
+      responseEncoding(mimeType),
       200,
       "OK",
       localHeaders(),
       ByteArrayInputStream(bytes),
     )
+
+  private fun responseEncoding(mimeType: String): String? =
+    when {
+      mimeType.startsWith("text/") -> "UTF-8"
+      mimeType.contains("xml") -> "UTF-8"
+      mimeType == "application/javascript" -> "UTF-8"
+      else -> null
+    }
 
   private fun localHeaders(): Map<String, String> =
     mapOf(
@@ -193,6 +207,8 @@ The shell template is the contract between sanitizer, CSS, and bridge:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- sanitized publisher stylesheet links slot -->
+    <!-- placeholder: injected publisher <link rel="stylesheet"> tags go here -->
     <link
       rel="stylesheet"
       href="https://kanshu.invalid/__kanshu__/kanshu-reader.css"
@@ -310,15 +326,15 @@ Set the WebView background color at construction (`Color.WHITE` or the active re
   ```kotlin
   fun nextPage() {
     val next = (pageIndex + 1).coerceAtMost(pageCount - 1)
+    pendingTarget = next
     webView.evaluateJavascript("window.scrollTo(${next * viewportWidth}, 0)", null)
-    pageIndex = next
   }
   ```
 - No smooth scroll, no ViewPager animation, no transition frames.
 - Target one visible e-ink update after layout is stable, while accepting that WebView can invalidate again after late image/font layout.
 - Chapter boundaries are explicit: next page at the end of a chapter loads the next spine item at page `0`; previous page at page `0` loads the previous spine item at its last page.
 - Navigation commands and bridge reports both use DOM scroll (`window.scrollTo(...)`, `window.scrollX`). Android `View.scrollTo(...)` is not used because it can move the WebView surface without updating the DOM scroll container measured by the bridge.
-- Native horizontal WebView drag scrolling is disabled: CSS sets `touch-action: pan-y`, and the WebView `OnTouchListener` consumes horizontal drags outside tap zones. All page movement is Kotlin-initiated, then confirmed by the §3.9 bridge.
+- Native horizontal WebView drag scrolling is disabled: CSS sets `touch-action: pan-y`, and the WebView `OnTouchListener` consumes horizontal drags outside tap zones. All page movement is Kotlin-initiated: Kotlin sets `pendingTarget` before calling `evaluateJavascript`, and `pageIndex` is updated only when confirmed by the §3.9 bridge.
 
 ### 3.4 Dynamic Settings Injection
 
@@ -383,7 +399,7 @@ The "e-ink-optimized" goal in §1 may require Onyx's EPD API, not animation remo
   ```
 - Add a `:libs:onyx` module only after pinning the exact SDK artifact, repository, and license. Candidate from Onyx's public demo: `com.onyx.android.sdk:onyxsdk-device:1.1.11` from `https://repo.boox.com/repository/maven-public/`. **Verification step** (owner: the PR introducing `:libs:onyx`): the chosen artifact and version must be tested against a Boox-manufactured device before merge; pin the verified version in that PR's commit message so future bumps have a baseline. Older public Maven references such as `com.onyx.android.sdk:epdcontroller:0.1.0` are JCenter-era and should not be used without re-verification.
 - Define an `EinkPageTurner` interface; provide `BooxEinkPageTurner` (calls `EpdController`) and `NoOpEinkPageTurner` (default).
-- Select the impl at startup via `Build.MANUFACTURER == "ONYX"`; non-Boox devices fall back to no-op so the rest of the app stays hardware-agnostic.
+- Select the impl at startup via `Build.MANUFACTURER.equals("ONYX", ignoreCase = true)`; non-Boox devices fall back to no-op so the rest of the app stays hardware-agnostic. All Onyx SDK calls and WebView mutations must execute on the main (UI) thread.
 - Page-turn hook applies the chosen update mode to the `WebView` synchronously before issuing the `evaluateJavascript("window.scrollTo(...)")` command; see async sequence below.
 - Settings-change reflows apply the chosen mode before issuing the CSS-variable mutation command; see settings sequence below.
 - Test `GU` (16-level grayscale partial update), `REGAL` (text-oriented partial update), and occasional `GC` (16-level grayscale full-screen cleanup). Do not assume `GU` is a full refresh.
@@ -407,7 +423,7 @@ TOC entries come from Streamer via `publication.tableOfContents` (which already 
 - Resolve `href` → spine index by walking `publication.readingOrder` and matching normalized (percent-decoded, fragment-stripped) paths.
 - Preserve any fragment (`#chapter-3-h2`) by handing it to WebView after the spine item loads; WebView resolves anchors client-side without interceptor work.
 - After anchor navigation, ask the WebView for `scrollX`, `scrollWidth`, and viewport width, then derive `pageIndex` and `progressInSpine` from the actual settled position. Do not assume fragment jumps land on page `0`.
-- Fragment jumps can settle mid-column. After the first settled anchor report, Kotlin computes `pageIndex = round(scrollX / viewportWidth)` and issues one corrective `window.scrollTo(pageIndex * viewportWidth, 0)`. This corrective snap belongs to the same `pendingTarget` cycle defined in §3.9; it is not a second user-visible page turn.
+- Fragment jumps can settle mid-column. After the first settled anchor report, Kotlin computes `pageIndex = floor(scrollX / viewportWidth)` and issues one corrective `window.scrollTo(pageIndex * viewportWidth, 0)`. This corrective snap belongs to the same `pendingTarget` cycle defined in §3.9; it is not a second user-visible page turn.
 - Anchor-jump chapter loads can produce two consecutive `PageSettled` events: initial layout, then anchor-settled layout. `pendingTarget` survives the first non-matching report and clears when the anchor-settled report matches.
 - For TOC entries without fragments, start at `ReaderPosition(spineIndex, pageIndex = 0, progressInSpine = 0f)`. The first page-count measurement after load will clamp `pageIndex` if needed.
 - TOC UI surface is unchanged: existing `TocIndex` and reader chrome consume the same `publication.tableOfContents` data. Engine swap is invisible to TOC rendering.
@@ -425,26 +441,27 @@ The custom pager must keep Kotlin-side `ReaderPosition` synchronized with WebVie
 - Debounce scroll reports to avoid noisy callbacks during WebView layout; page turns are instant, but anchor resolution and image/font layout can still produce multiple scroll/layout events.
 - Treat bridge reports as state synchronization only. Navigation commands still originate in Kotlin (`goForward`, `goBackward`, `go(position)`), then JS reports the settled result.
 - Both navigation commands and bridge reports use DOM scroll (`window.scrollTo(...)` / `window.scrollX`), never Android `View.scrollTo(...)`.
-- Progress math uses scrollable width, not total width, and guards single-page chapters: `maxScrollX = (scrollWidth - viewportWidth).coerceAtLeast(0)`; progress is `0f` when `maxScrollX == 0`, otherwise `(scrollX / maxScrollX).coerceIn(0f, 1f)`.
-- Repagination settling: after CSS-variable changes, JS races `document.fonts.ready` against a 500ms timeout, then waits for two consecutive `requestAnimationFrame` callbacks with unchanged `scrollWidth`, capped at 2s. It then restores page from the pre-change `progressInSpine`, reports the new `pageCount`, and calls `onRepaginated(...)`. On the 2s cap, JS reports the current state with `stalled = true`; Kotlin clears `pendingRepaginate`, logs the stall, and keeps the reader usable. Repagination is interruptible: if a new settings update is issued while a previous one is settling, JS immediately resets the settling state, applies the new variables, and restarts the settling checks. Sequential queueing of settings is avoided to ensure instant responsiveness during adjustments.
+- Progress math uses scrollable width, not total width, and guards single-page chapters: `maxScrollX = (scrollWidth - viewportWidth).coerceAtLeast(0)`; progress is `0f` when `maxScrollX == 0`, otherwise `(scrollX / maxScrollX).coerceIn(0f, 1f)`. Page index math uses flooring to resolve the active page: `pageIndex = Math.floor(scrollX / viewportWidth)` in JS and `floor(scrollX / viewportWidth)` in Kotlin.
+- Repagination settling: after CSS-variable changes, JS races `document.fonts.ready` against a 500ms timeout, then waits for two consecutive `requestAnimationFrame` callbacks with unchanged `scrollWidth`, capped at 2s. JS captures `progressInSpine` immediately before mutating CSS variables, applies the updates, waits for layout to settle, computes the new `maxScrollX`, and scrolls to `progressInSpine * newMaxScrollX` (snapped to the nearest page boundary) before reporting the new state and calling `onRepaginated(...)`. On the 2s cap, JS reports the current state with `stalled = true`; Kotlin clears `pendingRepaginate`, logs the stall, and keeps the reader usable. Repagination is interruptible: Kotlin increments a monotonically increasing `settingsRevision` before issuing the CSS-variable mutation, passes that revision into the shell script, and restarts the settling checks when a newer settings command arrives. The shell script echoes the current revision back in `onRepaginated(...)`; Kotlin discards any bridge report whose revision does not match the current pending revision. Sequential queueing of settings is avoided to ensure instant responsiveness during adjustments.
 - Guard against feedback loops:
   1. Kotlin stores a `pendingTarget` before issuing a programmatic scroll.
   2. Kotlin calls DOM `window.scrollTo(...)` through `evaluateJavascript(...)`.
   3. JS reports the settled position through the bridge.
-  4. Kotlin clears `pendingTarget` when the reported position matches it.
-  5. Kotlin ignores bridge reports that already match the current `pendingTarget` or last settled position.
+  4. Kotlin clears `pendingTarget` when the reported position matches it, and updates the last settled position.
+  5. Kotlin ignores bridge reports that match the last settled position (preventing redundant updates) or have a stale `settingsRevision` or `chapterLoadId`.
   6. Kotlin issues another programmatic scroll only when the requested target differs from the last settled position.
 
 ```kotlin
 sealed interface BridgeEvent {
   data class PageSettled(
-    val chapterLoadId: Long,
+    val chapterLoadId: Int,
     val pageIndex: Int,
     val progressInSpine: Float,
   ) : BridgeEvent
 
   data class Repaginated(
-    val chapterLoadId: Long,
+    val chapterLoadId: Int,
+    val settingsRevision: Int,
     val pageCount: Int,
     val restoredPageIndex: Int,
     val stalled: Boolean,
@@ -453,13 +470,19 @@ sealed interface BridgeEvent {
 
 class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
   @JavascriptInterface
-  fun onPageSettled(chapterLoadId: Long, pageIndex: Int, progressInSpine: Float) {
+  fun onPageSettled(chapterLoadId: Int, pageIndex: Int, progressInSpine: Float) {
     emit(BridgeEvent.PageSettled(chapterLoadId, pageIndex, progressInSpine))
   }
 
   @JavascriptInterface
-  fun onRepaginated(chapterLoadId: Long, pageCount: Int, restoredPageIndex: Int, stalled: Boolean) {
-    emit(BridgeEvent.Repaginated(chapterLoadId, pageCount, restoredPageIndex, stalled))
+  fun onRepaginated(
+    chapterLoadId: Int,
+    settingsRevision: Int,
+    pageCount: Int,
+    restoredPageIndex: Int,
+    stalled: Boolean,
+  ) {
+    emit(BridgeEvent.Repaginated(chapterLoadId, settingsRevision, pageCount, restoredPageIndex, stalled))
   }
 }
 ```
@@ -482,14 +505,15 @@ class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
 - Allow one in-flight navigation or repagination command at a time.
 - During an in-flight page turn, keep at most one queued same-direction repeat tap. Fast double-tap next lands at page + 2; unbounded tap buffering is not allowed.
 - In-flight turns cannot be cancelled once `window.scrollTo(...)` is queued. Opposite-direction page input clears any queued same-direction repeat and queues one opposite turn after the in-flight turn settles. Example: next, next, previous from page `N` lands back at `N`; tapping previous again then lands at `N - 1`.
-- If a settings change arrives while another settings change is settling, the active settling checks are immediately aborted, the new variables are applied, and a new settling cycle is started. Settings updates do not block or queue sequentially; the latest change always interrupts and overrides the in-flight repagination.
+- If a settings change arrives while another settings change is settling, the active settling checks are invalidated by a newer `settingsRevision`, the new variables are applied, and a new settling cycle is started. Settings updates do not block or queue sequentially; the latest change always supersedes the in-flight repagination.
 - If a TOC/anchor jump or settings change arrives while a page turn is in flight, cancel the page-turn queue and make the explicit jump/settings operation the new `pendingTarget`/`pendingRepaginate`.
-- Operation priority, highest first: settings change, TOC/anchor jump, page turn. Higher-priority operations cancel queued lower-priority operations but cannot abort an in-flight DOM scroll or repagination already issued. The in-flight operation settles, then the highest-priority queued operation executes.
+- Operation priority, highest first: settings change, TOC/anchor jump, page turn. Higher-priority operations cancel queued lower-priority operations but cannot abort an already-issued DOM scroll or repagination. The one exception is a newer settings change, which supersedes the active settings settling cycle by revision and causes stale repagination reports to be ignored.
 - Fallback repair is part of chapter-load processing, not a separate command. User input arriving during repair is queued and processed after repair and initial settling complete.
 
 #### Bridge Security
 
 - Sanitization uses Jsoup with a custom Safelist covering the elements/attributes below; the same dependency is reused by fallback DOM repair so no second HTML library lands. The implementation PR must explicitly add and justify the Jsoup dependency.
+- Jsoup's `clean(...)` by default strips the structural `<html/head/body>` tags and returns a body fragment. The implementation must preserve this wrapper structure (either by using Jsoup's parser and cleaning nodes selectively, or by explicitly whitelisting the structural `html`, `head`, `body`, and `<meta charset>` tags in a custom `Safelist` and using a full-document parse configuration) so that the sanitized output remains a well-formed HTML document containing the head elements.
 - Sanitization walks the entire publisher document (`<head>` and `<body>`). Whitelisted `<link rel="stylesheet">` elements survive in `<head>`; everything else not on the allowlist is stripped regardless of location. The allowlist is grouped by category:
   - Block/structure: `p`, `div`, `section`, `article`, `aside`, `header`, `footer`, `nav`, `blockquote`, `figure`, `figcaption`, `br`, `hr`.
   - Headings/lists: `h1`-`h6`, `ul`, `ol`, `li`, `dl`, `dt`, `dd`.
@@ -617,11 +641,13 @@ Measured on a Boox Note Air 3 with the acceptance EPUB set:
 - Unit-test `ReaderPosition`: serialization round-trip, `schemaVersion`, forward-compatible decode with unknown future fields, and best-effort migration from existing Readium locators.
 - Unit-test CSS variable mapping from `ReaderPreferences`.
 - Unit-test WebView bridge page-index/progression math from `scrollX`, `scrollWidth`, and viewport width, including single-page chapters where `scrollWidth <= viewportWidth`.
-- Unit-test bridge feedback guards for `chapterLoadId`, `pendingTarget`, `pendingRepaginate`, duplicate settled-position reports, and repagination timeout/stall handling.
+- Unit-test bridge feedback guards for `chapterLoadId`, `settingsRevision`, `pendingTarget`, `pendingRepaginate`, duplicate settled-position reports, and repagination timeout/stall handling.
+- Unit-test settings interruption: verify that issuing a settings update cancels the active settling cycle, increments the settingsRevision token, and overrides any in-flight repagination.
 - Unit-test command serialization/coalescing and restoration from last settled `ReaderPosition`.
 - Unit-test command serialization priority: settings cancels queued TOC/page turns, TOC cancels queued page turns, and in-flight DOM scroll/repagination always settles before the queued operation executes.
+- Unit-test `shouldOverrideUrlLoading(...)` routing: verify it returns `false` for same-chapter fragment links (letting WebView scroll natively) and `true` for cross-chapter, cross-book, and external links (canceling navigation to route through Kotlin).
 - Unit-test open-time rejection for publications whose reading order contains no XHTML/HTML documents.
-- Unit-test open-time rejection for DRM/encrypted publications.
+- Unit-test open-time rejection for DRM-protected publications (excluding standard font obfuscation).
 - Unit-test Onyx wrapper fail-closed behavior when SDK classes are unavailable or calls throw.
 - Fixture-test chapter sanitization strips `<script>`, `<base>`, dangerous embeds, SVG script/animation surfaces, inline event-handler attributes, `javascript:` URLs, and remote stylesheet links before WebView load while preserving local publisher stylesheet links.
 - Fixture-test sanitizer preserves Japanese ruby/furigana (`ruby`, `rt`, `rp`), safe local links, semantic HTML5 structure, and safe image attributes.
