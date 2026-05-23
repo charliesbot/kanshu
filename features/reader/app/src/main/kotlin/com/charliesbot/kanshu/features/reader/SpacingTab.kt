@@ -71,13 +71,9 @@ fun SpacingTab(
 
     Row(
       modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
+      horizontalArrangement = Arrangement.Center,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      KanshuText(
-        text = stringResource(R.string.reader_prefs_reset_all_spacing_label),
-        style = KanshuTheme.typography.titleMedium,
-      )
       KanshuButton(
         text = stringResource(R.string.reader_prefs_reset_to_default),
         onClick = onResetSpacing,

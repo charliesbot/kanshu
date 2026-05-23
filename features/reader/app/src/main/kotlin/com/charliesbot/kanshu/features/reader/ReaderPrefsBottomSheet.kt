@@ -46,6 +46,33 @@ import com.charliesbot.kanshu.strings.R
 import java.io.File
 import kotlin.math.roundToInt
 
+data class ReaderPrefsCallbacks(
+  val onFontChange: (ReaderFont) -> Unit,
+  val onFontScaleChange: (Float) -> Unit,
+  val onMarginsChange: (ReaderMargins) -> Unit,
+  val onAlignmentChange: (ReaderAlignment) -> Unit,
+  val onLineSpacingChange: (Float) -> Unit,
+  val onParagraphSpacingChange: (Float) -> Unit,
+  val onWordSpacingChange: (Float) -> Unit,
+  val onLetterSpacingChange: (Float) -> Unit,
+  val onResetSpacing: () -> Unit,
+) {
+  companion object {
+    val Empty =
+      ReaderPrefsCallbacks(
+        onFontChange = {},
+        onFontScaleChange = {},
+        onMarginsChange = {},
+        onAlignmentChange = {},
+        onLineSpacingChange = {},
+        onParagraphSpacingChange = {},
+        onWordSpacingChange = {},
+        onLetterSpacingChange = {},
+        onResetSpacing = {},
+      )
+  }
+}
+
 // Reader preferences sheet body. Lives in the reader feature because the prefs surface — fonts,
 // font size — is reader-specific; KanshuBottomSheet stays a reusable design-system primitive
 // that just gives this composable a chrome to sit in. Renders the four-tab strip from the
@@ -54,41 +81,37 @@ import kotlin.math.roundToInt
 @Composable
 fun ReaderPrefsBottomSheet(
   prefs: ReaderPreferences,
-  onFontChange: (ReaderFont) -> Unit,
-  onFontScaleChange: (Float) -> Unit,
-  onMarginsChange: (ReaderMargins) -> Unit,
-  onAlignmentChange: (ReaderAlignment) -> Unit,
-  onLineSpacingChange: (Float) -> Unit,
-  onParagraphSpacingChange: (Float) -> Unit,
-  onWordSpacingChange: (Float) -> Unit,
-  onLetterSpacingChange: (Float) -> Unit,
-  onResetSpacing: () -> Unit,
+  callbacks: ReaderPrefsCallbacks,
   modifier: Modifier = Modifier,
 ) {
   var activeTab by remember { mutableStateOf(PrefsTab.Font) }
-  Column(modifier.fillMaxWidth().heightIn(min = 280.dp)) {
+  Column(modifier.fillMaxWidth().heightIn(min = 500.dp)) {
     TabStrip(activeTab = activeTab, onSelect = { activeTab = it })
     KanshuDivider()
     when (activeTab) {
       PrefsTab.Font ->
-        FontTab(prefs = prefs, onFontChange = onFontChange, onFontScaleChange = onFontScaleChange)
+        FontTab(
+          prefs = prefs,
+          onFontChange = callbacks.onFontChange,
+          onFontScaleChange = callbacks.onFontScaleChange,
+        )
 
       PrefsTab.Layout ->
         LayoutTab(
           margins = prefs.margins,
           alignment = prefs.alignment,
-          onMarginsChange = onMarginsChange,
-          onAlignmentChange = onAlignmentChange,
+          onMarginsChange = callbacks.onMarginsChange,
+          onAlignmentChange = callbacks.onAlignmentChange,
         )
 
       PrefsTab.Spacing ->
         SpacingTab(
           prefs = prefs,
-          onLineSpacingChange = onLineSpacingChange,
-          onParagraphSpacingChange = onParagraphSpacingChange,
-          onWordSpacingChange = onWordSpacingChange,
-          onLetterSpacingChange = onLetterSpacingChange,
-          onResetSpacing = onResetSpacing,
+          onLineSpacingChange = callbacks.onLineSpacingChange,
+          onParagraphSpacingChange = callbacks.onParagraphSpacingChange,
+          onWordSpacingChange = callbacks.onWordSpacingChange,
+          onLetterSpacingChange = callbacks.onLetterSpacingChange,
+          onResetSpacing = callbacks.onResetSpacing,
         )
 
       PrefsTab.Themes,
@@ -258,15 +281,7 @@ private fun ReaderPrefsBottomSheetPreview() {
   KanshuTheme {
     ReaderPrefsBottomSheet(
       prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
-      onFontChange = {},
-      onFontScaleChange = {},
-      onMarginsChange = {},
-      onAlignmentChange = {},
-      onLineSpacingChange = {},
-      onParagraphSpacingChange = {},
-      onWordSpacingChange = {},
-      onLetterSpacingChange = {},
-      onResetSpacing = {},
+      callbacks = ReaderPrefsCallbacks.Empty,
     )
   }
 }
