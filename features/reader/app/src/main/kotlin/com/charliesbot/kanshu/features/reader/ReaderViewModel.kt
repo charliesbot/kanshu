@@ -8,6 +8,7 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
+import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
 import com.charliesbot.kanshu.core.sync.RemoteProgress
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.r2.shared.ExperimentalReadiumApi
-import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 
 @OptIn(ExperimentalReadiumApi::class)
@@ -45,18 +45,18 @@ class ReaderViewModel(
   private var tocIndex: TocIndex? = null
   private val bookId: String = "kavita:$seriesId"
 
-  private val _currentLocator = MutableStateFlow<Locator?>(null)
+  private val _currentPosition = MutableStateFlow<ReaderPosition?>(null)
 
   // The "Continue from page X on (device)?" prompt. Non-null while the dialog is showing;
   // the screen observes this and renders or hides the dialog accordingly.
   private val _remoteSuggestion = MutableStateFlow<RemoteProgress?>(null)
   val remoteSuggestion: StateFlow<RemoteProgress?> = _remoteSuggestion.asStateFlow()
 
-  // One-shot navigation commands for the screen to forward to the Readium navigator. Used by
+  // One-shot navigation commands for the screen to forward to the reader. Used by
   // the prompt's Apply action and by the manual "Sync to Furthest Page Read" menu item.
   // SharedFlow with a small buffer survives a slow collector during config change.
-  private val _navigateTo = MutableSharedFlow<Locator>(extraBufferCapacity = 1)
-  val navigateTo: SharedFlow<Locator> = _navigateTo.asSharedFlow()
+  private val _navigateTo = MutableSharedFlow<ReaderPosition>(extraBufferCapacity = 1)
+  val navigateTo: SharedFlow<ReaderPosition> = _navigateTo.asSharedFlow()
 
   // One-shot "manual sync didn't find a further position" feedback for the screen to surface
   // as a toast or similar. Same buffering rationale as navigateTo.
@@ -64,8 +64,16 @@ class ReaderViewModel(
   val alreadyAtFurthest: SharedFlow<Unit> = _alreadyAtFurthest.asSharedFlow()
 
   val chapterState: StateFlow<ChapterState> =
-    _currentLocator
-      .map { locator -> tocIndex?.chapterStateFor(locator) ?: ChapterState.Empty }
+    _currentPosition
+      .map { position ->
+        val locator =
+          position?.let { pos ->
+            publication?.readingOrder?.getOrNull(pos.spineIndex)?.let { link ->
+              publication?.locatorFromLink(link)
+            }
+          }
+        tocIndex?.chapterStateFor(locator) ?: ChapterState.Empty
+      }
       .stateIn(viewModelScope, SharingStarted.Eagerly, ChapterState.Empty)
 
   // Live prefs surfaced to the UI. Eagerly started so the bottom sheet shows the persisted
@@ -76,8 +84,8 @@ class ReaderViewModel(
 
   init {
     viewModelScope.launch {
-      // Resolve persisted preferences before mounting the navigator so the initial frame already
-      // uses the stored font/scale. On a warm DataStore this is a single in-memory read.
+      // Resolve persisted preferences before mounting the reader so the initial frame already
+      // uses the stored font/scale. On a DataStore this is a single in-memory read.
       val storedPrefs = preferences.preferences.first()
       when (val result = openBook(seriesId)) {
         is ReaderResult.Success -> {
@@ -85,9 +93,9 @@ class ReaderViewModel(
           bookFile = result.file
           tocIndex = TocIndex(result.publication)
           val initial = sync.resolveInitialPosition(bookId, result.file, result.publication)
-          val (initialLocator, remote) =
+          val (initialPosition, remote) =
             when (initial) {
-              is InitialPosition.UseLocal -> initial.locator to null
+              is InitialPosition.UseLocal -> initial.position to null
               is InitialPosition.PromptForRemote -> initial.local to initial.remote
             }
           _remoteSuggestion.value = remote
@@ -95,7 +103,7 @@ class ReaderViewModel(
             ReaderUiState.Ready(
               title = result.publication.metadata.title,
               publication = result.publication,
-              initialLocator = initialLocator,
+              initialPosition = initialPosition,
               initialPreferences = storedPrefs,
             )
         }
@@ -142,17 +150,17 @@ class ReaderViewModel(
     viewModelScope.launch { preferences.resetSpacing() }
   }
 
-  fun onLocatorChanged(locator: Locator) {
-    _currentLocator.value = locator
+  fun onPositionChanged(position: ReaderPosition) {
+    _currentPosition.value = position
     val pub = publication ?: return
     val file = bookFile ?: return
-    sync.setProgress(bookId, file, locator, pub)
+    sync.setProgress(bookId, file, position, pub)
   }
 
   fun acceptRemoteSuggestion() {
     val remote = _remoteSuggestion.value ?: return
     _remoteSuggestion.value = null
-    _navigateTo.tryEmit(remote.locator)
+    _navigateTo.tryEmit(remote.position)
   }
 
   fun dismissRemoteSuggestion() {
@@ -164,14 +172,14 @@ class ReaderViewModel(
     val file = bookFile ?: return
     viewModelScope.launch {
       val remote = sync.pullFurthestPosition(bookId, file, pub)
-      if (remote != null) _navigateTo.tryEmit(remote.locator) else _alreadyAtFurthest.tryEmit(Unit)
+      if (remote != null) _navigateTo.tryEmit(remote.position) else _alreadyAtFurthest.tryEmit(Unit)
     }
   }
 
   override fun onCleared() {
     val pub = publication ?: return
     val file = bookFile
-    val current = _currentLocator.value
+    val current = _currentPosition.value
     publication = null
     bookFile = null
     // viewModelScope is already cancelled. Use a fresh scope so the flush + close survive long

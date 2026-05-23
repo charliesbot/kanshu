@@ -5,9 +5,10 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
 
-// One row per book. `locatorJson` is the Readium locator string — local canonical position,
-// always restorable on the same device. `progression` is denormalized from the locator (0..1
-// chapter-level) for cheap "% read" queries without parsing the JSON.
+// One row per book. `locatorJson` now persists `ReaderPosition` JSON (rather than Readium locator
+// JSON)
+// — local canonical position, always restorable on the same device. `progression` is denormalized
+// from the position (0..1 book-level) for cheap "% read" queries without parsing the JSON.
 //
 // `syncMetadata` is an opaque JSON blob written by whichever provider owns the book (see
 // books.source). The reader doesn't read or interpret it; the sync layer parses it based on

@@ -40,10 +40,7 @@ dependencies {
   implementation(project(":features:connection:app"))
   implementation(project(":features:library:app"))
   implementation(project(":features:reader:app"))
-  // MainActivity sets a dummy EpubNavigatorFragment factory before super.onCreate so the
-  // FragmentManager can recreate a saved navigator across process death (it has no no-arg
-  // constructor). The dependency lives here rather than transitively to keep it explicit.
-  implementation(libs.readium.navigator)
+
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
