@@ -57,25 +57,21 @@ class KavitaProgressSync(
       val hash =
         KoreaderHash.ofFile(file) ?: return@withContext Result.failure(MissingFileException)
       runCatchingNetwork {
-        val remote = api.getKoreaderProgress(creds.baseUrl, creds.apiKey, hash)
-        if (remote == null) {
-          null
-        } else {
-          val spineIndex = KoreaderPosition.decodeSpineIndex(remote.progress)
-          if (spineIndex == null) {
-            Log.w(TAG, "Remote progress had no decodable spine index; skipping")
-            null
-          } else {
-            RemoteProgress(
-              position =
-                ReaderPosition(spineIndex = spineIndex, pageIndex = 0, progressInSpine = 0f),
-              percentage = remote.percentage.toDouble(),
-              // KOReader's kosync protocol uses epoch seconds; we expose millis everywhere else.
-              timestampMillis = remote.timestamp * 1000L,
-              deviceName = remote.device.takeIf { it.isNotBlank() },
-            )
-          }
+        val remote =
+          api.getKoreaderProgress(creds.baseUrl, creds.apiKey, hash)
+            ?: return@runCatchingNetwork null
+        val spineIndex = KoreaderPosition.decodeSpineIndex(remote.progress)
+        if (spineIndex == null) {
+          Log.w(TAG, "Remote progress had no decodable spine index; skipping")
+          return@runCatchingNetwork null
         }
+        RemoteProgress(
+          position = ReaderPosition(spineIndex = spineIndex, pageIndex = 0, progressInSpine = 0f),
+          percentage = remote.percentage.toDouble(),
+          // KOReader's kosync protocol uses epoch seconds; we expose millis everywhere else.
+          timestampMillis = remote.timestamp * 1000L,
+          deviceName = remote.device.takeIf { it.isNotBlank() },
+        )
       }
     }
 
