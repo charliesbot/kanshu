@@ -1,7 +1,7 @@
 package com.charliesbot.kanshu.core.sync
 
+import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import java.io.File
-import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
 
 // Capability interface for providers that can sync reading progress to a remote service. v0
@@ -16,7 +16,7 @@ interface ProgressSync {
   // the orchestrator decides whether to retry (typically via WorkManager).
   suspend fun push(
     file: File,
-    locator: Locator,
+    position: ReaderPosition,
     publication: Publication,
     timestampMillis: Long,
   ): Result<Unit>
@@ -27,7 +27,7 @@ interface ProgressSync {
 }
 
 data class RemoteProgress(
-  val locator: Locator,
+  val position: ReaderPosition,
   val percentage: Double,
   val timestampMillis: Long,
   // Free-form label populated by the device that last wrote progress. Surfaced in the
