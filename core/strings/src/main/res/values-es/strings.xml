@@ -73,7 +73,6 @@
     <string name="reader_prefs_word_spacing">Espaciado de palabra</string>
     <string name="reader_prefs_character_spacing">Espaciado de caracteres</string>
     <string name="reader_prefs_reset_to_default">Restablecer valores predeterminados</string>
-    <string name="reader_prefs_reset_all_spacing_label">Restablecer todo el espaciado</string>
     <string name="reader_prefs_decrease">Disminuir</string>
     <string name="reader_prefs_increase">Aumentar</string>
 </resources>

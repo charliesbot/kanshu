@@ -25,9 +25,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.charliesbot.kanshu.core.reader.ReaderAlignment
-import com.charliesbot.kanshu.core.reader.ReaderFont
-import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
@@ -58,6 +55,20 @@ fun ReaderScreen(
   val chapterState by viewModel.chapterState.collectAsStateWithLifecycle()
   val remoteSuggestion by viewModel.remoteSuggestion.collectAsStateWithLifecycle()
   val readerPrefs by viewModel.readerPreferences.collectAsStateWithLifecycle()
+  val callbacks =
+    remember(viewModel) {
+      ReaderPrefsCallbacks(
+        onFontChange = viewModel::setFont,
+        onFontScaleChange = viewModel::setFontScale,
+        onMarginsChange = viewModel::setMargins,
+        onAlignmentChange = viewModel::setAlignment,
+        onLineSpacingChange = viewModel::setLineSpacing,
+        onParagraphSpacingChange = viewModel::setParagraphSpacing,
+        onWordSpacingChange = viewModel::setWordSpacing,
+        onLetterSpacingChange = viewModel::setLetterSpacing,
+        onResetSpacing = viewModel::resetSpacing,
+      )
+    }
   ReaderContent(
     uiState = uiState,
     fallbackTitle = title,
@@ -72,15 +83,7 @@ fun ReaderScreen(
     onDismissSuggestion = viewModel::dismissRemoteSuggestion,
     onSyncToFurthest = viewModel::syncToFurthestPageRead,
     readerPrefs = readerPrefs,
-    onFontChange = viewModel::setFont,
-    onFontScaleChange = viewModel::setFontScale,
-    onMarginsChange = viewModel::setMargins,
-    onAlignmentChange = viewModel::setAlignment,
-    onLineSpacingChange = viewModel::setLineSpacing,
-    onParagraphSpacingChange = viewModel::setParagraphSpacing,
-    onWordSpacingChange = viewModel::setWordSpacing,
-    onLetterSpacingChange = viewModel::setLetterSpacing,
-    onResetSpacing = viewModel::resetSpacing,
+    callbacks = callbacks,
   )
 }
 
@@ -99,15 +102,7 @@ private fun ReaderContent(
   onDismissSuggestion: () -> Unit,
   onSyncToFurthest: () -> Unit,
   readerPrefs: ReaderPreferences,
-  onFontChange: (ReaderFont) -> Unit,
-  onFontScaleChange: (Float) -> Unit,
-  onMarginsChange: (ReaderMargins) -> Unit,
-  onAlignmentChange: (ReaderAlignment) -> Unit,
-  onLineSpacingChange: (Float) -> Unit,
-  onParagraphSpacingChange: (Float) -> Unit,
-  onWordSpacingChange: (Float) -> Unit,
-  onLetterSpacingChange: (Float) -> Unit,
-  onResetSpacing: () -> Unit,
+  callbacks: ReaderPrefsCallbacks,
 ) {
   KanshuScaffold {
     when (uiState) {
@@ -128,15 +123,7 @@ private fun ReaderContent(
           onDismissSuggestion = onDismissSuggestion,
           onSyncToFurthest = onSyncToFurthest,
           readerPrefs = readerPrefs,
-          onFontChange = onFontChange,
-          onFontScaleChange = onFontScaleChange,
-          onMarginsChange = onMarginsChange,
-          onAlignmentChange = onAlignmentChange,
-          onLineSpacingChange = onLineSpacingChange,
-          onParagraphSpacingChange = onParagraphSpacingChange,
-          onWordSpacingChange = onWordSpacingChange,
-          onLetterSpacingChange = onLetterSpacingChange,
-          onResetSpacing = onResetSpacing,
+          callbacks = callbacks,
         )
       ReaderUiState.Error.NotFound ->
         StatusText(text = stringResource(R.string.reader_error_not_found))
@@ -163,15 +150,7 @@ private fun ReaderBody(
   onDismissSuggestion: () -> Unit,
   onSyncToFurthest: () -> Unit,
   readerPrefs: ReaderPreferences,
-  onFontChange: (ReaderFont) -> Unit,
-  onFontScaleChange: (Float) -> Unit,
-  onMarginsChange: (ReaderMargins) -> Unit,
-  onAlignmentChange: (ReaderAlignment) -> Unit,
-  onLineSpacingChange: (Float) -> Unit,
-  onParagraphSpacingChange: (Float) -> Unit,
-  onWordSpacingChange: (Float) -> Unit,
-  onLetterSpacingChange: (Float) -> Unit,
-  onResetSpacing: () -> Unit,
+  callbacks: ReaderPrefsCallbacks,
 ) {
   var controller by remember { mutableStateOf<BookViewController?>(null) }
   var readerPrefsOpen by remember { mutableStateOf(false) }
@@ -217,18 +196,7 @@ private fun ReaderBody(
       )
     }
     KanshuBottomSheet(isOpen = readerPrefsOpen, onDismiss = { readerPrefsOpen = false }) {
-      ReaderPrefsBottomSheet(
-        prefs = readerPrefs,
-        onFontChange = onFontChange,
-        onFontScaleChange = onFontScaleChange,
-        onMarginsChange = onMarginsChange,
-        onAlignmentChange = onAlignmentChange,
-        onLineSpacingChange = onLineSpacingChange,
-        onParagraphSpacingChange = onParagraphSpacingChange,
-        onWordSpacingChange = onWordSpacingChange,
-        onLetterSpacingChange = onLetterSpacingChange,
-        onResetSpacing = onResetSpacing,
-      )
+      ReaderPrefsBottomSheet(prefs = readerPrefs, callbacks = callbacks)
     }
     if (remoteSuggestion != null) {
       RemoteProgressPrompt(
@@ -325,15 +293,7 @@ private fun ReaderScreenLoadingPreview() {
       onDismissSuggestion = {},
       onSyncToFurthest = {},
       readerPrefs = ReaderPreferences(),
-      onFontChange = {},
-      onFontScaleChange = {},
-      onMarginsChange = {},
-      onAlignmentChange = {},
-      onLineSpacingChange = {},
-      onParagraphSpacingChange = {},
-      onWordSpacingChange = {},
-      onLetterSpacingChange = {},
-      onResetSpacing = {},
+      callbacks = ReaderPrefsCallbacks.Empty,
     )
   }
 }
@@ -356,15 +316,7 @@ private fun ReaderScreenErrorPreview() {
       onDismissSuggestion = {},
       onSyncToFurthest = {},
       readerPrefs = ReaderPreferences(),
-      onFontChange = {},
-      onFontScaleChange = {},
-      onMarginsChange = {},
-      onAlignmentChange = {},
-      onLineSpacingChange = {},
-      onParagraphSpacingChange = {},
-      onWordSpacingChange = {},
-      onLetterSpacingChange = {},
-      onResetSpacing = {},
+      callbacks = ReaderPrefsCallbacks.Empty,
     )
   }
 }
