@@ -351,11 +351,9 @@ data class ReaderPosition(
 )
 ```
 
-`ReaderPosition` replaces Readium `Locator` as the local reader's runtime position model. Existing persisted Readium locators are migrated best-effort to `schemaVersion = 1`, `spineIndex`, and `progressInSpine` during the first open after migration. The migration logic lives in `core/data/.../reader/progress/ReaderPositionMigrator.kt` and runs once per book inside `OpenBookUseCase` (covered by Phase 1 step 4). The `BookViewController.currentLocator: Flow<Locator>` contract changes to `Flow<ReaderPosition>` in V1; `ReaderViewModel`, `RemoteProgressPrompt`, and the Kavita progress sync path adopt the new type.
+`ReaderPosition` replaces Readium `Locator` as the local reader's runtime position model. The `BookViewController.currentLocator: Flow<Locator>` contract changes to `Flow<ReaderPosition>` in V1; `ReaderViewModel`, `RemoteProgressPrompt`, and the Kavita progress sync path adopt the new type.
 
-Persisted `ReaderPosition` is stored in Room `reading_progress.locator_json` as kotlinx.serialization JSON, replacing the current Readium locator JSON shape. The column name stays `locator_json` as a legacy name to avoid a Room migration; update the entity comment to say it now stores `ReaderPosition` JSON. Decoder config uses `ignoreUnknownKeys = true` so V1 builds tolerate future fields. New fields must be nullable or have defaults; never make older `schemaVersion` values fail to decode.
-
-Migration is lazy to trigger but eager to write back: on read, first try decoding `ReaderPosition`; if that fails, try decoding the old Readium `Locator`, convert with `ReaderPositionMigrator`, and persist the converted shape immediately after a successful conversion. Corrupted or unmigratable JSON falls back silently to `ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0f)` without surfacing an error to the user.
+Persisted `ReaderPosition` is stored in Room `reading_progress.locator_json` as kotlinx.serialization JSON, replacing the current Readium locator JSON shape. The column name stays `locator_json` as a legacy name to avoid a Room migration; update the entity comment to say it now stores `ReaderPosition` JSON. Decoder config uses `ignoreUnknownKeys = true` so V1 builds tolerate future fields. New fields must be nullable or have defaults; never make older `schemaVersion` values fail to decode. On read, if parsing the JSON fails, the reader falls back silently to `ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0f)`. No legacy migration of existing database formats is performed; reinstalling/clearing storage is acceptable.
 
 `ReaderPosition.schemaVersion` lives inside the JSON blob and tracks the data-class shape. Room's database `schema_version` tracks the SQL schema. The two are unrelated; bumping `ReaderPosition.schemaVersion` does not require a Room migration unless the SQL column shape changes.
 
@@ -563,7 +561,7 @@ class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
 1. Keep the existing `ReadiumBookViewer` intact only while the new pager is being validated.
 2. Reuse the existing `BookViewController` interface (already in `features/reader/app/.../BookViewController.kt`); add a higher-level `ReaderEngine` abstraction only if the swap requires more than a `BookViewController` impl.
 3. Wrap `ReadiumBookViewer` behind `ReadiumEngine` (or leave as-is if no higher-level abstraction is added).
-4. Add `ReaderPosition` and a best-effort migration from existing Readium `Locator` JSON (`core/data/.../reader/progress/ReaderPositionMigrator.kt`).
+4. Add `ReaderPosition` and mapping helper for Readium `Locator` (`core/data/.../reader/progress/ReaderPositionMigrator.kt`).
 
 ### Phase 2: Custom WebView Pager
 
@@ -638,7 +636,7 @@ Measured on a Boox Note Air 3 with the acceptance EPUB set:
 
 - Unit-test URL normalization, percent-decoded path traversal rejection, MIME detection, APK `__kanshu__` asset routing, EPUB resource resolution/read, `__kanshu_load` stale-request rejection, 403 responses for external hosts/root paths/non-GET requests, chapter-vs-sub-resource error routing, and CORS/`no-store` header presence on all local responses including `assetResponse`.
 - Unit-test load-id verification on intercepted chapter documents to reject stale or missing load-id requests.
-- Unit-test `ReaderPosition`: serialization round-trip, `schemaVersion`, forward-compatible decode with unknown future fields, and best-effort migration from existing Readium locators.
+- Unit-test `ReaderPosition`: serialization round-trip, `schemaVersion`, forward-compatible decode with unknown future fields, and fallback on invalid formats.
 - Unit-test CSS variable mapping from `ReaderPreferences`.
 - Unit-test WebView bridge page-index/progression math from `scrollX`, `scrollWidth`, and viewport width, including single-page chapters where `scrollWidth <= viewportWidth`.
 - Unit-test bridge feedback guards for `chapterLoadId`, `settingsRevision`, `pendingTarget`, `pendingRepaginate`, duplicate settled-position reports, and repagination timeout/stall handling.
