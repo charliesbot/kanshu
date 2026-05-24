@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
@@ -77,6 +79,7 @@ class ReaderViewModel(
 
   val readLock = Mutex()
   private val activeChapterLoadId = AtomicInteger(0)
+  private var activeLoadJob: Job? = null
 
   // One-shot "manual sync didn't find a further position" feedback for the screen to surface
   // as a toast or similar. Same buffering rationale as navigateTo.
@@ -103,118 +106,122 @@ class ReaderViewModel(
     preferences.preferences.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderPreferences())
 
   init {
-    viewModelScope.launch {
-      // Resolve persisted preferences before mounting the reader so the initial frame already
-      // uses the stored font/scale. On a DataStore this is a single in-memory read.
-      val storedPrefs = preferences.preferences.first()
-      when (val result = openBook(seriesId)) {
-        is ReaderResult.Success -> {
-          publication = result.publication
-          bookFile = result.file
-          tocIndex = TocIndex(result.publication)
-          val initial = sync.resolveInitialPosition(bookId, result.file, result.publication)
-          val (initialPosition, remote) =
-            when (initial) {
-              is InitialPosition.UseLocal -> initial.position to null
-              is InitialPosition.PromptForRemote -> initial.local to initial.remote
+    activeLoadJob =
+      viewModelScope.launch {
+        // Resolve persisted preferences before mounting the reader so the initial frame already
+        // uses the stored font/scale. On a DataStore this is a single in-memory read.
+        val storedPrefs = preferences.preferences.first()
+        when (val result = openBook(seriesId)) {
+          is ReaderResult.Success -> {
+            publication = result.publication
+            bookFile = result.file
+            tocIndex = TocIndex(result.publication)
+            val initial = sync.resolveInitialPosition(bookId, result.file, result.publication)
+            val (initialPosition, remote) =
+              when (initial) {
+                is InitialPosition.UseLocal -> initial.position to null
+                is InitialPosition.PromptForRemote -> initial.local to initial.remote
+              }
+            _remoteSuggestion.value = remote
+
+            val pos =
+              initialPosition
+                ?: ReaderPosition(
+                  schemaVersion = 1,
+                  spineIndex = 0,
+                  pageIndex = 0,
+                  progressInSpine = 0.0f,
+                )
+            val spineIndex = pos.spineIndex
+            val link = result.publication.readingOrder.getOrNull(spineIndex)
+            if (link == null) {
+              _uiState.value = ReaderUiState.Error.ReadFailed
+              return@launch
             }
-          _remoteSuggestion.value = remote
 
-          val pos =
-            initialPosition
-              ?: ReaderPosition(
-                schemaVersion = 1,
-                spineIndex = 0,
-                pageIndex = 0,
-                progressInSpine = 0.0f,
+            val chapter = loadAndSanitizeChapter(result.publication, link, spineIndex)
+            if (chapter == null) {
+              _uiState.value = ReaderUiState.Error.ReadFailed
+              return@launch
+            }
+
+            _currentPosition.value = pos
+            _pageIndex.value = pos.pageIndex
+            _uiState.value =
+              ReaderUiState.Ready(
+                title = result.publication.metadata.title,
+                publication = result.publication,
+                initialPosition = pos,
+                initialPreferences = storedPrefs,
+                currentChapter = chapter,
               )
-          val spineIndex = pos.spineIndex
-          val link = result.publication.readingOrder.getOrNull(spineIndex)
-          if (link == null) {
-            _uiState.value = ReaderUiState.Error.ReadFailed
-            return@launch
           }
-
-          val chapter = loadAndSanitizeChapter(result.publication, link, spineIndex)
-          if (chapter == null) {
-            _uiState.value = ReaderUiState.Error.ReadFailed
-            return@launch
-          }
-
-          _currentPosition.value = pos
-          _pageIndex.value = pos.pageIndex
-          _uiState.value =
-            ReaderUiState.Ready(
-              title = result.publication.metadata.title,
-              publication = result.publication,
-              initialPosition = pos,
-              initialPreferences = storedPrefs,
-              currentChapter = chapter,
-            )
+          ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
+          ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.ParseFailed
+          ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
         }
-        ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
-        ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.ParseFailed
-        ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
       }
-    }
   }
 
   private suspend fun loadAndSanitizeChapter(
     pub: Publication,
     link: Link,
     spineIndex: Int,
-  ): CachedResource? {
-    val resource = pub.get(link) ?: return null
-    return try {
-      val rawBytes = readLock.withLock { resource.read().getOrNull() } ?: return null
-      val rawHtml = String(rawBytes, Charsets.UTF_8)
-      val sanitizedHtml = KanshuHtmlSanitizer.sanitizeAndWrap(rawHtml)
-      val loadId = activeChapterLoadId.incrementAndGet()
-      CachedResource(
-        path = link.href.toString().removePrefix("/"),
-        spineIndex = spineIndex,
-        loadId = loadId,
-        bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
-        mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
-      )
-    } catch (e: Exception) {
-      null
-    } finally {
-      resource.close()
+  ): CachedResource? =
+    withContext(ioDispatcher) {
+      val resource = pub.get(link) ?: return@withContext null
+      try {
+        val rawBytes = readLock.withLock { resource.read().getOrNull() } ?: return@withContext null
+        val rawHtml = String(rawBytes, Charsets.UTF_8)
+        val sanitizedHtml = KanshuHtmlSanitizer.sanitizeAndWrap(rawHtml)
+        val loadId = activeChapterLoadId.incrementAndGet()
+        CachedResource(
+          path = link.href.toString().removePrefix("/"),
+          spineIndex = spineIndex,
+          loadId = loadId,
+          bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
+          mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
+        )
+      } catch (e: Exception) {
+        null
+      } finally {
+        resource.close()
+      }
     }
-  }
 
   fun loadSpineChapter(spineIndex: Int, targetPageIndex: Int) {
     val pub = publication ?: return
-    viewModelScope.launch(ioDispatcher) {
-      val link = pub.readingOrder.getOrNull(spineIndex) ?: return@launch
-      val chapter = loadAndSanitizeChapter(pub, link, spineIndex)
-      if (chapter == null) {
-        _uiState.value = ReaderUiState.Error.ReadFailed
-        return@launch
+    activeLoadJob?.cancel()
+    activeLoadJob =
+      viewModelScope.launch {
+        val link = pub.readingOrder.getOrNull(spineIndex) ?: return@launch
+        val chapter = loadAndSanitizeChapter(pub, link, spineIndex)
+        if (chapter == null) {
+          _uiState.value = ReaderUiState.Error.ReadFailed
+          return@launch
+        }
+
+        val storedPrefs = preferences.preferences.first()
+        val initialPosition =
+          ReaderPosition(
+            schemaVersion = 1,
+            spineIndex = spineIndex,
+            pageIndex = targetPageIndex,
+            progressInSpine = 0.0f,
+          )
+
+        _currentPosition.value = initialPosition
+        _pageIndex.value = targetPageIndex
+        _pageCount.value = 1
+        _uiState.value =
+          ReaderUiState.Ready(
+            title = pub.metadata.title,
+            publication = pub,
+            initialPosition = initialPosition,
+            initialPreferences = storedPrefs,
+            currentChapter = chapter,
+          )
       }
-
-      val storedPrefs = preferences.preferences.first()
-      val initialPosition =
-        ReaderPosition(
-          schemaVersion = 1,
-          spineIndex = spineIndex,
-          pageIndex = targetPageIndex,
-          progressInSpine = 0.0f,
-        )
-
-      _currentPosition.value = initialPosition
-      _pageIndex.value = targetPageIndex
-      _pageCount.value = 1
-      _uiState.value =
-        ReaderUiState.Ready(
-          title = pub.metadata.title,
-          publication = pub,
-          initialPosition = initialPosition,
-          initialPreferences = storedPrefs,
-          currentChapter = chapter,
-        )
-    }
   }
 
   fun goForward() {
