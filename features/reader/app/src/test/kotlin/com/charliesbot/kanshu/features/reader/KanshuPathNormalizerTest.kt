@@ -31,6 +31,19 @@ class KanshuPathNormalizerTest {
   }
 
   @Test
+  fun testPlusPreservation() {
+    // Both raw plus and encoded plus must be preserved, NOT turned into spaces
+    assertEquals(
+      "OEBPS/file+name.xhtml",
+      KanshuPathNormalizer.normalizeAndRejectTraversal("/OEBPS/file+name.xhtml"),
+    )
+    assertEquals(
+      "OEBPS/file+name.xhtml",
+      KanshuPathNormalizer.normalizeAndRejectTraversal("/OEBPS/file%2Bname.xhtml"),
+    )
+  }
+
+  @Test
   fun testCollapseRepeatedSlashes() {
     assertEquals(
       "OEBPS/chapter1.xhtml",
@@ -40,7 +53,7 @@ class KanshuPathNormalizerTest {
 
   @Test
   fun testRejectPathTraversal() {
-    // Traverse up but stays inside root (should be successfully resolved)
+    // Normal resolving segment inside bounds
     assertEquals(
       "chapter1.xhtml",
       KanshuPathNormalizer.normalizeAndRejectTraversal("/OEBPS/../chapter1.xhtml"),
@@ -48,6 +61,18 @@ class KanshuPathNormalizerTest {
     // Traverse beyond root (should be rejected and return null)
     assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("../chapter1.xhtml"))
     assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("OEBPS/../../chapter1.xhtml"))
+  }
+
+  @Test
+  fun testRejectDoubleEncodingAttacks() {
+    // Double percent-encoded dot dot: %252e%252e -> %2e%2e
+    assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("OEBPS/%252e%252e/chapter1.xhtml"))
+    // Encoded dot dot: %2e%2e
+    assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("OEBPS/%2e%2e/chapter1.xhtml"))
+    // Double encoded slash: %252f -> %2f
+    assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("OEBPS%252fchapter1.xhtml"))
+    // Encoded slash: %2f
+    assertNull(KanshuPathNormalizer.normalizeAndRejectTraversal("OEBPS%2fchapter1.xhtml"))
   }
 
   @Test

@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.features.reader
 
 import android.util.Log
 import org.jsoup.Jsoup
+import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -62,6 +63,30 @@ object KanshuHtmlSanitizer {
       "rp",
       "img",
       "svg",
+      "path",
+      "rect",
+      "circle",
+      "ellipse",
+      "line",
+      "polyline",
+      "polygon",
+      "g",
+      "defs",
+      "use",
+      "symbol",
+      "linearGradient",
+      "radialGradient",
+      "lineargradient",
+      "radialgradient",
+      "clipPath",
+      "clippath",
+      "mask",
+      "filter",
+      "pattern",
+      "image",
+      "stop",
+      "text",
+      "tspan",
       "table",
       "thead",
       "tbody",
@@ -70,6 +95,35 @@ object KanshuHtmlSanitizer {
       "td",
       "th",
       "caption",
+    )
+
+  private val ALLOWED_SVG_TAGS =
+    setOf(
+      "svg",
+      "path",
+      "rect",
+      "circle",
+      "ellipse",
+      "line",
+      "polyline",
+      "polygon",
+      "g",
+      "defs",
+      "use",
+      "symbol",
+      "linearGradient",
+      "radialGradient",
+      "lineargradient",
+      "radialgradient",
+      "clipPath",
+      "clippath",
+      "mask",
+      "filter",
+      "pattern",
+      "image",
+      "stop",
+      "text",
+      "tspan",
     )
 
   private val STRUCTURAL_TAGS = setOf("html", "head", "body", "meta", "title", "link", "style")
@@ -88,19 +142,15 @@ object KanshuHtmlSanitizer {
     // Second pass: Extract head links and style blocks, then wrap inside the Kanshu shell
     val shellDoc = Document.createShell("https://kanshu.invalid/")
 
-    // Setup head meta and core stylesheet link
+    // Setup head meta
     val head = shellDoc.head()
     head.appendElement("meta").attr("charset", "utf-8")
     head.appendElement("meta").apply {
       attr("name", "viewport")
       attr("content", "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no")
     }
-    head.appendElement("link").apply {
-      attr("rel", "stylesheet")
-      attr("href", "https://kanshu.invalid/__kanshu__/kanshu-reader.css")
-    }
 
-    // Copy cleaned publisher stylesheets and style tags
+    // Copy cleaned publisher stylesheets and style tags FIRST
     doc.head().children().forEach { child ->
       val tagName = child.tagName()
       if (tagName == "link" && child.attr("rel") == "stylesheet") {
@@ -110,9 +160,15 @@ object KanshuHtmlSanitizer {
       }
     }
 
-    // Create the page container div and append all cleaned body children
+    // Inject Kanshu core stylesheet LAST so it has higher specificity/override priority
+    head.appendElement("link").apply {
+      attr("rel", "stylesheet")
+      attr("href", "https://kanshu.invalid/__kanshu__/kanshu-reader.css")
+    }
+
+    // Create the page container main and append all cleaned body children
     val body = shellDoc.body()
-    val pageContainer = body.appendElement("div").attr("id", "kanshu-page")
+    val pageContainer = body.appendElement("main").attr("id", "kanshu-page")
 
     doc.body().children().forEach { child -> pageContainer.appendChild(child.clone()) }
 
@@ -120,41 +176,66 @@ object KanshuHtmlSanitizer {
   }
 
   private fun cleanElement(element: Element) {
-    val tagName = element.tagName()
+    if (cleanRootOrDocument(element)) return
+    if (cleanLinkElement(element)) return
+    if (cleanStyleElement(element)) return
+    if (cleanStructuralElement(element)) return
+    if (cleanUnrecognizedElement(element)) return
 
-    if (element is Document || tagName == "#root") {
-      val children = element.children().toList()
-      children.forEach { cleanElement(it) }
-      return
+    cleanElementAttributes(element)
+
+    // Recurse on children of whitelisted element
+    element.children().toList().forEach { cleanElement(it) }
+  }
+
+  private fun cleanRootOrDocument(element: Element): Boolean {
+    if (element is Document || element.tagName() == "#root") {
+      element.children().toList().forEach { cleanElement(it) }
+      return true
     }
+    return false
+  }
 
-    // 1. Process link tags in head
-    if (tagName == "link") {
+  private fun cleanLinkElement(element: Element): Boolean {
+    if (element.tagName() == "link") {
       val rel = element.attr("rel").lowercase()
       val href = element.attr("href")
       if (rel != "stylesheet" || isUnsafeUrl(href)) {
         element.remove()
       }
-      return
+      return true
     }
+    return false
+  }
 
-    // 2. Process style tags
-    if (tagName == "style") {
+  private fun cleanStyleElement(element: Element): Boolean {
+    if (element.tagName() == "style") {
       val css = element.data()
-      element.text(sanitizeCss(css))
-      return
+      element.empty().appendChild(DataNode(sanitizeCss(css)))
+      return true
     }
+    return false
+  }
 
-    // 3. Skip structural tags but clean their children
-    if (tagName in STRUCTURAL_TAGS) {
-      val children = element.children().toList()
-      children.forEach { cleanElement(it) }
-      return
+  private fun cleanStructuralElement(element: Element): Boolean {
+    if (element.tagName() in STRUCTURAL_TAGS) {
+      element.children().toList().forEach { cleanElement(it) }
+      return true
     }
+    return false
+  }
 
-    // 4. Handle unrecognized tags: Transform them into a visual inline red warning badge
+  private fun cleanUnrecognizedElement(element: Element): Boolean {
+    val tagName = element.tagName()
     if (tagName !in ALLOWED_TAGS) {
       Log.w(TAG, "Sanitizer stripped unrecognized tag: <$tagName>")
+
+      // Silent cleanup inside SVG to prevent visual badging from corrupting coordinates
+      val isInsideSvg = element.parents().any { it.tagName() == "svg" }
+      if (isInsideSvg) {
+        element.remove()
+        return true
+      }
 
       // Create red visual error badge
       val debugBox = element.ownerDocument()?.createElement("span") ?: Element(tagName)
@@ -176,10 +257,13 @@ object KanshuHtmlSanitizer {
 
       // Recurse on children inside the new debug badge
       debugBox.children().forEach { cleanElement(it) }
-      return
+      return true
     }
+    return false
+  }
 
-    // 5. Clean allowed elements: Filter and sanitize attributes
+  private fun cleanElementAttributes(element: Element) {
+    val tagName = element.tagName()
     val attributes = element.attributes().toList()
     for (attr in attributes) {
       val attrName = attr.key.lowercase()
@@ -193,10 +277,12 @@ object KanshuHtmlSanitizer {
 
       when (tagName) {
         "img" -> {
-          if (attrName !in setOf("src", "alt", "title", "width", "height")) {
+          if (attrName !in setOf("src", "alt", "title", "width", "height", "style")) {
             element.removeAttr(attr.key)
           } else if (attrName == "src" && isUnsafeUrl(attrVal)) {
             element.removeAttr(attr.key)
+          } else if (attrName == "style") {
+            element.attr(attr.key, sanitizeCssDeclarations(attrVal))
           }
         }
         "a" -> {
@@ -206,46 +292,85 @@ object KanshuHtmlSanitizer {
             element.removeAttr(attr.key)
           }
         }
+        in ALLOWED_SVG_TAGS -> {
+          if (attrName == "style") {
+            element.attr(attr.key, sanitizeCssDeclarations(attrVal))
+          } else if (attrName == "href" || attrName == "xlink:href") {
+            if (isUnsafeUrl(attrVal)) {
+              element.removeAttr(attr.key)
+            }
+          }
+        }
         else -> {
           if (attrName == "style") {
             element.attr(attr.key, sanitizeCssDeclarations(attrVal))
           } else if (attrName != "class" && attrName != "id") {
-            // Keep only style, class, and id for generic allowed elements
+            // Keep style, class, and id for generic allowed tags
             element.removeAttr(attr.key)
           }
         }
       }
     }
-
-    // Clean children
-    val children = element.children().toList()
-    children.forEach { cleanElement(it) }
   }
 
-  fun sanitizeCss(css: String): String {
-    val sb = StringBuilder()
-    var index = 0
-    while (index < css.length) {
-      val openBrace = css.indexOf('{', index)
-      if (openBrace == -1) {
-        sb.append(css.substring(index))
-        break
-      }
-      val closeBrace = css.indexOf('}', openBrace)
-      if (closeBrace == -1) {
-        break // Strip rest on malformed CSS to fail safe
-      }
-      val selector = css.substring(index, openBrace)
-      val declarations = css.substring(openBrace + 1, closeBrace)
+  private data class CssBlock(val selector: String, val body: String)
 
-      val cleanDeclarations = sanitizeCssDeclarations(declarations)
-      sb.append(selector).append('{').append(cleanDeclarations).append('}')
-      index = closeBrace + 1
+  private object CssBlockParser {
+    fun parse(css: String): List<CssBlock> {
+      val blocks = mutableListOf<CssBlock>()
+      var braceDepth = 0
+      var blockStart = 0
+      var selectorStart = 0
+
+      for (i in css.indices) {
+        val c = css[i]
+        if (c == '{') {
+          if (braceDepth == 0) {
+            blockStart = i
+          }
+          braceDepth++
+        } else if (c == '}') {
+          braceDepth--
+          if (braceDepth == 0) {
+            val selector = css.substring(selectorStart, blockStart).trim()
+            val body = css.substring(blockStart + 1, i)
+            blocks.add(CssBlock(selector, body))
+            selectorStart = i + 1
+          } else if (braceDepth < 0) {
+            braceDepth = 0
+            selectorStart = i + 1
+          }
+        }
+      }
+      return blocks
     }
+  }
+
+  internal fun sanitizeCss(css: String): String {
+    val blocks = CssBlockParser.parse(css)
+    val sb = StringBuilder()
+
+    for (block in blocks) {
+      val selector = block.selector
+      val lowerSelector = selector.lowercase()
+
+      if (lowerSelector.startsWith("@import")) {
+        continue
+      }
+
+      if (lowerSelector.startsWith("@media") || lowerSelector.startsWith("@supports")) {
+        val sanitizedBody = sanitizeCss(block.body)
+        sb.append(selector).append(" {\n").append(sanitizedBody).append("}\n")
+      } else {
+        val sanitizedDeclarations = sanitizeCssDeclarations(block.body)
+        sb.append(selector).append(" { ").append(sanitizedDeclarations).append(" }\n")
+      }
+    }
+
     return sb.toString()
   }
 
-  fun sanitizeCssDeclarations(declarations: String): String {
+  internal fun sanitizeCssDeclarations(declarations: String): String {
     return declarations
       .split(';')
       .map { it.trim() }
@@ -274,10 +399,17 @@ object KanshuHtmlSanitizer {
 
   private fun isUnsafeUrl(url: String): Boolean {
     val lower = url.trim().lowercase()
-    if (lower.startsWith("javascript:") || lower.startsWith("data:")) return true
-    if (lower.startsWith("http://") || lower.startsWith("https://")) {
-      return !lower.contains("kanshu.invalid")
+    if (lower.startsWith("//")) return true
+
+    val schemeIndex = lower.indexOf(':')
+    if (schemeIndex != -1) {
+      val scheme = lower.substring(0, schemeIndex)
+      if (scheme == "http" || scheme == "https") {
+        return !lower.contains("kanshu.invalid")
+      }
+      return true
     }
+
     return false
   }
 }

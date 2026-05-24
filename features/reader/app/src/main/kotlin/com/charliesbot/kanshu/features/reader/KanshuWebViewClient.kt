@@ -16,12 +16,34 @@ import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.Url
 
-data class CachedResource(
+class CachedResource(
   val path: String,
   val loadId: Int,
   val bytes: ByteArray,
   val mimeType: String,
-)
+) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (javaClass != other?.javaClass) return false
+
+    other as CachedResource
+
+    if (path != other.path) return false
+    if (loadId != other.loadId) return false
+    if (!bytes.contentEquals(other.bytes)) return false
+    if (mimeType != other.mimeType) return false
+
+    return true
+  }
+
+  override fun hashCode(): Int {
+    var result = path.hashCode()
+    result = 31 * result + loadId
+    result = 31 * result + bytes.contentHashCode()
+    result = 31 * result + mimeType.hashCode()
+    return result
+  }
+}
 
 @OptIn(ExperimentalReadiumApi::class)
 class KanshuWebViewClient(
@@ -31,7 +53,7 @@ class KanshuWebViewClient(
   private val currentChapter: CachedResource,
 ) : WebViewClient() {
 
-  @Volatile private var activeChapterLoadId: Int = currentChapter.loadId
+  private val activeChapterLoadId: Int = currentChapter.loadId
 
   override fun shouldInterceptRequest(
     view: WebView,
@@ -82,7 +104,7 @@ class KanshuWebViewClient(
       val extension = path.substringAfterLast('.', missingDelimiterValue = "")
       val mimeType =
         link.mediaType?.toString()
-          ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+          ?: getMimeTypeFromExtension(extension)
           ?: "application/octet-stream"
 
       ok(mimeType, bytes)
@@ -128,8 +150,7 @@ class KanshuWebViewClient(
     return try {
       val inputStream = context.assets.open(path)
       val extension = path.substringAfterLast('.', missingDelimiterValue = "")
-      val mimeType =
-        MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
+      val mimeType = getMimeTypeFromExtension(extension) ?: "application/octet-stream"
       WebResourceResponse(
         mimeType,
         responseEncoding(mimeType),
@@ -154,6 +175,21 @@ class KanshuWebViewClient(
 
   private fun localHeaders(): Map<String, String> =
     mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+
+  private fun getMimeTypeFromExtension(extension: String): String? =
+    when (extension.lowercase()) {
+      "css" -> "text/css"
+      "js" -> "application/javascript"
+      "html",
+      "htm" -> "text/html"
+      "xhtml" -> "application/xhtml+xml"
+      "png" -> "image/png"
+      "jpg",
+      "jpeg" -> "image/jpeg"
+      "gif" -> "image/gif"
+      "svg" -> "image/svg+xml"
+      else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+    }
 
   companion object {
     private const val TAG = "KanshuWebViewClient"
