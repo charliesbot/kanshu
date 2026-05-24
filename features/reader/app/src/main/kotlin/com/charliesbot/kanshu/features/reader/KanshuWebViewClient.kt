@@ -18,6 +18,7 @@ import org.readium.r2.shared.util.Url
 
 class CachedResource(
   val path: String,
+  val spineIndex: Int,
   val loadId: Int,
   val bytes: ByteArray,
   val mimeType: String,
@@ -29,6 +30,7 @@ class CachedResource(
     other as CachedResource
 
     if (path != other.path) return false
+    if (spineIndex != other.spineIndex) return false
     if (loadId != other.loadId) return false
     if (!bytes.contentEquals(other.bytes)) return false
     if (mimeType != other.mimeType) return false
@@ -38,6 +40,7 @@ class CachedResource(
 
   override fun hashCode(): Int {
     var result = path.hashCode()
+    result = 31 * result + spineIndex
     result = 31 * result + loadId
     result = 31 * result + bytes.contentHashCode()
     result = 31 * result + mimeType.hashCode()

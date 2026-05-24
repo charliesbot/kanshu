@@ -34,6 +34,7 @@ class KanshuWebViewClientTest {
   private val currentChapter =
     CachedResource(
       path = "OEBPS/chapter1.xhtml",
+      spineIndex = 0,
       loadId = 100,
       bytes = mockChapterBytes,
       mimeType = "application/xhtml+xml",

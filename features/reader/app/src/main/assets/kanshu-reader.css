@@ -1,0 +1,87 @@
+:root {
+  --reader-font: "Literata-Kanshu";
+  --font-size: 18px;
+  --line-height: 1.5;
+  --text-align: justify;
+  --page-margin-inline: 24px;
+  --page-margin-block: 32px;
+  --paragraph-spacing: 0;
+  --word-spacing: 0;
+  --letter-spacing: 0;
+}
+
+html,
+body {
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+#kanshu-page {
+  width: 100vw !important;
+  height: 100vh !important;
+  box-sizing: border-box !important;
+  padding: var(--page-margin-block) var(--page-margin-inline) !important;
+  column-width: calc(100vw - (2 * var(--page-margin-inline))) !important;
+  column-gap: calc(2 * var(--page-margin-inline)) !important;
+  column-fill: auto !important;
+  font-family: var(--reader-font), serif !important;
+  font-size: var(--font-size) !important;
+  line-height: var(--line-height) !important;
+  text-align: var(--text-align) !important;
+  touch-action: pan-y !important;
+}
+
+#kanshu-page *:not(code):not(pre) {
+  font-family: var(--reader-font), serif !important;
+}
+
+#kanshu-page p,
+#kanshu-page li,
+#kanshu-page blockquote {
+  line-height: var(--line-height) !important;
+  text-align: var(--text-align) !important;
+  word-spacing: var(--word-spacing) !important;
+  letter-spacing: var(--letter-spacing) !important;
+}
+
+#kanshu-page p {
+  margin-block: var(--paragraph-spacing) !important;
+}
+
+#kanshu-page h1 {
+  font-size: calc(var(--font-size) * 1.5) !important;
+}
+
+#kanshu-page h2 {
+  font-size: calc(var(--font-size) * 1.3) !important;
+}
+
+#kanshu-page h3 {
+  font-size: calc(var(--font-size) * 1.2) !important;
+}
+
+#kanshu-page h4 {
+  font-size: calc(var(--font-size) * 1.1) !important;
+}
+
+#kanshu-page h5 {
+  font-size: var(--font-size) !important;
+}
+
+#kanshu-page h6 {
+  font-size: calc(var(--font-size) * 0.9) !important;
+}
+
+#kanshu-page img,
+#kanshu-page figure {
+  float: none !important;
+}
+
+#kanshu-page img,
+#kanshu-page svg {
+  max-width: 100% !important;
+  max-height: calc(100vh - (2 * var(--page-margin-block))) !important;
+  object-fit: contain !important;
+}

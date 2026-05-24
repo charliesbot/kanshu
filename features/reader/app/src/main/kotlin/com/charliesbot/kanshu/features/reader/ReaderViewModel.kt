@@ -14,6 +14,8 @@ import com.charliesbot.kanshu.core.sync.InitialPosition
 import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.sync.SyncRepository
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,7 +29,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
 
 @OptIn(ExperimentalReadiumApi::class)
@@ -36,6 +41,7 @@ class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val sync: SyncRepository,
   private val preferences: ReaderPreferencesRepository,
+  private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
   val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -57,6 +63,20 @@ class ReaderViewModel(
   // SharedFlow with a small buffer survives a slow collector during config change.
   private val _navigateTo = MutableSharedFlow<ReaderPosition>(extraBufferCapacity = 1)
   val navigateTo: SharedFlow<ReaderPosition> = _navigateTo.asSharedFlow()
+
+  // Emission flow for JS horizontal scrolling statements (e.g. kanshu.scrollToPage)
+  private val _evaluateJs = MutableSharedFlow<String>(extraBufferCapacity = 1)
+  val evaluateJs: SharedFlow<String> = _evaluateJs.asSharedFlow()
+
+  // Current page indices and counts mapped from bridge reports
+  private val _pageCount = MutableStateFlow(1)
+  val pageCount: StateFlow<Int> = _pageCount.asStateFlow()
+
+  private val _pageIndex = MutableStateFlow(0)
+  val pageIndex: StateFlow<Int> = _pageIndex.asStateFlow()
+
+  val readLock = Mutex()
+  private val activeChapterLoadId = AtomicInteger(0)
 
   // One-shot "manual sync didn't find a further position" feedback for the screen to surface
   // as a toast or similar. Same buffering rationale as navigateTo.
@@ -99,17 +119,176 @@ class ReaderViewModel(
               is InitialPosition.PromptForRemote -> initial.local to initial.remote
             }
           _remoteSuggestion.value = remote
+
+          val pos =
+            initialPosition
+              ?: ReaderPosition(
+                schemaVersion = 1,
+                spineIndex = 0,
+                pageIndex = 0,
+                progressInSpine = 0.0f,
+              )
+          val spineIndex = pos.spineIndex
+          val link = result.publication.readingOrder.getOrNull(spineIndex)
+          if (link == null) {
+            _uiState.value = ReaderUiState.Error.ReadFailed
+            return@launch
+          }
+
+          val chapter = loadAndSanitizeChapter(result.publication, link, spineIndex)
+          if (chapter == null) {
+            _uiState.value = ReaderUiState.Error.ReadFailed
+            return@launch
+          }
+
+          _currentPosition.value = pos
+          _pageIndex.value = pos.pageIndex
           _uiState.value =
             ReaderUiState.Ready(
               title = result.publication.metadata.title,
               publication = result.publication,
-              initialPosition = initialPosition,
+              initialPosition = pos,
               initialPreferences = storedPrefs,
+              currentChapter = chapter,
             )
         }
         ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
         ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.ParseFailed
         ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
+      }
+    }
+  }
+
+  private suspend fun loadAndSanitizeChapter(
+    pub: Publication,
+    link: Link,
+    spineIndex: Int,
+  ): CachedResource? {
+    val resource = pub.get(link) ?: return null
+    return try {
+      val rawBytes = readLock.withLock { resource.read().getOrNull() } ?: return null
+      val rawHtml = String(rawBytes, Charsets.UTF_8)
+      val sanitizedHtml = KanshuHtmlSanitizer.sanitizeAndWrap(rawHtml)
+      val loadId = activeChapterLoadId.incrementAndGet()
+      CachedResource(
+        path = link.href.toString().removePrefix("/"),
+        spineIndex = spineIndex,
+        loadId = loadId,
+        bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
+        mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
+      )
+    } catch (e: Exception) {
+      null
+    } finally {
+      resource.close()
+    }
+  }
+
+  fun loadSpineChapter(spineIndex: Int, targetPageIndex: Int) {
+    val pub = publication ?: return
+    viewModelScope.launch(ioDispatcher) {
+      val link = pub.readingOrder.getOrNull(spineIndex) ?: return@launch
+      val chapter = loadAndSanitizeChapter(pub, link, spineIndex)
+      if (chapter == null) {
+        _uiState.value = ReaderUiState.Error.ReadFailed
+        return@launch
+      }
+
+      val storedPrefs = preferences.preferences.first()
+      val initialPosition =
+        ReaderPosition(
+          schemaVersion = 1,
+          spineIndex = spineIndex,
+          pageIndex = targetPageIndex,
+          progressInSpine = 0.0f,
+        )
+
+      _currentPosition.value = initialPosition
+      _pageIndex.value = targetPageIndex
+      _pageCount.value = 1
+      _uiState.value =
+        ReaderUiState.Ready(
+          title = pub.metadata.title,
+          publication = pub,
+          initialPosition = initialPosition,
+          initialPreferences = storedPrefs,
+          currentChapter = chapter,
+        )
+    }
+  }
+
+  fun goForward() {
+    val readyState = _uiState.value as? ReaderUiState.Ready ?: return
+    val index = _pageIndex.value
+    val count = _pageCount.value
+    if (index < count - 1) {
+      val target = index + 1
+      _evaluateJs.tryEmit("kanshu.scrollToPage($target)")
+    } else {
+      val currentSpineIndex = readyState.currentChapter.spineIndex
+      if (currentSpineIndex < readyState.publication.readingOrder.size - 1) {
+        loadSpineChapter(currentSpineIndex + 1, targetPageIndex = 0)
+      }
+    }
+  }
+
+  fun goBackward() {
+    val readyState = _uiState.value as? ReaderUiState.Ready ?: return
+    val index = _pageIndex.value
+    if (index > 0) {
+      val target = index - 1
+      _evaluateJs.tryEmit("kanshu.scrollToPage($target)")
+    } else {
+      val currentSpineIndex = readyState.currentChapter.spineIndex
+      if (currentSpineIndex > 0) {
+        // Pass 9999 to automatically clamp to the last page after repagination
+        loadSpineChapter(currentSpineIndex - 1, targetPageIndex = 9999)
+      }
+    }
+  }
+
+  fun handleBridgeEvent(event: BridgeEvent) {
+    val readyState = _uiState.value as? ReaderUiState.Ready ?: return
+    val loadId =
+      when (event) {
+        is BridgeEvent.PageSettled -> event.chapterLoadId
+        is BridgeEvent.Repaginated -> event.chapterLoadId
+      }
+    if (loadId != readyState.currentChapter.loadId) return
+
+    when (event) {
+      is BridgeEvent.PageSettled -> {
+        _pageIndex.value = event.pageIndex
+        val currentSpineIndex = readyState.currentChapter.spineIndex
+        val position =
+          ReaderPosition(
+            schemaVersion = 1,
+            spineIndex = currentSpineIndex,
+            pageIndex = event.pageIndex,
+            progressInSpine = event.progressInSpine,
+          )
+        onPositionChanged(position)
+      }
+      is BridgeEvent.Repaginated -> {
+        _pageCount.value = event.pageCount
+        _pageIndex.value = event.restoredPageIndex
+        val currentSpineIndex = readyState.currentChapter.spineIndex
+
+        val progress =
+          if (event.pageCount > 1) {
+            event.restoredPageIndex.toFloat() / (event.pageCount - 1)
+          } else {
+            0.0f
+          }
+
+        val position =
+          ReaderPosition(
+            schemaVersion = 1,
+            spineIndex = currentSpineIndex,
+            pageIndex = event.restoredPageIndex,
+            progressInSpine = progress,
+          )
+        onPositionChanged(position)
       }
     }
   }
@@ -184,7 +363,7 @@ class ReaderViewModel(
     bookFile = null
     // viewModelScope is already cancelled. Use a fresh scope so the flush + close survive long
     // enough to complete. flushProgress has its own internal timeout; pub.close runs after.
-    CoroutineScope(Dispatchers.IO).launch {
+    CoroutineScope(ioDispatcher).launch {
       if (file != null && current != null) {
         sync.flushProgress(bookId, file, current, pub)
       }
