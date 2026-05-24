@@ -15,6 +15,7 @@ import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.sync.SyncRepository
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -182,6 +183,8 @@ class ReaderViewModel(
           bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
           mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
         )
+      } catch (e: CancellationException) {
+        throw e
       } catch (e: Exception) {
         null
       } finally {
