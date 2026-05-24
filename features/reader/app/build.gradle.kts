@@ -36,6 +36,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
 
   implementation(libs.readium.shared)
+  implementation(libs.jsoup)
   implementation(libs.koin.compose)
   implementation(libs.koin.compose.viewmodel)
 
@@ -44,4 +45,5 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.mockk)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
 }
