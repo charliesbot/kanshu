@@ -2,11 +2,14 @@ package com.charliesbot.kanshu.features.reader
 
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.xml.sax.InputSource
 
 @RunWith(RobolectricTestRunner::class)
 class KanshuHtmlSanitizerTest {
@@ -257,6 +260,28 @@ class KanshuHtmlSanitizerTest {
     assertTrue(pubIndex != -1)
     assertTrue(kanshuIndex != -1)
     assertTrue(pubIndex < kanshuIndex)
+  }
+
+  @Test
+  fun testWrappedShellIsValidXhtml() {
+    val raw =
+      """
+      <html>
+        <head>
+          <link rel="stylesheet" href="publisher.css" />
+        </head>
+        <body>
+          <p>Text</p>
+        </body>
+      </html>
+      """
+        .trimIndent()
+
+    val result = KanshuHtmlSanitizer.sanitizeAndWrap(raw)
+
+    DocumentBuilderFactory.newInstance()
+      .newDocumentBuilder()
+      .parse(InputSource(StringReader(result)))
   }
 
   @Test

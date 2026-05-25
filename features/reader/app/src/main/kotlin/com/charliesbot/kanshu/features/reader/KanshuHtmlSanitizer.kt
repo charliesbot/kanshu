@@ -6,6 +6,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Entities
 
 object KanshuHtmlSanitizer {
   private const val TAG = "KanshuHtmlSanitizer"
@@ -142,6 +143,10 @@ object KanshuHtmlSanitizer {
 
     // Second pass: Extract head links and style blocks, then wrap inside the Kanshu shell
     val shellDoc = Document.createShell("https://kanshu.invalid/")
+    shellDoc
+      .outputSettings()
+      .syntax(Document.OutputSettings.Syntax.xml)
+      .escapeMode(Entities.EscapeMode.xhtml)
 
     // Setup head meta
     val head = shellDoc.head()
