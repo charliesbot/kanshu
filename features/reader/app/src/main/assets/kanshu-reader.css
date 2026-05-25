@@ -85,3 +85,64 @@ body {
   max-height: calc(100vh - (2 * var(--page-margin-block))) !important;
   object-fit: contain !important;
 }
+
+@font-face {
+  font-family: "Literata-Kanshu";
+  src: url("fonts/Literata-VariableFont_opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Literata-Kanshu";
+  src: url("fonts/Literata-Italic-VariableFont_opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Bitter-Kanshu";
+  src: url("fonts/Bitter-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Bitter-Kanshu";
+  src: url("fonts/Bitter-Italic-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: italic;
+}
+@font-face {
+  font-family: "LibreBaskerville-Kanshu";
+  src: url("fonts/LibreBaskerville-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: "LibreBaskerville-Kanshu";
+  src: url("fonts/LibreBaskerville-Italic-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: italic;
+}
+@font-face {
+  font-family: "OpenDyslexic-Kanshu";
+  src: url("fonts/OpenDyslexic-Regular.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "OpenDyslexic-Kanshu";
+  src: url("fonts/OpenDyslexic-Italic.otf") format("opentype");
+  font-weight: normal;
+  font-style: italic;
+}
+@font-face {
+  font-family: "OpenDyslexic-Kanshu";
+  src: url("fonts/OpenDyslexic-Bold.otf") format("opentype");
+  font-weight: bold;
+  font-style: normal;
+}
+@font-face {
+  font-family: "OpenDyslexic-Kanshu";
+  src: url("fonts/OpenDyslexic-BoldItalic.otf") format("opentype");
+  font-weight: bold;
+  font-style: italic;
+}

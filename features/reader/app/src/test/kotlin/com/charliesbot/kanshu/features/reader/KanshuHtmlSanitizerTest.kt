@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.features.reader
 
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,7 +59,7 @@ class KanshuHtmlSanitizerTest {
 
     val result = KanshuHtmlSanitizer.sanitizeAndWrap(raw)
 
-    assertFalse(result.contains("<script>"))
+    assertFalse(result.contains("<script>alert"))
     assertFalse(result.contains("<iframe>"))
     assertFalse(result.contains("javascript:"))
     assertFalse(result.contains("onclick"))
@@ -208,7 +210,7 @@ class KanshuHtmlSanitizerTest {
     assertFalse(result.contains("[Error: Missing Tag &lt;circle&gt;]"))
 
     // Unsafe or unrecognized elements inside SVG must be silently stripped without a badge
-    assertFalse(result.contains("<script>"))
+    assertFalse(result.contains("alert('svg-hack')"))
     assertFalse(result.contains("<foreignObject>"))
     assertFalse(result.contains("[Error: Missing Tag &lt;foreignObject&gt;]"))
     assertFalse(result.contains("Unsafe SVG Block"))
@@ -359,5 +361,28 @@ class KanshuHtmlSanitizerTest {
     // Inner declaration elements are preserved
     assertTrue(result.contains("font-family: 'Open Dyslexic'"))
     assertTrue(result.contains("url('../fonts/OpenDyslexic.otf')"))
+  }
+
+  @Test
+  fun testScriptAndPreferenceStyleInjection() {
+    val raw = "<html><body><p>Test</p></body></html>"
+    val prefs = ReaderPreferences(font = ReaderFont.Bitter, fontScale = 1.5f)
+    val result =
+      KanshuHtmlSanitizer.sanitizeAndWrap(
+        rawHtml = raw,
+        loadId = 42,
+        targetPageIndex = 3,
+        prefs = prefs,
+      )
+
+    // Verify script tags are injected
+    assertTrue(result.contains("window.__kanshuChapterLoadId__ = 42;"))
+    assertTrue(result.contains("window.kanshu.repaginate(0, 3);"))
+    assertTrue(result.contains("https://kanshu.invalid/__kanshu__/kanshu-reader.js"))
+
+    // Verify preference CSS variables are injected in style block
+    assertTrue(result.contains("--reader-font: \"Bitter-Kanshu\""))
+    assertTrue(result.contains("--font-size: 27px")) // 18 * 1.5 = 27
+    assertTrue(result.contains("--line-height: 1.4"))
   }
 }

@@ -67,18 +67,18 @@
       };
 
       // Race font loading with a 500ms timeout before starting layout checks
-      let fontTimeout = setTimeout(checkStable, 500);
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => {
+      const runLayout = () => {
+        if (fontTimeout) {
           clearTimeout(fontTimeout);
-          checkStable();
-        }).catch(() => {
-          clearTimeout(fontTimeout);
-          checkStable();
-        });
-      } else {
-        clearTimeout(fontTimeout);
+          fontTimeout = null;
+        }
         checkStable();
+      };
+      let fontTimeout = setTimeout(runLayout, 500);
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(runLayout).catch(runLayout);
+      } else {
+        runLayout();
       }
     },
 
@@ -167,18 +167,18 @@
       };
 
       // Race font loading with a 500ms timeout
-      let fontTimeout = setTimeout(checkSettled, 500);
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => {
+      const runSettled = () => {
+        if (fontTimeout) {
           clearTimeout(fontTimeout);
-          checkSettled();
-        }).catch(() => {
-          clearTimeout(fontTimeout);
-          checkSettled();
-        });
-      } else {
-        clearTimeout(fontTimeout);
+          fontTimeout = null;
+        }
         checkSettled();
+      };
+      let fontTimeout = setTimeout(runSettled, 500);
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(runSettled).catch(runSettled);
+      } else {
+        runSettled();
       }
     }
   };

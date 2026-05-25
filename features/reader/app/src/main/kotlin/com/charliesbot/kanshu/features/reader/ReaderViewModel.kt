@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -140,7 +142,14 @@ class ReaderViewModel(
               return@launch
             }
 
-            val chapter = loadAndSanitizeChapter(result.publication, link, spineIndex)
+            val chapter =
+              loadAndSanitizeChapter(
+                result.publication,
+                link,
+                spineIndex,
+                pos.pageIndex,
+                storedPrefs,
+              )
             if (chapter == null) {
               _uiState.value = ReaderUiState.Error.ReadFailed
               return@launch
@@ -162,24 +171,54 @@ class ReaderViewModel(
           ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.ReadFailed
         }
       }
+
+    viewModelScope.launch {
+      var revision = 0
+      preferences.preferences.drop(1).collectLatest { prefs ->
+        val json =
+          org.json
+            .JSONObject()
+            .apply {
+              put("font", "${prefs.font.name}-Kanshu")
+              put("fontSize", "${(18 * prefs.fontScale).toInt()}px")
+              put("lineHeight", prefs.lineSpacing)
+              put("alignment", prefs.alignment.name.lowercase())
+              val multiplier = prefs.margins.value
+              put("marginInline", "${(24 * multiplier).toInt()}px")
+              put("marginBlock", "${(32 * multiplier).toInt()}px")
+              put("paragraphSpacing", prefs.paragraphSpacing)
+              put("wordSpacing", prefs.wordSpacing)
+              put("letterSpacing", prefs.letterSpacing)
+            }
+            .toString()
+        _evaluateJs.emit("kanshu.applySettings('$json', ${++revision})")
+      }
+    }
   }
 
   private suspend fun loadAndSanitizeChapter(
     pub: Publication,
     link: Link,
     spineIndex: Int,
+    targetPageIndex: Int,
+    prefs: ReaderPreferences,
   ): CachedResource? =
     withContext(ioDispatcher) {
       val resource = pub.get(link) ?: return@withContext null
       try {
         val rawBytes = readLock.withLock { resource.read().getOrNull() } ?: return@withContext null
         val rawHtml = String(rawBytes, Charsets.UTF_8)
-        val sanitizedHtml = KanshuHtmlSanitizer.sanitizeAndWrap(rawHtml)
-        val loadId = activeChapterLoadId.incrementAndGet()
+        val sanitizedHtml =
+          KanshuHtmlSanitizer.sanitizeAndWrap(
+            rawHtml = rawHtml,
+            loadId = activeChapterLoadId.incrementAndGet(),
+            targetPageIndex = targetPageIndex,
+            prefs = prefs,
+          )
         CachedResource(
           path = link.href.toString().removePrefix("/"),
           spineIndex = spineIndex,
-          loadId = loadId,
+          loadId = activeChapterLoadId.get(),
           bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
           mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
         )
@@ -198,13 +237,13 @@ class ReaderViewModel(
     activeLoadJob =
       viewModelScope.launch {
         val link = pub.readingOrder.getOrNull(spineIndex) ?: return@launch
-        val chapter = loadAndSanitizeChapter(pub, link, spineIndex)
+        val storedPrefs = preferences.preferences.first()
+        val chapter = loadAndSanitizeChapter(pub, link, spineIndex, targetPageIndex, storedPrefs)
         if (chapter == null) {
           _uiState.value = ReaderUiState.Error.ReadFailed
           return@launch
         }
 
-        val storedPrefs = preferences.preferences.first()
         val initialPosition =
           ReaderPosition(
             schemaVersion = 1,
@@ -266,41 +305,32 @@ class ReaderViewModel(
       }
     if (loadId != readyState.currentChapter.loadId) return
 
-    when (event) {
-      is BridgeEvent.PageSettled -> {
-        _pageIndex.value = event.pageIndex
-        val currentSpineIndex = readyState.currentChapter.spineIndex
-        val position =
-          ReaderPosition(
-            schemaVersion = 1,
-            spineIndex = currentSpineIndex,
-            pageIndex = event.pageIndex,
-            progressInSpine = event.progressInSpine,
-          )
-        onPositionChanged(position)
+    val (pageIndex, progress) =
+      when (event) {
+        is BridgeEvent.PageSettled -> {
+          event.pageIndex to event.progressInSpine
+        }
+        is BridgeEvent.Repaginated -> {
+          _pageCount.value = event.pageCount
+          val calculatedProgress =
+            if (event.pageCount > 1) {
+              event.restoredPageIndex.toFloat() / (event.pageCount - 1)
+            } else {
+              0.0f
+            }
+          event.restoredPageIndex to calculatedProgress
+        }
       }
-      is BridgeEvent.Repaginated -> {
-        _pageCount.value = event.pageCount
-        _pageIndex.value = event.restoredPageIndex
-        val currentSpineIndex = readyState.currentChapter.spineIndex
 
-        val progress =
-          if (event.pageCount > 1) {
-            event.restoredPageIndex.toFloat() / (event.pageCount - 1)
-          } else {
-            0.0f
-          }
-
-        val position =
-          ReaderPosition(
-            schemaVersion = 1,
-            spineIndex = currentSpineIndex,
-            pageIndex = event.restoredPageIndex,
-            progressInSpine = progress,
-          )
-        onPositionChanged(position)
-      }
-    }
+    _pageIndex.value = pageIndex
+    onPositionChanged(
+      ReaderPosition(
+        schemaVersion = 1,
+        spineIndex = readyState.currentChapter.spineIndex,
+        pageIndex = pageIndex,
+        progressInSpine = progress,
+      )
+    )
   }
 
   fun setFont(font: ReaderFont) {
@@ -346,10 +376,19 @@ class ReaderViewModel(
     sync.setProgress(bookId, file, position, pub)
   }
 
+  private fun navigateTo(position: ReaderPosition) {
+    val readyState = _uiState.value as? ReaderUiState.Ready ?: return
+    if (position.spineIndex == readyState.currentChapter.spineIndex) {
+      _evaluateJs.tryEmit("kanshu.scrollToPage(${position.pageIndex})")
+    } else {
+      loadSpineChapter(position.spineIndex, position.pageIndex)
+    }
+  }
+
   fun acceptRemoteSuggestion() {
     val remote = _remoteSuggestion.value ?: return
     _remoteSuggestion.value = null
-    _navigateTo.tryEmit(remote.position)
+    navigateTo(remote.position)
   }
 
   fun dismissRemoteSuggestion() {
@@ -361,7 +400,11 @@ class ReaderViewModel(
     val file = bookFile ?: return
     viewModelScope.launch {
       val remote = sync.pullFurthestPosition(bookId, file, pub)
-      if (remote != null) _navigateTo.tryEmit(remote.position) else _alreadyAtFurthest.tryEmit(Unit)
+      if (remote != null) {
+        navigateTo(remote.position)
+      } else {
+        _alreadyAtFurthest.tryEmit(Unit)
+      }
     }
   }
 

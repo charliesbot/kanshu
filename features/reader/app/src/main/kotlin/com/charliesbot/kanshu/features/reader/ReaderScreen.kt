@@ -18,11 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.strings.R
 import kotlin.math.abs
 import kotlinx.coroutines.flow.collectLatest
 import org.koin.compose.viewmodel.koinViewModel
@@ -50,16 +52,19 @@ fun ReaderScreen(
     when (val state = uiState) {
       is ReaderUiState.Loading -> {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          KanshuText(text = "Loading...", style = KanshuTheme.typography.bodyLarge)
+          KanshuText(
+            text = stringResource(R.string.reader_status_loading),
+            style = KanshuTheme.typography.bodyLarge,
+          )
         }
       }
       is ReaderUiState.Error -> {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
           val errorText =
             when (state) {
-              ReaderUiState.Error.NotFound -> "Book not found."
-              ReaderUiState.Error.ParseFailed -> "Failed to parse publication."
-              ReaderUiState.Error.ReadFailed -> "Failed to read chapter."
+              ReaderUiState.Error.NotFound -> stringResource(R.string.reader_error_not_found)
+              ReaderUiState.Error.ParseFailed -> stringResource(R.string.reader_error_parse_failed)
+              ReaderUiState.Error.ReadFailed -> stringResource(R.string.reader_error_read_failed)
             }
           KanshuText(text = errorText, style = KanshuTheme.typography.bodyLarge)
         }
