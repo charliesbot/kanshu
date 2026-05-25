@@ -14,4 +14,7 @@ internal object ChapterHtmlExtractor {
     val document = Jsoup.parse(rawHtml)
     return Jsoup.clean(document.body().html(), safelist)
   }
+
+  fun hasReadableText(bodyHtml: String): Boolean =
+    Jsoup.parseBodyFragment(bodyHtml).text().isNotBlank()
 }

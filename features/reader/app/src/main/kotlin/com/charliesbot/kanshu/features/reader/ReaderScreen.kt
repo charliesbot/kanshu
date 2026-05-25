@@ -219,7 +219,8 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
             const nativeWidth = window.__kanshuNativeViewportCssWidth || null;
             const pageWidth = nativeWidth || document.documentElement.clientWidth || window.innerWidth;
             pageStep = columnWidth + columnGap;
-            const pageCount = Math.max(1, Math.ceil((page.scrollWidth + columnGap) / pageStep));
+            const contentWidth = Math.max(columnWidth, page.scrollWidth - columnGap);
+            const pageCount = Math.max(1, Math.ceil(contentWidth / pageStep));
             KanshuDiagnostics.report(JSON.stringify({
               container: '#kanshu-page',
               computedHeight: style.height,

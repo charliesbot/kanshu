@@ -83,13 +83,17 @@ class ReaderViewModel(
   }
 
   private suspend fun openFirstChapter(openedPublication: Publication): ReaderUiState {
-    return run {
-      val link =
-        openedPublication.readingOrder.firstOrNull() ?: return@run ReaderUiState.Error.ParseFailed
-      val resource = openedPublication.get(link) ?: return@run ReaderUiState.Error.ReadFailed
-      val bytes = resource.read().getOrNull() ?: return@run ReaderUiState.Error.ReadFailed
+    if (openedPublication.readingOrder.isEmpty()) return ReaderUiState.Error.ParseFailed
+
+    for (link in openedPublication.readingOrder) {
+      val resource = openedPublication.get(link) ?: continue
+      val bytes = resource.read().getOrNull() ?: return ReaderUiState.Error.ReadFailed
       val chapterHtml = ChapterHtmlExtractor.bodyHtml(bytes.toString(Charsets.UTF_8))
-      ReaderUiState.Ready(href = link.href.toString(), chapterHtml = chapterHtml)
+      if (ChapterHtmlExtractor.hasReadableText(chapterHtml)) {
+        return ReaderUiState.Ready(href = link.href.toString(), chapterHtml = chapterHtml)
+      }
     }
+
+    return ReaderUiState.Error.ParseFailed
   }
 }

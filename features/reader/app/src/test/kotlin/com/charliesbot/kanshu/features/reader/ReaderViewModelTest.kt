@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -89,14 +90,46 @@ class ReaderViewModelTest {
       assertFalse(viewModel.uiState.value is ReaderUiState.Loading)
     }
 
+  @Test
+  fun `opens first non-empty reading order resource`() =
+    runTest(testDispatcher) {
+      val publication =
+        testPublicationWithResources(
+          listOf(
+            ChapterFixture(
+              href = "cover.xhtml",
+              resource =
+                testResource("<html><body><img src='cover.jpg'></body></html>".toByteArray()),
+            ),
+            ChapterFixture(
+              href = "chapter.xhtml",
+              resource = testResource("<html><body><p>Chapter text</p></body></html>".toByteArray()),
+            ),
+          )
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value as ReaderUiState.Ready
+      assertEquals("chapter.xhtml", state.href)
+      assertTrue(state.chapterHtml.contains("Chapter text"))
+    }
+
   private fun viewModel(source: ReaderSource): ReaderViewModel =
     ReaderViewModel(OpenBookUseCase(source), ioDispatcher = testDispatcher)
 
-  private fun testPublication(resource: Resource = testResource()): Publication {
-    val link = Link(Href("chapter.xhtml") ?: error("Invalid test href"))
+  private fun testPublication(resource: Resource = testResource()): Publication =
+    testPublicationWithResources(
+      listOf(ChapterFixture(href = "chapter.xhtml", resource = resource))
+    )
+
+  private fun testPublicationWithResources(chapters: List<ChapterFixture>): Publication {
+    val links = chapters.map { chapter -> Link(Href(chapter.href) ?: error("Invalid test href")) }
     return mockk(relaxUnitFun = true) {
-      every { readingOrder } returns listOf(link)
-      every { get(link) } returns resource
+      every { readingOrder } returns links
+      links.forEachIndexed { index, link -> every { get(link) } returns chapters[index].resource }
     }
   }
 
@@ -107,6 +140,8 @@ class ReaderViewModelTest {
     }
   }
 }
+
+private data class ChapterFixture(val href: String, val resource: Resource)
 
 private class FakeReaderSource(vararg publications: Pair<Int, Publication>) : ReaderSource {
   private val publications = publications.toMap()
