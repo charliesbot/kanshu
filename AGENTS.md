@@ -8,7 +8,9 @@ Read `docs/KAVITA_API.md` before any Kavita networking work — it captures the 
 
 Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle and the `EpubPreferences` mapping.
 
-Read `docs/READIUM_API.md` before any Readium navigator or streamer work — it captures the verified 3.1.2 surface (the two `Configuration` classes, the settings layering, what `servedAssets` actually does, and the `TransformingContainer` escape hatch) so we stop imagining APIs that don't exist.
+Read `docs/PRD_NATIVE_READER.md` before any reader engine, pagination, rendering, or selection work — it defines the native `StaticLayout`/Canvas architecture, the `:reader-navigator` module, Phase 0 scope, performance budgets, and the block model that replaces WebView.
+
+Read `docs/READIUM_API.md` for historical context on why certain Readium navigator APIs don't exist. The navigator is removed; only `readium-shared` and `readium-streamer` remain.
 
 ## Stack Overrides
 
@@ -32,7 +34,9 @@ The Nav3 transitions ban (above) is the screen-level form of the same rule.
 
 ## Module Layout Notes
 
-The core layer follows the android-dev skill's four-module split (`:core:model`, `:core:domain`, `:core:data`, `:core:strings`) with two project-specific deltas:
+The core layer follows the android-dev skill's four-module split (`:core:model`, `:core:domain`, `:core:data`, `:core:strings`) with project-specific deltas:
+
+- **`:reader-navigator` is a top-level Android library module.** Owns the native text rendering engine: XHTML parser, block model, `StaticLayout` layout engine, Canvas page renderer, and selection/hit-testing. Exposes `ReaderPageViewer` as its public composable. Depends only on `:core:model` for preference types. See `docs/PRD_NATIVE_READER.md` for full architecture.
 
 - **`:core:designsystem` is a lazy-promoted module.** Holds `KanshuTheme`, the compose-unstyled wrappers (`KanshuButton`, `KanshuText`, `KanshuCover`, etc.), and the drawable icons. The trigger from the skill — "you deliberately break out of stock Material" — is permanent here, so the module is permanent too. Features depend on it directly instead of redeclaring tokens.
 - **`:features:reader:app` depends on `:core:data` (architectural exception).** `ReaderResult.Success` carries a Readium `Publication`, and Readium 3.x is an AAR whose public surface uses `android.net.Uri`. Hosting the reader contract in `:core:domain` (kotlin-jvm) is impossible, so the reader-specific types (`ReaderSource`, `ReaderResult`, `OpenBookUseCase`, `KavitaReaderSource`) live in `:core:data` and the reader feature is allowed to consume them. The other two features stay strict — `:core:domain` + `:core:designsystem` + `:core:strings` only.
