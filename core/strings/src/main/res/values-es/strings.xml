@@ -35,6 +35,7 @@
     <string name="reader_error_not_found">Libro no encontrado.</string>
     <string name="reader_error_parse_failed">No se pudo leer este libro.</string>
     <string name="reader_error_read_failed">No se pudo cargar el archivo del libro.</string>
+    <string name="reader_debug_next_page">Página de diagnóstico siguiente</string>
     <string name="reader_overlay_back">Cerrar libro</string>
     <string name="reader_overlay_typography">Ajustes de tipografía</string>
     <string name="reader_overlay_table_of_contents">Tabla de contenidos</string>
