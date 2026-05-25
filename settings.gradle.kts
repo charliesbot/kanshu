@@ -29,6 +29,7 @@ include(":core:domain")
 include(":core:data")
 include(":core:designsystem")
 include(":core:strings")
+include(":reader-navigator")
 
 file("features")
     .listFiles()
