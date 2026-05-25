@@ -155,6 +155,32 @@ class KanshuWebViewClientTest {
   }
 
   @Test
+  fun testLoadsPublicationResourceWhenDirectHrefLookupMisses() {
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/images/cover.jpg")
+
+    val mockLink: Link = mockk()
+    every { mockLink.href.toString() } returns "/OEBPS/images/cover.jpg"
+    every { mockLink.mediaType } returns MediaType("image/jpeg")
+    every { publication.linkWithHref(any()) } returns null
+    every { publication.readingOrder } returns emptyList()
+    every { publication.resources } returns listOf(mockLink)
+
+    val mockResource: org.readium.r2.shared.util.resource.Resource = mockk()
+    val mockImageBytes = "mock-jpeg-bytes".toByteArray()
+    coEvery { mockResource.read() } returns Try.success(mockImageBytes)
+    every { mockResource.close() } returns Unit
+    every { publication.get(mockLink) } returns mockResource
+
+    val response = webViewClient.shouldInterceptRequest(mockk(), request)
+
+    assertNotNull(response)
+    val res = response!!
+    assertEquals(200, res.statusCode)
+    assertEquals("image/jpeg", res.mimeType)
+    assertTrue(res.data.readBytes().contentEquals(mockImageBytes))
+  }
+
+  @Test
   fun testAllowsSameChapterFragmentNavigationWithCurrentLoadId() {
     val request =
       createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100#footnote-1")

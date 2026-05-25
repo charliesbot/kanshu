@@ -206,7 +206,7 @@ class ReaderViewModel(
           loadId = activeChapterLoadId.incrementAndGet(),
           targetPageIndex = targetPageIndex,
           bytes = sanitizedHtml.toByteArray(Charsets.UTF_8),
-          mimeType = link.mediaType?.toString() ?: "application/xhtml+xml",
+          mimeType = "text/html",
         )
       } catch (e: CancellationException) {
         throw e

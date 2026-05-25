@@ -157,8 +157,11 @@ class KanshuWebViewClient(
     }
 
     // Resolve publication resource
-    val href = Url.fromDecodedPath(path) ?: return notFound()
-    val link = publication.linkWithHref(href) ?: return notFound()
+    val link =
+      findPublicationLink(path)
+        ?: run {
+          return notFound()
+        }
 
     // Prevent direct navigation to other spine chapters within WebView client; route through Kotlin
     // instead
@@ -188,6 +191,20 @@ class KanshuWebViewClient(
       resource.close()
     }
   }
+
+  private fun findPublicationLink(path: String): org.readium.r2.shared.publication.Link? {
+    val href = Url.fromDecodedPath(path) ?: return null
+    publication.linkWithHref(href)?.let {
+      return it
+    }
+
+    return (publication.readingOrder + publication.resources).firstOrNull { link ->
+      link.href.toString().normalizeHrefPath() == path
+    }
+  }
+
+  private fun String.normalizeHrefPath(): String? =
+    KanshuPathNormalizer.normalizeAndRejectTraversal(substringBefore('#').substringBefore('?'))
 
   private fun forbidden(): WebResourceResponse =
     WebResourceResponse(

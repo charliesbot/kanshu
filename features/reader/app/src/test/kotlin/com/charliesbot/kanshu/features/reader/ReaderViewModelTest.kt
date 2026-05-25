@@ -110,6 +110,18 @@ class ReaderViewModelTest {
   }
 
   @Test
+  fun `sanitized chapter is served as html`() = runTest {
+    val publication = fakePublication(title = "A Book")
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val state = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals("text/html", state.currentChapter.mimeType)
+  }
+
+  @Test
   fun `parse failed result becomes ParseFailed state`() = runTest {
     coEvery { openBook(any()) } returns ReaderResult.Error.ParseFailed
     val viewModel = newViewModel()
