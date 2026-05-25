@@ -153,10 +153,11 @@ private class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
 }
 
 private fun WebView.applyNativeGeometry() {
-  if (width <= 0) return
+  if (width <= 0 || height <= 0) return
   val nativeViewportCssWidth = width / resources.displayMetrics.density
+  val nativeViewportCssHeight = height / resources.displayMetrics.density
   evaluateJavascript(
-    "window.kanshuApplyNativeWidth && window.kanshuApplyNativeWidth($nativeViewportCssWidth)",
+    "window.kanshuApplyNativeGeometry && window.kanshuApplyNativeGeometry($nativeViewportCssWidth, $nativeViewportCssHeight)",
     null,
   )
 }
@@ -181,8 +182,8 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
         }
         #kanshu-page {
           box-sizing: border-box;
-          width: 100vw;
-          height: 100vh;
+          width: var(--kanshu-native-page-width, 100vw);
+          height: var(--kanshu-native-page-height, 100vh);
           padding: 32px;
           overflow: hidden;
           column-width: calc(var(--kanshu-native-page-width, 100vw) - 64px);
@@ -217,6 +218,7 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
             const columnWidth = numberValue(style.columnWidth);
             const columnGap = numberValue(style.columnGap);
             const nativeWidth = window.__kanshuNativeViewportCssWidth || null;
+            const nativeHeight = window.__kanshuNativeViewportCssHeight || null;
             const pageWidth = nativeWidth || document.documentElement.clientWidth || window.innerWidth;
             pageStep = columnWidth + columnGap;
             const contentWidth = Math.max(columnWidth, page.scrollWidth - columnGap);
@@ -232,15 +234,18 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
               windowInnerWidth: window.innerWidth,
               documentElementClientWidth: document.documentElement.clientWidth,
               nativeViewportCssWidth: nativeWidth,
+              nativeViewportCssHeight: nativeHeight,
               pageWidth: pageWidth,
               pageCount: pageCount,
               scrollLeft: page.scrollLeft
             }, null, 2));
           }
 
-          window.kanshuApplyNativeWidth = function (nativeWidth) {
+          window.kanshuApplyNativeGeometry = function (nativeWidth, nativeHeight) {
             window.__kanshuNativeViewportCssWidth = nativeWidth;
+            window.__kanshuNativeViewportCssHeight = nativeHeight;
             document.documentElement.style.setProperty('--kanshu-native-page-width', nativeWidth + 'px', 'important');
+            document.documentElement.style.setProperty('--kanshu-native-page-height', nativeHeight + 'px', 'important');
             requestAnimationFrame(measure);
           };
 
