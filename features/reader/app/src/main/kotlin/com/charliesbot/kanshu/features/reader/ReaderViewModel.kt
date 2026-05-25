@@ -54,30 +54,34 @@ class ReaderViewModel(
 
     openJob =
       viewModelScope.launch {
-        var openedPublication: Publication? = null
-        var transferredPublication = false
+        var loadedPublication: Publication? = null
         try {
-          val loadedState =
+          val loadedBook =
             withContext(ioDispatcher) {
               when (val result = openBook(seriesId)) {
-                ReaderResult.Error.NotFound -> ReaderUiState.Error.NotFound
-                ReaderResult.Error.ParseFailed -> ReaderUiState.Error.ParseFailed
-                ReaderResult.Error.ReadFailed -> ReaderUiState.Error.ReadFailed
+                ReaderResult.Error.NotFound -> LoadedReaderBook(ReaderUiState.Error.NotFound)
+                ReaderResult.Error.ParseFailed -> LoadedReaderBook(ReaderUiState.Error.ParseFailed)
+                ReaderResult.Error.ReadFailed -> LoadedReaderBook(ReaderUiState.Error.ReadFailed)
                 is ReaderResult.Success -> {
-                  openedPublication = result.publication
-                  openFirstChapter(result.publication)
+                  loadedPublication = result.publication
+                  val loadedState = openFirstChapter(result.publication)
+                  LoadedReaderBook(
+                    uiState = loadedState,
+                    publicationToKeep =
+                      result.publication.takeIf { loadedState is ReaderUiState.Ready },
+                  )
                 }
               }
             }
           if (currentSeriesId == seriesId) {
-            if (loadedState is ReaderUiState.Ready) {
-              publication = openedPublication
-              transferredPublication = true
+            loadedBook.publicationToKeep?.let { keptPublication ->
+              publication = keptPublication
+              loadedPublication = null
             }
-            _uiState.value = loadedState
+            _uiState.value = loadedBook.uiState
           }
         } finally {
-          if (!transferredPublication) openedPublication?.close()
+          loadedPublication?.close()
         }
       }
   }
@@ -107,3 +111,8 @@ class ReaderViewModel(
     return ReaderUiState.Error.ParseFailed
   }
 }
+
+private data class LoadedReaderBook(
+  val uiState: ReaderUiState,
+  val publicationToKeep: Publication? = null,
+)
