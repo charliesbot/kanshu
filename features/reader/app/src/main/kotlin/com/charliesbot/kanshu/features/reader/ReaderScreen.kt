@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
-import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -170,10 +169,10 @@ private val ReaderDiagnosticsPanelHeight = 280.dp
 
 private const val NextPageScript = "window.kanshuNextPage && window.kanshuNextPage()"
 
-private class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
+class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
   private val mainHandler = Handler(Looper.getMainLooper())
 
-  @JavascriptInterface
+  @android.webkit.JavascriptInterface
   fun report(metrics: String) {
     mainHandler.post { onDiagnostics(metrics) }
   }
