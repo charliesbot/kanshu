@@ -20,13 +20,25 @@ android {
 
 dependencies {
   coreLibraryDesugaring(libs.android.desugar.jdk.libs)
+  implementation(project(":core:data"))
   implementation(project(":core:designsystem"))
+  implementation(project(":core:strings"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.foundation)
+  implementation(libs.androidx.compose.foundation.layout)
   implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.jsoup)
   implementation(libs.koin.compose)
+  implementation(libs.koin.compose.viewmodel)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
+
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.mockk)
+  testImplementation(libs.robolectric)
 }
