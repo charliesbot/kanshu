@@ -241,6 +241,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanLinkElement(element: Element): Boolean {
     if (element.tagName() == "link") {
+      cleanElementAttributes(element)
       val rel = element.attr("rel").lowercase()
       val href = element.attr("href")
       if (rel != "stylesheet" || isUnsafeUrl(href)) {
@@ -253,6 +254,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanStyleElement(element: Element): Boolean {
     if (element.tagName() == "style") {
+      cleanElementAttributes(element)
       val css = element.data()
       element.empty().appendChild(DataNode(sanitizeCss(css)))
       return true
@@ -262,6 +264,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanStructuralElement(element: Element): Boolean {
     if (element.tagName() in STRUCTURAL_TAGS) {
+      cleanElementAttributes(element)
       element.children().toList().forEach { cleanElement(it) }
       return true
     }
@@ -342,6 +345,33 @@ object KanshuHtmlSanitizer {
             if (isUnsafeUrl(attrVal)) {
               element.removeAttr(attr.key)
             }
+          }
+        }
+        "link" -> {
+          if (attrName !in setOf("rel", "href", "type", "media", "title")) {
+            element.removeAttr(attr.key)
+          } else if (attrName == "href" && isUnsafeUrl(attrVal)) {
+            element.removeAttr(attr.key)
+          }
+        }
+        "style" -> {
+          if (attrName !in setOf("type", "media", "title")) {
+            element.removeAttr(attr.key)
+          }
+        }
+        "html",
+        "body",
+        "head",
+        "meta",
+        "title" -> {
+          if (
+            attrName != "class" &&
+              attrName != "id" &&
+              attrName != "charset" &&
+              attrName != "name" &&
+              attrName != "content"
+          ) {
+            element.removeAttr(attr.key)
           }
         }
         else -> {

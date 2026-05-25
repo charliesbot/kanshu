@@ -4,6 +4,22 @@
   let activeSettingsRevision = 0;
   let scrollTimeout = null;
 
+  function afterFontsOrTimeout(callback) {
+    const runCallback = () => {
+      if (fontTimeout) {
+        clearTimeout(fontTimeout);
+        fontTimeout = null;
+      }
+      callback();
+    };
+    let fontTimeout = setTimeout(runCallback, 500);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(runCallback).catch(runCallback);
+    } else {
+      runCallback();
+    }
+  }
+
   window.kanshu = {
     scrollToPage: function(pageIndex) {
       const viewportWidth = window.innerWidth;
@@ -67,19 +83,7 @@
       };
 
       // Race font loading with a 500ms timeout before starting layout checks
-      const runLayout = () => {
-        if (fontTimeout) {
-          clearTimeout(fontTimeout);
-          fontTimeout = null;
-        }
-        checkStable();
-      };
-      let fontTimeout = setTimeout(runLayout, 500);
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(runLayout).catch(runLayout);
-      } else {
-        runLayout();
-      }
+      afterFontsOrTimeout(checkStable);
     },
 
     applySettings: function(settingsJson, revision) {
@@ -167,19 +171,7 @@
       };
 
       // Race font loading with a 500ms timeout
-      const runSettled = () => {
-        if (fontTimeout) {
-          clearTimeout(fontTimeout);
-          fontTimeout = null;
-        }
-        checkSettled();
-      };
-      let fontTimeout = setTimeout(runSettled, 500);
-      if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(runSettled).catch(runSettled);
-      } else {
-        runSettled();
-      }
+      afterFontsOrTimeout(checkSettled);
     }
   };
 

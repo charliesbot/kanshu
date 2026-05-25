@@ -29,6 +29,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.flow.collectLatest
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
+import org.readium.r2.shared.publication.Publication
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
@@ -83,92 +84,7 @@ fun ReaderScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
               WebView(context).apply {
-                setBackgroundColor(Color.WHITE)
-                settings.apply {
-                  javaScriptEnabled = true
-                  blockNetworkLoads = true
-                  domStorageEnabled = true
-                }
-
-                // Register Javascript interface bridge
-                addJavascriptInterface(
-                  KanshuJsBridge { event -> viewModel.handleBridgeEvent(event) },
-                  "kanshuBridge",
-                )
-
-                // Intercept hardware page turn and volume buttons
-                setOnKeyListener { _, keyCode, keyEvent ->
-                  if (keyEvent.action == KeyEvent.ACTION_DOWN) {
-                    when (keyCode) {
-                      KeyEvent.KEYCODE_PAGE_UP,
-                      KeyEvent.KEYCODE_VOLUME_UP -> {
-                        viewModel.goBackward()
-                        true
-                      }
-                      KeyEvent.KEYCODE_PAGE_DOWN,
-                      KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        viewModel.goForward()
-                        true
-                      }
-                      else -> false
-                    }
-                  } else {
-                    false
-                  }
-                }
-
-                // Touch listener to consume horizontal drags and handle margin taps
-                val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
-                var startX = 0f
-                var startY = 0f
-                var isClick = false
-
-                setOnTouchListener { view, motionEvent ->
-                  when (motionEvent.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                      startX = motionEvent.x
-                      startY = motionEvent.y
-                      isClick = true
-                      view.onTouchEvent(motionEvent)
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                      val dx = abs(motionEvent.x - startX)
-                      val dy = abs(motionEvent.y - startY)
-                      if (dx > touchSlop || dy > touchSlop) {
-                        isClick = false
-                      }
-                      if (dx > dy && dx > touchSlop) {
-                        // Consume horizontal scrolls entirely to prevent standard physics
-                        true
-                      } else {
-                        view.onTouchEvent(motionEvent)
-                      }
-                    }
-                    MotionEvent.ACTION_UP -> {
-                      val dx = abs(motionEvent.x - startX)
-                      val dy = abs(motionEvent.y - startY)
-                      if (isClick && dx < touchSlop && dy < touchSlop) {
-                        val x = motionEvent.x
-                        val width = view.width
-                        val leftZone = width * 0.15f
-                        val rightZone = width * 0.85f
-
-                        if (x < leftZone) {
-                          viewModel.goBackward()
-                        } else if (x > rightZone) {
-                          viewModel.goForward()
-                        } else {
-                          showOverlay = !showOverlay
-                        }
-                        true
-                      } else {
-                        view.onTouchEvent(motionEvent)
-                      }
-                    }
-                    else -> view.onTouchEvent(motionEvent)
-                  }
-                }
-
+                configureReaderWebView(viewModel) { showOverlay = !showOverlay }
                 webViewInstance = this
                 requestFocus()
               }
@@ -176,22 +92,10 @@ fun ReaderScreen(
             update = { webView ->
               val currentChapter = state.currentChapter
 
-              if (currentChapter.path != lastLoadedPath || currentChapter.loadId != lastLoadedId) {
+              if (shouldLoadChapter(currentChapter, lastLoadedPath, lastLoadedId)) {
                 lastLoadedPath = currentChapter.path
                 lastLoadedId = currentChapter.loadId
-
-                // Bind new client instance for chapter isolation
-                webView.webViewClient =
-                  KanshuWebViewClient(
-                    context = webView.context,
-                    publication = state.publication,
-                    readLock = viewModel.readLock,
-                    currentChapter = currentChapter,
-                  )
-
-                val chapterUrl =
-                  "https://kanshu.invalid/${currentChapter.path}?__kanshu_load=${currentChapter.loadId}"
-                webView.loadUrl(chapterUrl)
+                webView.loadChapter(state.publication, viewModel, currentChapter)
               }
             },
             onRelease = { webView ->
@@ -264,4 +168,126 @@ fun ReaderScreen(
       }
     }
   }
+}
+
+private fun WebView.configureReaderWebView(viewModel: ReaderViewModel, onCenterTap: () -> Unit) {
+  configureReaderSettings()
+  addJavascriptInterface(
+    KanshuJsBridge { event -> viewModel.handleBridgeEvent(event) },
+    "kanshuBridge",
+  )
+  configureReaderKeys(viewModel)
+  configureReaderTouch(viewModel, onCenterTap)
+}
+
+private fun WebView.configureReaderSettings() {
+  setBackgroundColor(Color.WHITE)
+  settings.apply {
+    javaScriptEnabled = true
+    blockNetworkLoads = true
+    domStorageEnabled = true
+  }
+}
+
+private fun WebView.configureReaderKeys(viewModel: ReaderViewModel) {
+  setOnKeyListener { _, keyCode, keyEvent ->
+    if (keyEvent.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+
+    when (keyCode) {
+      KeyEvent.KEYCODE_PAGE_UP,
+      KeyEvent.KEYCODE_VOLUME_UP -> {
+        viewModel.goBackward()
+        true
+      }
+      KeyEvent.KEYCODE_PAGE_DOWN,
+      KeyEvent.KEYCODE_VOLUME_DOWN -> {
+        viewModel.goForward()
+        true
+      }
+      else -> false
+    }
+  }
+}
+
+private fun WebView.configureReaderTouch(viewModel: ReaderViewModel, onCenterTap: () -> Unit) {
+  val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+  var startX = 0f
+  var startY = 0f
+  var isClick = false
+
+  setOnTouchListener { view, motionEvent ->
+    when (motionEvent.action) {
+      MotionEvent.ACTION_DOWN -> {
+        startX = motionEvent.x
+        startY = motionEvent.y
+        isClick = true
+        view.onTouchEvent(motionEvent)
+      }
+      MotionEvent.ACTION_MOVE -> {
+        val dx = abs(motionEvent.x - startX)
+        val dy = abs(motionEvent.y - startY)
+        if (dx > touchSlop || dy > touchSlop) {
+          isClick = false
+        }
+        if (dx > dy && dx > touchSlop) {
+          // Consume horizontal scrolls entirely to prevent standard physics
+          true
+        } else {
+          view.onTouchEvent(motionEvent)
+        }
+      }
+      MotionEvent.ACTION_UP -> {
+        val dx = abs(motionEvent.x - startX)
+        val dy = abs(motionEvent.y - startY)
+        if (isClick && dx < touchSlop && dy < touchSlop) {
+          handleReaderTap(motionEvent.x, view.width, viewModel, onCenterTap)
+          true
+        } else {
+          view.onTouchEvent(motionEvent)
+        }
+      }
+      else -> view.onTouchEvent(motionEvent)
+    }
+  }
+}
+
+private fun handleReaderTap(
+  x: Float,
+  width: Int,
+  viewModel: ReaderViewModel,
+  onCenterTap: () -> Unit,
+) {
+  val leftZone = width * 0.15f
+  val rightZone = width * 0.85f
+
+  if (x < leftZone) {
+    viewModel.goBackward()
+  } else if (x > rightZone) {
+    viewModel.goForward()
+  } else {
+    onCenterTap()
+  }
+}
+
+private fun shouldLoadChapter(
+  currentChapter: CachedResource,
+  lastLoadedPath: String,
+  lastLoadedId: Int,
+): Boolean = currentChapter.path != lastLoadedPath || currentChapter.loadId != lastLoadedId
+
+private fun WebView.loadChapter(
+  publication: Publication,
+  viewModel: ReaderViewModel,
+  currentChapter: CachedResource,
+) {
+  // Bind new client instance for chapter isolation
+  webViewClient =
+    KanshuWebViewClient(
+      context = context,
+      publication = publication,
+      readLock = viewModel.readLock,
+      currentChapter = currentChapter,
+    )
+
+  loadUrl("https://kanshu.invalid/${currentChapter.path}?__kanshu_load=${currentChapter.loadId}")
 }

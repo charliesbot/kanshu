@@ -127,14 +127,7 @@ class ReaderViewModel(
               }
             _remoteSuggestion.value = remote
 
-            val pos =
-              initialPosition
-                ?: ReaderPosition(
-                  schemaVersion = 1,
-                  spineIndex = 0,
-                  pageIndex = 0,
-                  progressInSpine = 0.0f,
-                )
+            val pos = initialPosition.orStartPosition()
             val spineIndex = pos.spineIndex
             val link = result.publication.readingOrder.getOrNull(spineIndex)
             if (link == null) {
@@ -157,14 +150,7 @@ class ReaderViewModel(
 
             _currentPosition.value = pos
             _pageIndex.value = pos.pageIndex
-            _uiState.value =
-              ReaderUiState.Ready(
-                title = result.publication.metadata.title,
-                publication = result.publication,
-                initialPosition = pos,
-                initialPreferences = storedPrefs,
-                currentChapter = chapter,
-              )
+            _uiState.value = result.publication.readyState(pos, storedPrefs, chapter)
           }
           ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
           ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.ParseFailed
@@ -255,16 +241,25 @@ class ReaderViewModel(
         _currentPosition.value = initialPosition
         _pageIndex.value = targetPageIndex
         _pageCount.value = 1
-        _uiState.value =
-          ReaderUiState.Ready(
-            title = pub.metadata.title,
-            publication = pub,
-            initialPosition = initialPosition,
-            initialPreferences = storedPrefs,
-            currentChapter = chapter,
-          )
+        _uiState.value = pub.readyState(initialPosition, storedPrefs, chapter)
       }
   }
+
+  private fun ReaderPosition?.orStartPosition(): ReaderPosition =
+    this ?: ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0.0f)
+
+  private fun Publication.readyState(
+    position: ReaderPosition,
+    preferences: ReaderPreferences,
+    chapter: CachedResource,
+  ): ReaderUiState.Ready =
+    ReaderUiState.Ready(
+      title = metadata.title,
+      publication = this,
+      initialPosition = position,
+      initialPreferences = preferences,
+      currentChapter = chapter,
+    )
 
   fun goForward() {
     val readyState = _uiState.value as? ReaderUiState.Ready ?: return
