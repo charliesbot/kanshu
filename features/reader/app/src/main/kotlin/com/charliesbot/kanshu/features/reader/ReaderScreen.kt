@@ -72,7 +72,7 @@ private fun ReaderMessage(text: String) {
 private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResource: () -> Unit) {
   var webView by remember { mutableStateOf<WebView?>(null) }
   var diagnostics by remember { mutableStateOf("") }
-  val bridge = remember { DiagnosticBridge { diagnostics = it } }
+  val bridge: DiagnosticBridge = remember { DiagnosticBridge { diagnostics = it } }
 
   Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
