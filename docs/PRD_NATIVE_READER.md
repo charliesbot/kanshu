@@ -21,7 +21,20 @@ The reader should feel like a native e-ink text surface, not an app wrapped arou
 - Target device: Boox Go 7 Gen 2 B&W (mid-range MediaTek SoC, Android 12 / API 31).
 - No animations, ripples, fades, or transitions (unchanged from main PRD).
 - Touch targets >= 48dp (unchanged from main PRD).
-- Scope is text books only. No manga, no fixed-layout EPUB.
+- Corpus: general reflowable EPUBs from the user's Kavita library — fiction, non-fiction, mixed. No manga, no fixed-layout EPUB.
+- Script support: Latin-script reflowable text in Phase 0–3. CJK, RTL, and bidi are out of scope until explicitly scheduled; opening such a book may render poorly — that is acceptable for now, not a Phase 0 failure.
+
+### Corpus and Fidelity Expectations
+
+Kanshu does not evaluate publisher CSS live. Structure is inferred from XHTML tags, not computed styles. That is intentional and matches the Kindle-style split in `docs/KINDLE_TYPOGRAPHY.md`, but it means fidelity is phased:
+
+| Phase | Reading experience                                                                                                                                                             |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0–2   | Readable text with lossy structure. Emphasis, headings, quotes, lists, images land incrementally. Tables, floats, multi-column layouts, and footnote popups are not goals yet. |
+| 3     | Interactive text: links, footnotes, multi-word selection, highlights.                                                                                                          |
+| 4+    | Progress, TOC, chapter navigation, Kavita sync.                                                                                                                                |
+
+A broken table layout is not a Phase 0 failure. Unreadable text or unacceptable Boox performance is.
 
 ## Architecture
 
@@ -59,6 +72,8 @@ Compose Canvas renderer draws StaticLayout artifacts
 
 We use `Publication` to enumerate `readingOrder` and read resource bytes. The only change from today: instead of passing HTML to a WebView, we parse it into `ReaderDocument` and render natively.
 
+Readium is retained for EPUB I/O only. `readium-navigator` is gone because the WebView renderer is the boundary we are eliminating — not because Readium failed at unpacking EPUBs.
+
 ### What We Remove
 
 - `readium-navigator` (already removed).
@@ -74,6 +89,17 @@ XHTML is converted into an inspectable, renderable document model before layout.
 ```kotlin
 data class ReaderDocument(
   val blocks: List<ReaderBlock>,
+  val language: String? = null, // from `<html lang>` or `<body xml:lang>` — default BreakIterator locale
+)
+
+data class ParseDiagnostics(
+  val unsupportedBlockTags: Map<String, Int>,  // e.g. "table" -> 3
+  val unsupportedInlineTags: Map<String, Int>, // e.g. "ruby" -> 1
+)
+
+data class ParseResult(
+  val document: ReaderDocument,
+  val diagnostics: ParseDiagnostics,
 )
 
 sealed interface ReaderBlock
@@ -106,11 +132,11 @@ data class ImageBlock(
   val resourceHref: String,
   val alt: String?,
 ) : ReaderBlock
-
-data class UnsupportedBlock(
-  val tagName: String,
-) : ReaderBlock
 ```
+
+`ReaderDocument.language` is document-level only in Phase 0–3. Real EPUBs often set `xml:lang` on individual `<p>` or `<span>` elements for foreign phrases; that is an extension point for a later phase (`language` on `ReaderBlock` or `TextSpan` when CJK or mixed-language support is scheduled). Phase 0 uses document-level locale as the `BreakIterator` default.
+
+The parser returns `ParseResult`, not bare `ReaderDocument`. `ParseDiagnostics` is the side-channel for unsupported tag counts — the block model stays clean; the feature module forwards diagnostics to the panel.
 
 Inline text:
 
@@ -139,25 +165,53 @@ enum class InlineStyle {
 
 The parser builds a tree that preserves nesting (e.g., bold inside italic resolves to `BoldItalic` at the `StyledGroup` level). The layout engine flattens the tree to a `SpannableString` (with Android text spans for bold/italic/etc.) when building each block's `StaticLayout`. This avoids premature flattening during parsing while keeping the layout step simple.
 
+### Reference: Ares `:htmlparser` (ideas, not a dependency)
+
+The sibling project **Ares** (`../ares`, module `:htmlparser`) solves HTML → native UI for scroll-based RSS articles. Kanshu does **not** depend on it — Ares renders via Compose `LazyColumn` + `BasicText`; Kanshu paginates with `StaticLayout` + Canvas. Different render engines, different constraints.
+
+Use Ares as a **reference** when implementing `EpubParser`:
+
+| Ares artifact          | What to borrow                                                           | Kanshu delta                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `InlineStyleExtractor` | Recursive DOM walk: inherit styles/links on descent, emit at text leaves | Emit `TextSpan` **tree** (`StyledGroup`, `LinkSpan`), not flat spans; flatten at layout time                   |
+| `FallbackTagHandler`   | Text is never lost — always extract and promote children                 | Same invariant; silent unwrap + `ParseDiagnostics` counts instead of visible `UnsupportedTag` boxes            |
+| `TagHandlerRegistry`   | Per-tag handlers registered against Jsoup tag names                      | Same shape for block vs inline handlers; EPUB-specific rules (structural `<div>` unwrap, spine-relative hrefs) |
+| `RealContentTest`      | Fixture tests against real fetched HTML                                  | Same approach with Kavita EPUB chapter XHTML                                                                   |
+
+Do not import `:htmlparser` or share a module yet. The ASTs diverge (`ParsedContent` vs `ReaderBlock`) and the render paths are incompatible. Revisit a shared parser-only library only if both projects stabilize on identical block semantics.
+
 This model preserves structural intent (headings, quotes, list nesting, emphasis) without carrying live CSS. It follows the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`: publisher CSS shapes structure, Kanshu owns legibility and spacing.
 
 ### XHTML Element Mapping
 
-| XHTML element              | ReaderBlock                                                             |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `<p>`, block-level `<div>` | `ParagraphBlock`                                                        |
-| `<h1>`–`<h6>`              | `HeadingBlock`                                                          |
-| `<blockquote>`             | `QuoteBlock`                                                            |
-| `<ul>`, `<ol>`             | `ListBlock`                                                             |
-| `<hr>`                     | `HorizontalRule`                                                        |
-| `<img>`                    | `ImageBlock` (href resolved against spine item base path at parse time) |
-| `<em>`, `<i>`              | `TextSpan(style = Italic)`                                              |
-| `<strong>`, `<b>`          | `TextSpan(style = Bold)`                                                |
-| `<a href="...">`           | `LinkSpan(href, children)` — carries href for Phase 3 tap handling      |
-| `<br>`                     | `TextSpan(text = "\n")`                                                 |
-| Unknown elements           | Unwrap children into parent block                                       |
+| XHTML element             | ReaderBlock                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `<p>`                     | `ParagraphBlock`                                                                                |
+| `<div>`                   | Inspect children first (Jsoup DOM): unwrap if any block-level child; otherwise `ParagraphBlock` |
+| `<section>`, `<article>`  | Unwrap block children (structural wrappers, not paragraphs)                                     |
+| `<h1>`–`<h6>`             | `HeadingBlock`                                                                                  |
+| `<blockquote>`            | `QuoteBlock`                                                                                    |
+| `<ul>`, `<ol>`            | `ListBlock`                                                                                     |
+| `<hr>`                    | `HorizontalRule`                                                                                |
+| `<img>`                   | `ImageBlock` (href resolved against spine item base path at parse time)                         |
+| `<span>`                  | Unwrap inline children                                                                          |
+| `<em>`, `<i>`             | `TextSpan(style = Italic)`                                                                      |
+| `<strong>`, `<b>`         | `TextSpan(style = Bold)`                                                                        |
+| `<a href="...">`          | `LinkSpan(href, children)` — carries href for Phase 3 tap handling                              |
+| `<br>`                    | `TextSpan(text = "\n")`                                                                         |
+| `<sub>`, `<sup>`          | Unwrap; text preserved as plain (styling deferred)                                              |
+| `<table>` and descendants | Unwrap text into surrounding flow (Phase 1+ may add table support)                              |
+| Unknown elements          | Unwrap children into parent block                                                               |
 
-Graceful degradation: unknown or unsupported elements never crash the parser. Their text children are promoted to the parent block so content is not lost. Additionally, unsupported block-level elements render as a visible placeholder box showing the tag name (e.g., `[unsupported: <table>]`). This is intentional — Kanshu is a personal app and surfacing unsupported tags in production helps identify which elements need mapping next. Silent degradation hides gaps; visible placeholders expose them.
+### Degradation Policy
+
+Unknown or unsupported elements never crash the parser. Text is always promoted — never dropped — by unwrapping children into the parent block.
+
+**Reading surface:** silent. No placeholder boxes, no `[unsupported: <table>]` chrome in production. The reader stays clean; structural loss is acceptable in early phases.
+
+**Diagnostics:** `EpubParser.parse()` returns `ParseDiagnostics` alongside `ReaderDocument` via `ParseResult`. While walking the DOM, the parser increments `unsupportedBlockTags` and `unsupportedInlineTags` for elements handled by unwrap-only rules (unknown tags, `<table>`, deferred inline tags like `<ruby>`, etc.). The feature module passes `ParseResult.diagnostics` to the diagnostics panel (e.g., `table: 3`, `aside: 1`). Parser unit tests assert text preservation for representative markup from the Kavita library. Tag counts guide which mappings to add next.
+
+**Images:** if bounds resolution fails (corrupt file, missing resource), reserve a fixed-height placeholder (`alt` text or `[image]` label) so pagination stays stable and the gap is visible without reflow when a late decode succeeds.
 
 ## Layout Engine
 
@@ -178,6 +232,7 @@ data class BlockStyle(
   val alignment: Layout.Alignment,
   val breakStrategy: Int,
   val indentPx: Float,         // horizontal indent (cumulative for nested blocks)
+  val prefixWidthPx: Float,    // bullet/number gutter or quote border inset — reduces measurement width
   val marginTopPx: Float,
   val marginBottomPx: Float,
 )
@@ -230,9 +285,9 @@ The pagination engine must know the exact height of every block — including im
 
 `imageBoundsResolver` reads image headers using `BitmapFactory.Options.inJustDecodeBounds = true`. This decodes only the file header (a few bytes), returns intrinsic width/height in microseconds, and allocates zero pixel buffers on the JVM heap.
 
-The engine scales the intrinsic dimensions to fit `contentWidthPx` (preserving aspect ratio) and uses the scaled height as the image block's physical height during page accumulation. If bounds resolution fails (corrupt image, missing resource), the engine treats the image as zero-height and skips it.
+The engine scales the intrinsic dimensions to fit `contentWidthPx` (preserving aspect ratio) and uses the scaled height as the image block's physical height during page accumulation. If bounds resolution fails (corrupt image, missing resource), reserve a fixed placeholder height (one line of body text by default) and render `alt` text or a `[image]` label inside it. Pagination uses the placeholder height; no reflow when a late decode succeeds.
 
-The renderer decodes the actual bitmap lazily (scaled to the known dimensions), drawing a blank placeholder or border until the bitmap is ready. Since the height is already correct from pagination, no reflow is needed when the bitmap arrives.
+The renderer decodes the actual bitmap lazily (scaled to the known dimensions), drawing the placeholder label until the bitmap is ready. Since the height is fixed at pagination time, no reflow is needed when the bitmap arrives.
 
 The layout engine builds one `StaticLayout` per block during pagination using the full `BlockStyle` — not just `TextPaint`, but also `StaticLayout.Builder`-level properties (line spacing, hyphenation). That same `StaticLayout` is both the measurement artifact (its height determines page splits) and the rendering artifact (the renderer draws it directly). There is no separate measurement-vs-rendering divergence — one object controls both.
 
@@ -252,10 +307,12 @@ If a preference change arrives mid-pagination, the caller cancels the in-flight 
 
 ### StaticLayout Construction
 
-Each `StaticLayout` is built with the full `BlockStyle`. The measurement width is reduced by the block's `indentPx` so line breaks account for the indent and text never clips the right edge:
+Each `StaticLayout` is built with the full `BlockStyle`. The measurement width is reduced by horizontal insets so line breaks match what is drawn:
 
 ```kotlin
-val localWidthPx = (contentWidthPx - style.indentPx).toInt().coerceAtLeast(1)
+val localWidthPx = (contentWidthPx - style.indentPx - style.prefixWidthPx)
+  .toInt()
+  .coerceAtLeast(1)
 StaticLayout.Builder.obtain(text, 0, text.length, style.paint, localWidthPx)
   .setAlignment(style.alignment)
   .setLineSpacing(style.lineSpacingAdd, style.lineSpacingMultiplier)
@@ -264,13 +321,26 @@ StaticLayout.Builder.obtain(text, 0, text.length, style.paint, localWidthPx)
   .build()
 ```
 
-The renderer translates the Canvas horizontally by `style.indentPx` before calling `StaticLayout.draw()`. Because the layout was measured at the reduced width, the rendered text fits exactly within `contentWidthPx - indentPx` and aligns with the right margin.
+The renderer translates the Canvas horizontally by `style.indentPx + style.prefixWidthPx` before calling `StaticLayout.draw()`. Because the layout was measured at the reduced width, rendered text fits within the content column and aligns with the right margin.
+
+### Horizontal Inset Model
+
+Two inset fields compose the horizontal layout budget. Both reduce measurement width; both shift the draw origin.
+
+| Field           | Used for                                  | Example                                     |
+| --------------- | ----------------------------------------- | ------------------------------------------- |
+| `indentPx`      | Nested structure, block-quote text offset | Quote inside quote: cumulative indent steps |
+| `prefixWidthPx` | Prefix drawn before text                  | Bullet/number column, quote border gutter   |
+
+**Lists:** measure item text at `contentWidthPx - prefixWidthPx`. Draw the bullet or number in `[0, prefixWidthPx)`, then `StaticLayout.draw()` at `x = prefixWidthPx`. Never measure at full width and draw with a horizontal offset — line breaks will not match the visual column.
+
+**Block quotes:** `prefixWidthPx` reserves the left border gutter; `indentPx` offsets the quote body. The border is drawn in the gutter; text is measured and drawn after both insets.
 
 For nested blocks (e.g., a quote inside a quote), `indentPx` is cumulative — the `styleResolver` sums indent steps based on nesting depth.
 
 Properties that live on `TextPaint`: font family, font size, font weight, text color, letter spacing, word spacing.
 
-Properties that live on `StaticLayout.Builder`: alignment, line spacing (multiplier + add), hyphenation frequency, break strategy, width (derived from `contentWidthPx - indentPx`).
+Properties that live on `StaticLayout.Builder`: alignment, line spacing (multiplier + add), hyphenation frequency, break strategy, width (derived from `contentWidthPx - indentPx - prefixWidthPx`).
 
 Both are encapsulated in `BlockStyle` so the engine has everything it needs to construct a `StaticLayout` without reaching back to `ReaderPreferences`.
 
@@ -298,7 +368,7 @@ Adjacent margins collapse: `gap = max(prevBlock.marginBottom, currBlock.marginTo
 2. Walk blocks top-to-bottom. For each block:
    a. Resolve its `BlockStyle` via the `styleResolver`.
    b. Flatten the span tree to `SpannableString` (with Android text spans for bold/italic/etc.).
-   c. Build a `StaticLayout` with the `BlockStyle`'s `TextPaint`, line spacing, hyphenation, and `contentWidthPx`.
+   c. Build a `StaticLayout` at `contentWidthPx - indentPx - prefixWidthPx` with the full `BlockStyle`.
 3. Compute inter-block spacing with **margin collapsing**: the vertical gap between two adjacent blocks is `max(previousBlock.style.marginBottomPx, currentBlock.style.marginTopPx)`, not the sum. This matches CSS collapsing behavior and prevents double-spacing at heading/paragraph boundaries.
 4. Accumulate block heights + collapsed margins into the current page until the running height exceeds page height.
 5. When a block overflows:
@@ -329,17 +399,17 @@ Performance is not a secondary concern. The Boox Go 7 has a mid-range SoC. Every
 
 All measurements on the Boox Go 7 Gen 2 B&W with representative EPUBs from the user's Kavita library. Budgets are split into three layers to prevent e-ink refresh from masking slow computation.
 
-| Operation                   | Layer                 | Budget              | Notes                                                                                                                                                         |
-| --------------------------- | --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Page turn                   | Layout computation    | 0ms                 | No measurement. Page list with precomputed StaticLayouts is ready.                                                                                            |
-| Page turn                   | Canvas redraw         | < 16ms              | Swap page index, draw precomputed StaticLayouts at stored y-offsets.                                                                                          |
-| Page turn                   | E-ink visible refresh | ~300ms              | Hardware-dependent. Measured separately, not optimized in software beyond EPD mode selection.                                                                 |
-| Chapter pagination (eager)  | Layout computation    | < 200ms (preferred) | Measure all blocks on `Dispatchers.Default` using `StaticLayout`. Not a hard gate — lazy pagination is acceptable if first page is fast.                      |
-| First page ready            | End-to-end            | < 300ms (required)  | Parse + paginate enough for page 1. Users feel first-page latency.                                                                                            |
-| Preference change           | Layout computation    | < 200ms             | Cancel stale layout job, repaginate with new preferences.                                                                                                     |
-| Preference change           | Visible update        | < 500ms             | Computation + Compose recomposition + e-ink refresh.                                                                                                          |
-| First chapter render (full) | End-to-end            | < 800ms             | `OpenBookUseCase` → XHTML read → parse → full chapter paginate → first page drawn. Includes network/disk I/O.                                                 |
-| Memory (chapter in-flight)  | Steady-state          | < 5MB               | Text-only chapters: block model + page entries + flattened string cache. Excludes shared font caches, system image decode buffers, and decoded image bitmaps. |
+| Operation                   | Layer                 | Budget              | Notes                                                                                                                                                                                                                                                            |
+| --------------------------- | --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page turn                   | Layout computation    | 0ms                 | No measurement. Page list with precomputed StaticLayouts is ready.                                                                                                                                                                                               |
+| Page turn                   | Canvas redraw         | < 16ms              | Swap page index, draw precomputed StaticLayouts at stored y-offsets.                                                                                                                                                                                             |
+| Page turn                   | E-ink visible refresh | ~300ms              | Hardware-dependent. Measured separately, not optimized in software beyond EPD mode selection.                                                                                                                                                                    |
+| Chapter pagination (eager)  | Layout computation    | < 200ms (preferred) | Measure all blocks on `Dispatchers.Default` using `StaticLayout`. Not a hard gate — lazy pagination is acceptable if first page is fast.                                                                                                                         |
+| First page ready            | End-to-end            | < 300ms (required)  | Parse + paginate enough for page 1. Users feel first-page latency.                                                                                                                                                                                               |
+| Preference change           | Layout computation    | < 200ms             | Cancel stale layout job, repaginate with new preferences.                                                                                                                                                                                                        |
+| Preference change           | Visible update        | < 500ms             | Computation + Compose recomposition + e-ink refresh.                                                                                                                                                                                                             |
+| First chapter render (full) | End-to-end            | < 800ms             | `OpenBookUseCase` → XHTML read → parse → full chapter paginate → first page drawn. Includes network/disk I/O.                                                                                                                                                    |
+| Memory (chapter in-flight)  | Steady-state          | < 5MB (target)      | Text-only chapters: block model + page entries + `StaticLayout` artifacts. Excludes font caches, image decode buffers, and decoded bitmaps. Validate on representative chapters during the Phase 0 spike; if exceeded, lazy pagination reduces retained layouts. |
 
 ### Hard Rules
 
@@ -361,6 +431,7 @@ All measurements on the Boox Go 7 Gen 2 B&W with representative EPUBs from the u
 Every performance claim must be validated on-device before shipping. The spike includes a diagnostics panel (carried over from the current reader) that reports:
 
 - Chapter block count.
+- Unsupported tag counts from the parser (block and inline).
 - Pagination wall-clock time (ms), split into: total, p50/p95/max per-block `StaticLayout` construction.
 - Page count.
 - Canvas draw time for current page (ms).
@@ -383,11 +454,10 @@ For `SplitBlock` entries, the Canvas clips to the line range before drawing — 
 Block-type-specific rendering:
 
 - **Paragraphs and headings** — drawn directly via `StaticLayout.draw()`. Heading `TextPaint` uses scaled font size per level.
-- **Block quotes** — `canvas.drawLine()` for the left border, then `StaticLayout.draw()` with a horizontal offset for the indent.
-- **Lists** — bullet or number prefix drawn at the item's y-offset, then `StaticLayout.draw()` for the item text with a horizontal offset.
-- **Images** — loaded from EPUB resources via `Publication.get(resourceHref).read()` → `BitmapFactory` → `Bitmap`. Intrinsic dimensions scaled to fit column width (`viewport.widthPx - horizontalMargins`), preserving aspect ratio. Drawn via `canvas.drawBitmap()`. Cached in ViewModel.
+- **Block quotes** — `canvas.drawLine()` in the `prefixWidthPx` gutter, then `StaticLayout.draw()` after `indentPx + prefixWidthPx`.
+- **Lists** — bullet or number prefix drawn in `[0, prefixWidthPx)`; item text measured and drawn at `prefixWidthPx` offset.
+- **Images** — loaded from EPUB resources via `Publication.get(resourceHref).read()` → `BitmapFactory` → `Bitmap`. Intrinsic dimensions scaled to fit column width (`viewport.widthPx - horizontalMargins`), preserving aspect ratio. Drawn via `canvas.drawBitmap()`. Cached in ViewModel. Failed loads draw the fixed placeholder from pagination.
 - **Horizontal rules** — `canvas.drawLine()` across the column width.
-- **Unsupported blocks** — bordered box with the tag name drawn inside (e.g., `[unsupported: <table>]`). Visible in production. Helps identify which elements need mapping next.
 
 Compose still owns everything around the page surface: tap zones, reader chrome overlay, settings UI, popups, and navigation controls. Only book text rendering goes through Canvas.
 
@@ -438,7 +508,7 @@ Selection flow:
 2. Translate touch y to local layout coordinates (`touchY - entry.yOffsetPx + entry.firstLineTopPx` for splits, or `touchY - entry.yOffsetPx` for full blocks).
 3. `StaticLayout.getLineForVertical(localY)` → line index.
 4. `StaticLayout.getOffsetForHorizontal(line, touchX)` → character offset.
-5. Expand to word boundaries using `BreakIterator` on the flattened text (on-demand; Phase 0 records timing).
+5. Expand to word boundaries using `BreakIterator` on the flattened text (on-demand; Phase 0 records timing). Use the chapter's `xml:lang` when present; fall back to the system default locale.
 6. Compute one or more highlight rects from `StaticLayout.getLineTop/Bottom` and `getPrimaryHorizontal`. A word may span lines (hyphenation or wrap), producing multiple rects.
 7. Draw highlight rects on the Canvas. Show a Compose popup anchored to the bounding rect of the selection.
 
@@ -477,7 +547,7 @@ This proves the Canvas approach handles interactive text (links, footnotes) with
 reader-navigator/
   src/main/kotlin/com/charliesbot/kanshu/navigator/
     model/          — ReaderDocument, ReaderBlock, TextSpan, InlineStyle, LinkSpan
-    parser/         — EpubParser (Jsoup XHTML → ReaderDocument)
+    parser/         — EpubParser (Jsoup XHTML → ParseResult)
     engine/         — ReaderLayoutEngine, BlockStyle, PageEntry, StaticLayout construction
     render/         — PageCanvas, BlockRenderer
     selection/      — HitTesting, WordSelector, highlight drawing
@@ -502,6 +572,10 @@ fun ReaderPageViewer(
 ```
 
 The viewer handles layout, pagination, Canvas rendering, and selection internally. The consumer provides content, preferences, and reacts to callbacks.
+
+**Lazy pagination and page count:** `onPageCount` reports the number of pages measured so far. Under eager pagination, this equals the full chapter page count once layout completes. Under lazy pagination, the count grows as the reader advances; UI may show "page X" without a total until layout catches up. Progress persistence does not use page count — see Progress Model below.
+
+**Phase 0 defaults:** `ReaderPreferences` may be hard-coded in the viewer until Phase 2 wires user settings. Phase 0 still accepts a `preferences` parameter so the public API and typography path are stable from the first slice.
 
 **Coordinate space:** `Rect` in `onWordSelected` is in Compose layout coordinates (relative to the `ReaderPageViewer` composable's bounds), not page-local or window coordinates. This allows the consumer to anchor a Compose popup directly without coordinate conversion. Phase 0 verifies this on-device.
 
@@ -535,11 +609,40 @@ features:reader:app
 
 `features:reader:app` is a wiring layer:
 
-- **ReaderViewModel** — opens the book via `OpenBookUseCase`, reads XHTML from `Publication`, parses it to `ReaderDocument` via `:reader-navigator`'s parser, manages chapter sequencing and page state.
+- **ReaderViewModel** — opens the book via `OpenBookUseCase`, reads XHTML from `Publication`, parses via `EpubParser.parse()` → `ParseResult`, manages chapter sequencing and page state.
 - **ReaderScreen** — wraps `ReaderPageViewer` with tap zones, reader chrome overlay, diagnostics panel, and navigation controls.
-- **Progress** — persists `ReaderPosition` to Room, syncs with Kavita.
+- **Progress** — persists `ReaderPosition` to Room, syncs with Kavita. See Progress Model.
 
 All rendering, layout, pagination, and selection logic lives in `:reader-navigator`. The feature module never touches `StaticLayout`, `Canvas`, or `BlockStyle`.
+
+## Progress Model
+
+Page count is a navigation convenience, not a persistence primitive. Reflowable EPUB pagination shifts when font size, margins, or viewport change — storing `pageIndex` produces stale resume points.
+
+### Target Shape
+
+```kotlin
+@Serializable
+data class ReaderPosition(
+  val schemaVersion: Int = 2,
+  val spineIndex: Int,
+  val charOffset: Int,           // character offset into the chapter's flattened text stream
+  val progressInSpine: Float,    // charOffset / totalChapterCharLength, 0.0–1.0
+)
+```
+
+`totalChapterCharLength` is the sum of flattened text character counts across all blocks in the spine item (list prefixes and image placeholders contribute zero). This is intentional: progress offsets must stay stable when Phase 1 adds list prefixes and image blocks — `charOffset` means "offset into the chapter's text stream," not "offset into rendered glyphs on screen." `charOffset` identifies the first visible character on the current page. `progressInSpine` is denormalized for cheap Kavita sync and overall book percentage without re-layout.
+
+### Migration From Schema v1
+
+The codebase currently ships schema v1 with `pageIndex` + `progressInSpine`. Migration is not deferred to Phase 4 — the v2 shape is designed during Phase 0 so page-index assumptions do not spread through the ViewModel.
+
+| When    | Action                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 | Define v2 fields and document the mapping. ViewModel may still use page index locally for tap-to-turn.              |
+| Phase 4 | Persist v2 to Room, migrate v1 records (best-effort: reopen at spine item start if unmappable), update Kavita sync. |
+
+Kavita's remote progress format may not align with character offsets. Phase 4 defines the mapping layer in `core:data` — local truth is `charOffset`; remote sync uses the best available Kavita field with documented precision loss.
 
 ## Migration Path
 
@@ -554,7 +657,7 @@ Phase 0 proves the two architectural bets:
 
 - One EPUB from the existing book-opening flow.
 - First readable spine item.
-- XHTML parsed into `ReaderDocument`.
+- XHTML parsed into `ParseResult` (`ReaderDocument` + `ParseDiagnostics`).
 
 **Output:**
 
@@ -590,7 +693,9 @@ This proves the full vertical: touch coordinate → `PageEntry` lookup → `Stat
 
 **Required deliverables (non-negotiable for Phase 0):**
 
-- Parser unit tests with real EPUB chapter XHTML from the user's Kavita library. The parser is the foundation; it must be tested before anything downstream is built.
+- Parser unit tests with real EPUB chapter XHTML from the user's Kavita library. The parser is the foundation; it must be tested before anything downstream is built. Tests assert text preservation for tables, asides, and nested divs even when structure is lossy. Tests assert `ParseDiagnostics` tag counts for known unsupported markup.
+- `ReaderPosition` schema v2 shape documented and reviewed (implementation may land in Phase 4; design lands in Phase 0).
+- Boox EPD API spike: on-device research confirming how to control refresh mode on the Go 7 (Boox SDK / system APIs / `EinkPageTurner` abstraction). Document findings and a Phase 2 integration plan. If no usable API exists, Phase 2 falls back to standard Android surface behavior and EPD work stays in Phase 5.
 - On-device profiling data from the Boox Go 7 confirming the < 200ms pagination budget.
 - Selection profiling: long-press hit-test time, `BreakIterator` word-boundary time, popup anchor correctness (manual verification on-device).
 - Coordinate conversion verification: confirm that selection `Rect` in Compose layout coordinates correctly anchors a popup near the selected word without manual offset adjustments.
@@ -614,6 +719,7 @@ Preferred (target, not hard gate):
 
 Diagnostics (recorded for decision-making):
 
+- Unsupported tag counts from `ParseDiagnostics`.
 - Per-block `StaticLayout` construction timing (p50/p95/max).
 - Max paragraph character count (identifies whether long paragraphs dominate).
 - `BreakIterator` word-boundary timing.
@@ -629,13 +735,20 @@ Add remaining block types to the parser and renderer:
 - Horizontal rules.
 - Inline images (chapter ornaments).
 
-### Phase 2: Typography Preferences
+### Phase 2: Typography Preferences and E-ink Baseline
 
 Wire `ReaderPreferences` to the rendering step:
 
 - Font family, font size, line height, alignment, margins.
 - Preference changes cancel the in-flight pagination coroutine and launch a new one on `Dispatchers.Default`.
 - Debounce preference UI to avoid rapid-fire repagination. At most one layout job in flight.
+
+Introduce baseline Boox EPD integration early — full Canvas redraw on every page turn can trigger aggressive full-panel refresh before typography tuning is done. Scope depends on the Phase 0 EPD API spike:
+
+- If a usable Boox refresh API exists: wire `EinkPageTurner` (or equivalent) for page-turn refresh mode selection.
+- If not: document standard Android behavior as baseline; defer Boox-specific control to Phase 5.
+
+Either way, profile ghosting and refresh latency on the Boox Go 7 alongside typography changes during Phase 2. Deeper EPD tuning (per-content-type modes, A2 for fast skim) remains Phase 5.
 
 ### Phase 3: Full Selection and Interaction
 
@@ -651,18 +764,16 @@ Building on Phase 0's feasibility proof:
 
 ### Phase 4: Progress and Navigation
 
-- Progress model uses character-offset percentage (`visibleCharOffset / totalChapterLength`), not page count. Stable across preference changes, zero measurement overhead, matches Kindle's convention.
-- `ReaderPosition` model: spine index + character-offset progress.
+- Implement `ReaderPosition` schema v2 (`charOffset` + `progressInSpine`). Migrate v1 records from Room.
+- Progress UI and Kavita sync use character-offset percentage, not page count.
 - TOC navigation using `Publication.tableOfContents`.
-- Progress persistence in Room.
-- Kavita progress sync.
 - Chapter boundary navigation (next/previous spine item).
 
 ### Phase 5: E-ink Optimization
 
-- Boox EPD integration (`EpdController` for refresh mode control).
+- Advanced EPD tuning beyond Phase 2 baseline (content-aware refresh modes, fast-skim A2, profile-specific defaults).
 - Same `EinkPageTurner` interface from the Readium migration PRD.
-- Profile and tune refresh modes on target hardware.
+- Profile and tune refresh modes on target hardware after typography and selection are stable.
 
 ## Tradeoffs
 
@@ -680,10 +791,10 @@ Building on Phase 0's feasibility proof:
 ### What We Lose
 
 - Complex publisher CSS layouts (multi-column, CSS grid, floats). Acceptable for Kanshu's scope — text books on e-ink don't benefit from these. Kindle constrains similar properties but supports more publisher features than our early renderer will.
-- Tables beyond simple grids. Acceptable for the target book corpus.
-- Embedded SVG diagrams. Acceptable — rare in text-focused EPUBs.
+- Tables beyond simple grids. Text is preserved via unwrap; column layout is not. Acceptable for early phases.
+- Embedded SVG diagrams. Acceptable — rare in reflowable EPUBs; text alt content is preserved when present.
 - Publisher-intended visual styling beyond structure. The Kindle model normalizes this rather than stripping it entirely; our approach is more aggressive in Phase 0 but directionally similar.
-- Internal links and footnotes. Deferred to Phase 3. Text books commonly have footnotes; the block model can carry link annotations when needed, but Phase 0–2 treat them as plain text.
+- Internal links and footnotes as interactive affordances. Deferred to Phase 3. Link text is preserved from Phase 0; tap handling is not.
 
 ### What Is Hard
 
@@ -700,12 +811,17 @@ Building on Phase 0's feasibility proof:
 - **`StaticLayout` for both measurement and rendering.** One text engine, zero parity risk. The same `StaticLayout` that determines page splits draws pixels on the Canvas.
 - **Block model lives in `:reader-navigator`.** The AST is the native reader engine contract. Parser, layout, rendering, and selection share it inside the same module. `core:model` stays a leaf module for user-facing preferences.
 - **Eager pagination is preferred, lazy is acceptable.** Build all `StaticLayout` objects up front on `Dispatchers.Default` if it completes within 200ms. If not, lazy pagination (stay one page ahead of reading) is not a failure — users feel first-page latency and page turns, not whether page 87 was pre-measured. The spike determines which path ships.
-- **Character-offset percentage for progress.** Page count requires full layout and is unstable across preference changes. Character-offset progress (`visibleCharOffset / totalChapterLength`) is stable, cheap, and matches Kindle's convention.
+- **Parse diagnostics are a parser side-channel.** `EpubParser.parse()` returns `ParseResult(document, diagnostics)`. Unsupported tag counts never appear on the reading surface.
+- **Character-offset percentage for progress.** Page count requires full layout and is unstable across preference changes. Character-offset progress (`charOffset / totalChapterCharLength`) is stable, cheap, and matches Kindle's convention. Schema v2 is designed in Phase 0; persistence lands in Phase 4. Text-stream offsets exclude list prefixes and image placeholders so progress survives rendering-phase additions.
+- **Silent degradation on the reading surface.** Unsupported markup unwraps to text; tag counts appear in diagnostics only. No placeholder boxes in production.
+- **Horizontal insets reduce measurement width.** `prefixWidthPx` and `indentPx` both subtract from layout width before `StaticLayout` construction. Drawing offsets alone are insufficient for lists and quotes.
 - **Selection uses `StaticLayout` geometry directly.** No `SelectionContainer`, no `onTextLayout` callbacks. `StaticLayout` exposes line/offset APIs for hit-testing. Full selection is Phase 3; Phase 0 includes one-word selection feasibility only.
 - **Cancellation is caller-side, not engine-side.** The layout engine is a pure function. The ViewModel coroutine checks `isActive` between blocks or injects `shouldContinue`. No version counter inside the engine.
-- **Android `BreakIterator` runs on-demand, not pre-calculated.** ICU `BreakIterator` is backed by native C++ and expected to be cheap for a single paragraph. Run it at tap time on the touched block's text, not pre-calculated for the whole chapter. Phase 0 records actual timing on-device.
+- **Android `BreakIterator` runs on-demand, not pre-calculated.** ICU `BreakIterator` is backed by native C++ and expected to be cheap for a single paragraph. Run it at tap time on the touched block's text, not pre-calculated for the whole chapter. Use chapter `xml:lang` when available. Phase 0 records actual timing on-device.
+- **Baseline EPD integration in Phase 2.** Typography changes and full Canvas redraws must be profiled with real refresh modes early; advanced tuning stays in Phase 5.
 - **Hyphenation uses `StaticLayout` directly.** Bypass Compose's API 33+ limitation by calling `StaticLayout.Builder.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NORMAL)`. API is available on API 23+ (including Boox Go 7's API 31); output quality and performance validated in Phase 2.
-- **Image sizing: intrinsic dimensions capped to column width.** Scale to fit `viewport.widthPx - horizontalMargins`, preserving aspect ratio. Small ornaments stay small; large images fill the available width without clipping.
+- **Image sizing: intrinsic dimensions capped to column width.** Scale to fit `viewport.widthPx - horizontalMargins`, preserving aspect ratio. Small ornaments stay small; large images fill the available width without clipping. Failed bounds lookup uses a fixed placeholder height, not zero-height skip.
+- **Ares `:htmlparser` is reference only.** Borrow parser traversal patterns (`InlineStyleExtractor`, fallback text preservation, tag handler registry); do not depend on Ares's Compose scroll renderer.
 
 ## Relationship to Other Docs
 
@@ -714,3 +830,4 @@ Building on Phase 0's feasibility proof:
 - `docs/PRD_READIUM_MIGRATION.md` — the previous WebView-based migration plan. Superseded by this PRD. The Readium streamer/shared retention, sanitization allowlist research, Boox EPD integration, and `EinkPageTurner` interface carry forward. The WebView renderer, CSS pagination, JS bridge, request interceptor, and command serialization do not.
 - `docs/READIUM_API.md` — Readium navigator surface reference. No longer needed for the reader engine (navigator is removed). Still useful as historical context for why certain APIs don't exist.
 - `docs/READIUM_PAGINATION_EXTRACTION.md` — Readium pagination source analysis. Historical context only. The native engine does not use CSS multi-column pagination.
+- Ares `../ares/htmlparser` — sibling RSS app's HTML parser. Reference for inline style extraction and fallback traversal; not a Kanshu dependency. See § Reference: Ares `:htmlparser`.
