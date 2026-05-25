@@ -4,12 +4,10 @@ import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.File
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -19,17 +17,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.readium.r2.shared.publication.Href
-import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.util.Try
-import org.readium.r2.shared.util.data.ReadError
-import org.readium.r2.shared.util.resource.Resource
 import org.robolectric.RobolectricTestRunner
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -40,6 +31,62 @@ class ReaderViewModelTest {
   @Before fun setUp() = Dispatchers.setMain(testDispatcher)
 
   @After fun tearDown() = Dispatchers.resetMain()
+
+  @Test
+  fun `successful open transitions to Ready`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(ReaderUiState.Ready, viewModel.uiState.value)
+    }
+
+  @Test
+  fun `not found transitions to Error`() =
+    runTest(testDispatcher) {
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.NotFound
+        }
+      val viewModel = viewModel(source)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
+    }
+
+  @Test
+  fun `parse failed transitions to OpenFailed`() =
+    runTest(testDispatcher) {
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.ParseFailed
+        }
+      val viewModel = viewModel(source)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
+    }
+
+  @Test
+  fun `read failed transitions to OpenFailed`() =
+    runTest(testDispatcher) {
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.ReadFailed
+        }
+      val viewModel = viewModel(source)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
+    }
 
   @Test
   fun `successful publication closes on clear`() =
@@ -71,165 +118,24 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `cancelling an in-flight open closes its publication`() =
+  fun `duplicate open with same seriesId is no-op`() =
     runTest(testDispatcher) {
-      val delayedResource = BlockingResource()
-      val first = testPublication(resource = delayedResource)
-      val second = testPublication()
-      val viewModel = viewModel(FakeReaderSource(1 to first, 2 to second))
-
-      viewModel.open(1)
-      advanceUntilIdle()
-      assertTrue(delayedResource.readStarted.isCompleted)
-
-      viewModel.open(2)
-      advanceUntilIdle()
-
-      verify(exactly = 1) { first.close() }
-      verify(exactly = 0) { second.close() }
-      assertFalse(viewModel.uiState.value is ReaderUiState.Loading)
-    }
-
-  @Test
-  fun `opens first non-empty reading order resource`() =
-    runTest(testDispatcher) {
-      val publication =
-        testPublicationWithResources(
-          listOf(
-            ChapterFixture(
-              href = "cover.xhtml",
-              resource =
-                testResource("<html><body><img src='cover.jpg'></body></html>".toByteArray()),
-            ),
-            ChapterFixture(
-              href = "chapter.xhtml",
-              resource = testResource("<html><body><p>Chapter text</p></body></html>".toByteArray()),
-            ),
-          )
-        )
+      val publication = testPublication()
       val viewModel = viewModel(FakeReaderSource(1 to publication))
 
       viewModel.open(1)
       advanceUntilIdle()
-
-      val state = viewModel.uiState.value as ReaderUiState.Ready
-      assertEquals("chapter.xhtml", state.href)
-      assertEquals(2, state.resourceIndex)
-      assertEquals(2, state.resourceCount)
-      assertTrue(state.chapterHtml.contains("Chapter text"))
-    }
-
-  @Test
-  fun `opens next reading order resource`() =
-    runTest(testDispatcher) {
-      val publication =
-        testPublicationWithResources(
-          listOf(
-            ChapterFixture(
-              href = "chapter-1.xhtml",
-              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
-            ),
-            ChapterFixture(
-              href = "chapter-2.xhtml",
-              resource = testResource("<html><body><p>Chapter two</p></body></html>".toByteArray()),
-            ),
-          )
-        )
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
-
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.openNextResource()
-      advanceUntilIdle()
 
-      val state = viewModel.uiState.value as ReaderUiState.Ready
-      assertEquals("chapter-2.xhtml", state.href)
-      assertEquals(2, state.resourceIndex)
-      assertEquals(2, state.resourceCount)
-      assertTrue(state.chapterHtml.contains("Chapter two"))
-    }
-
-  @Test
-  fun `opening next resource skips empty resources`() =
-    runTest(testDispatcher) {
-      val publication =
-        testPublicationWithResources(
-          listOf(
-            ChapterFixture(
-              href = "chapter-1.xhtml",
-              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
-            ),
-            ChapterFixture(
-              href = "separator.xhtml",
-              resource =
-                testResource("<html><body><img src='separator.jpg'></body></html>".toByteArray()),
-            ),
-            ChapterFixture(
-              href = "chapter-2.xhtml",
-              resource = testResource("<html><body><p>Chapter two</p></body></html>".toByteArray()),
-            ),
-          )
-        )
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
-
-      viewModel.open(1)
-      advanceUntilIdle()
-      viewModel.openNextResource()
-      advanceUntilIdle()
-
-      val state = viewModel.uiState.value as ReaderUiState.Ready
-      assertEquals("chapter-2.xhtml", state.href)
-      assertEquals(3, state.resourceIndex)
-      assertEquals(3, state.resourceCount)
-      assertTrue(state.chapterHtml.contains("Chapter two"))
-    }
-
-  @Test
-  fun `opening next resource at final readable resource does nothing`() =
-    runTest(testDispatcher) {
-      val publication =
-        testPublicationWithResources(
-          listOf(
-            ChapterFixture(
-              href = "chapter-1.xhtml",
-              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
-            ),
-            ChapterFixture(
-              href = "backmatter.xhtml",
-              resource =
-                testResource("<html><body><img src='backmatter.jpg'></body></html>".toByteArray()),
-            ),
-          )
-        )
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
-
-      viewModel.open(1)
-      advanceUntilIdle()
-      viewModel.openNextResource()
-      advanceUntilIdle()
-
-      val state = viewModel.uiState.value as ReaderUiState.Ready
-      assertEquals("chapter-1.xhtml", state.href)
-      assertEquals(1, state.resourceIndex)
-      assertEquals(2, state.resourceCount)
-      assertTrue(state.chapterHtml.contains("Chapter one"))
+      assertEquals(ReaderUiState.Ready, viewModel.uiState.value)
     }
 
   private fun viewModel(source: ReaderSource): ReaderViewModel =
     ReaderViewModel(OpenBookUseCase(source), ioDispatcher = testDispatcher)
 
-  private fun testPublication(resource: Resource = testResource()): Publication =
-    testPublicationWithResources(
-      listOf(ChapterFixture(href = "chapter.xhtml", resource = resource))
-    )
-
-  private fun testPublicationWithResources(chapters: List<ChapterFixture>): Publication {
-    val links = chapters.map { chapter -> Link(Href(chapter.href) ?: error("Invalid test href")) }
-    return mockk(relaxUnitFun = true) {
-      every { readingOrder } returns links
-      links.forEachIndexed { index, link -> every { get(link) } returns chapters[index].resource }
-    }
-  }
+  private fun testPublication(): Publication =
+    mockk(relaxUnitFun = true) { every { readingOrder } returns emptyList() }
 
   private fun ReaderViewModel.closeThroughStore() {
     ViewModelStore().apply {
@@ -239,34 +145,9 @@ class ReaderViewModelTest {
   }
 }
 
-private data class ChapterFixture(val href: String, val resource: Resource)
-
 private class FakeReaderSource(vararg publications: Pair<Int, Publication>) : ReaderSource {
   private val publications = publications.toMap()
 
   override suspend fun openBook(seriesId: Int): ReaderResult =
     ReaderResult.Success(publications.getValue(seriesId), File("test.epub"))
-}
-
-private fun testResource(
-  bytes: ByteArray = "<html><body><p>Hi</p></body></html>".toByteArray()
-): Resource = mockk { coEvery { read() } returns Try.success(bytes) }
-
-private class BlockingResource : Resource {
-  val readStarted = CompletableDeferred<Unit>()
-
-  override val sourceUrl = null
-
-  override suspend fun properties(): Try<Resource.Properties, ReadError> =
-    Try.success(Resource.Properties())
-
-  override suspend fun length(): Try<Long, ReadError> = Try.success(0L)
-
-  override suspend fun read(range: LongRange?): Try<ByteArray, ReadError> {
-    readStarted.complete(Unit)
-    CompletableDeferred<Unit>().await()
-    return Try.success(ByteArray(0))
-  }
-
-  override fun close() = Unit
 }
