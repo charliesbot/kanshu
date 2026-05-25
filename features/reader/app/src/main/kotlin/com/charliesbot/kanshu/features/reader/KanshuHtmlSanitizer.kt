@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.features.reader
 
 import android.util.Log
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import org.jsoup.Jsoup
 import org.jsoup.nodes.DataNode
 import org.jsoup.nodes.Document
@@ -133,7 +134,12 @@ object KanshuHtmlSanitizer {
    * declaration-level scrubbing, visual error badging for unrecognized tags, and wraps it inside
    * the trusted Kanshu reader HTML shell.
    */
-  fun sanitizeAndWrap(rawHtml: String): String {
+  fun sanitizeAndWrap(
+    rawHtml: String,
+    loadId: Int = 0,
+    targetPageIndex: Int = 0,
+    prefs: ReaderPreferences = ReaderPreferences(),
+  ): String {
     val doc = Jsoup.parse(rawHtml)
 
     // First pass: Walk the DOM tree and clean/badge elements in place
@@ -160,6 +166,27 @@ object KanshuHtmlSanitizer {
       }
     }
 
+    // Inject initial preferences variables directly in <style> block
+    head.appendElement("style").apply {
+      val multiplier = prefs.margins.value
+      val cssContent =
+        """
+        :root {
+          --reader-font: "${prefs.font.name}-Kanshu";
+          --font-size: ${(18 * prefs.fontScale).toInt()}px;
+          --line-height: ${prefs.lineSpacing};
+          --text-align: ${prefs.alignment.name.lowercase()};
+          --page-margin-inline: ${(24 * multiplier).toInt()}px;
+          --page-margin-block: ${(32 * multiplier).toInt()}px;
+          --paragraph-spacing: ${prefs.paragraphSpacing}em;
+          --word-spacing: ${prefs.wordSpacing}em;
+          --letter-spacing: ${prefs.letterSpacing}em;
+        }
+      """
+          .trimIndent()
+      appendChild(DataNode(cssContent))
+    }
+
     // Inject Kanshu core stylesheet LAST so it has higher specificity/override priority
     head.appendElement("link").apply {
       attr("rel", "stylesheet")
@@ -171,6 +198,22 @@ object KanshuHtmlSanitizer {
     val pageContainer = body.appendElement("main").attr("id", "kanshu-page")
 
     doc.body().children().forEach { child -> pageContainer.appendChild(child.clone()) }
+
+    // Inject JS bridge script at the bottom of the body
+    body.appendElement("script").apply {
+      attr("src", "https://kanshu.invalid/__kanshu__/kanshu-reader.js")
+    }
+    body.appendElement("script").apply {
+      val jsContent =
+        """
+        window.__kanshuChapterLoadId__ = $loadId;
+        window.addEventListener('DOMContentLoaded', () => {
+          window.kanshu.repaginate(0, $targetPageIndex);
+        });
+      """
+          .trimIndent()
+      appendChild(DataNode(jsContent))
+    }
 
     return "<!DOCTYPE html>\n" + shellDoc.outerHtml()
   }
@@ -198,6 +241,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanLinkElement(element: Element): Boolean {
     if (element.tagName() == "link") {
+      cleanElementAttributes(element)
       val rel = element.attr("rel").lowercase()
       val href = element.attr("href")
       if (rel != "stylesheet" || isUnsafeUrl(href)) {
@@ -210,6 +254,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanStyleElement(element: Element): Boolean {
     if (element.tagName() == "style") {
+      cleanElementAttributes(element)
       val css = element.data()
       element.empty().appendChild(DataNode(sanitizeCss(css)))
       return true
@@ -219,6 +264,7 @@ object KanshuHtmlSanitizer {
 
   private fun cleanStructuralElement(element: Element): Boolean {
     if (element.tagName() in STRUCTURAL_TAGS) {
+      cleanElementAttributes(element)
       element.children().toList().forEach { cleanElement(it) }
       return true
     }
@@ -299,6 +345,33 @@ object KanshuHtmlSanitizer {
             if (isUnsafeUrl(attrVal)) {
               element.removeAttr(attr.key)
             }
+          }
+        }
+        "link" -> {
+          if (attrName !in setOf("rel", "href", "type", "media", "title")) {
+            element.removeAttr(attr.key)
+          } else if (attrName == "href" && isUnsafeUrl(attrVal)) {
+            element.removeAttr(attr.key)
+          }
+        }
+        "style" -> {
+          if (attrName !in setOf("type", "media", "title")) {
+            element.removeAttr(attr.key)
+          }
+        }
+        "html",
+        "body",
+        "head",
+        "meta",
+        "title" -> {
+          if (
+            attrName != "class" &&
+              attrName != "id" &&
+              attrName != "charset" &&
+              attrName != "name" &&
+              attrName != "content"
+          ) {
+            element.removeAttr(attr.key)
           }
         }
         else -> {

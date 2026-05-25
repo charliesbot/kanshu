@@ -15,12 +15,15 @@ import io.mockk.mockk
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -28,10 +31,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.readium.r2.shared.publication.Metadata
 import org.readium.r2.shared.publication.Publication
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ReaderViewModelTest {
 
   private val testDispatcher = StandardTestDispatcher()
@@ -55,14 +63,34 @@ class ReaderViewModelTest {
   }
 
   private fun fakePublication(title: String? = "A Book"): Publication =
-    mockk<Publication>(relaxed = true).also {
-      val metadata = mockk<Metadata>(relaxed = true)
+    mockk<Publication>(relaxed = true).also { pub ->
+      val metadata = mockk<org.readium.r2.shared.publication.Metadata>(relaxed = true)
       every { metadata.title } returns title
-      every { it.metadata } returns metadata
+      every { pub.metadata } returns metadata
+
+      val link =
+        mockk<org.readium.r2.shared.publication.Link>(relaxed = true) {
+          every { href.toString() } returns "OEBPS/chapter1.xhtml"
+          every { mediaType } returns
+            org.readium.r2.shared.util.mediatype.MediaType("application/xhtml+xml")!!
+        }
+      every { pub.readingOrder } returns listOf(link)
+
+      val resource = mockk<org.readium.r2.shared.util.resource.Resource>(relaxed = true)
+      coEvery { resource.read() } returns
+        org.readium.r2.shared.util.Try.success("<html><body>Chapter 1</body></html>".toByteArray())
+      every { resource.close() } returns Unit
+      every { pub.get(any<org.readium.r2.shared.publication.Link>()) } returns resource
     }
 
   private fun newViewModel(): ReaderViewModel =
-    ReaderViewModel(seriesId = 1, openBook = openBook, sync = sync, preferences = preferences)
+    ReaderViewModel(
+      seriesId = 1,
+      openBook = openBook,
+      sync = sync,
+      preferences = preferences,
+      ioDispatcher = testDispatcher,
+    )
 
   @Test
   fun `success result becomes Ready with title and publication`() = runTest {
@@ -250,6 +278,192 @@ class ReaderViewModelTest {
     )
     assertEquals(ReaderPreferences.WORD_SPACING_DEFAULT, currentPrefs.wordSpacing, 0.0001f)
     assertEquals(ReaderPreferences.LETTER_SPACING_DEFAULT, currentPrefs.letterSpacing, 0.0001f)
+  }
+
+  private fun fakeMultiChapterPublication(
+    title: String = "Multi Book",
+    chapters: List<String> = listOf("OEBPS/chapter1.xhtml", "OEBPS/chapter2.xhtml"),
+  ): Publication =
+    mockk<Publication>(relaxed = true).also { pub ->
+      val metadata = mockk<org.readium.r2.shared.publication.Metadata>(relaxed = true)
+      every { metadata.title } returns title
+      every { pub.metadata } returns metadata
+
+      val links =
+        chapters.mapIndexed { index, path ->
+          mockk<org.readium.r2.shared.publication.Link>(relaxed = true) {
+            every { href.toString() } returns path
+            every { mediaType } returns
+              org.readium.r2.shared.util.mediatype.MediaType("application/xhtml+xml")!!
+          }
+        }
+      every { pub.readingOrder } returns links
+
+      every { pub.get(any<org.readium.r2.shared.publication.Link>()) } answers
+        {
+          val requestedLink = firstArg<org.readium.r2.shared.publication.Link>()
+          val index =
+            links
+              .indexOfFirst { it.href.toString() == requestedLink.href.toString() }
+              .coerceAtLeast(0)
+          val resource = mockk<org.readium.r2.shared.util.resource.Resource>(relaxed = true)
+          coEvery { resource.read() } returns
+            org.readium.r2.shared.util.Try.success(
+              "<html><body>Chapter ${index + 1}</body></html>".toByteArray()
+            )
+          every { resource.close() } returns Unit
+          resource
+        }
+    }
+
+  @Test
+  fun `goForward within chapter emits evaluateJs scrollToPage`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val loadId = readyState.currentChapter.loadId
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = loadId,
+        settingsRevision = 1,
+        pageCount = 3,
+        restoredPageIndex = 0,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
+    assertEquals(0, viewModel.pageIndex.value)
+    assertEquals(3, viewModel.pageCount.value)
+
+    val deferred = async { viewModel.evaluateJs.first() }
+    runCurrent()
+    viewModel.goForward()
+    advanceUntilIdle()
+
+    assertEquals("kanshu.scrollToPage(1)", deferred.await())
+  }
+
+  @Test
+  fun `goBackward within chapter emits evaluateJs scrollToPage`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val loadId = readyState.currentChapter.loadId
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = loadId,
+        settingsRevision = 1,
+        pageCount = 3,
+        restoredPageIndex = 2,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
+    assertEquals(2, viewModel.pageIndex.value)
+
+    val deferred = async { viewModel.evaluateJs.first() }
+    runCurrent()
+    viewModel.goBackward()
+    advanceUntilIdle()
+
+    assertEquals("kanshu.scrollToPage(1)", deferred.await())
+  }
+
+  @Test
+  fun `goForward at last page of chapter loads next chapter`() = runTest {
+    val publication = fakeMultiChapterPublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(0, readyState.currentChapter.spineIndex)
+
+    val loadId = readyState.currentChapter.loadId
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = loadId,
+        settingsRevision = 1,
+        pageCount = 3,
+        restoredPageIndex = 2,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
+    viewModel.goForward()
+    advanceUntilIdle()
+
+    val nextState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(1, nextState.currentChapter.spineIndex)
+    assertEquals(0, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `goBackward at first page of chapter loads previous chapter`() = runTest {
+    val publication = fakeMultiChapterPublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.loadSpineChapter(1, targetPageIndex = 0)
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(1, readyState.currentChapter.spineIndex)
+    assertEquals(0, viewModel.pageIndex.value)
+
+    viewModel.goBackward()
+    advanceUntilIdle()
+
+    val prevState = viewModel.uiState.value as ReaderUiState.Ready
+    assertEquals(0, prevState.currentChapter.spineIndex)
+    assertEquals(9999, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `handleBridgeEvent PageSettled updates progress and index`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val loadId = readyState.currentChapter.loadId
+
+    viewModel.handleBridgeEvent(
+      BridgeEvent.PageSettled(chapterLoadId = loadId, pageIndex = 1, progressInSpine = 0.5f)
+    )
+    advanceUntilIdle()
+
+    assertEquals(1, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `handleBridgeEvent rejects stale loadId`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val currentLoadId = readyState.currentChapter.loadId
+
+    val staleLoadId = currentLoadId - 1
+    viewModel.handleBridgeEvent(
+      BridgeEvent.PageSettled(chapterLoadId = staleLoadId, pageIndex = 5, progressInSpine = 0.5f)
+    )
+    advanceUntilIdle()
+
+    assertEquals(0, viewModel.pageIndex.value)
   }
 
   private class FakeReaderPreferencesRepository : ReaderPreferencesRepository {

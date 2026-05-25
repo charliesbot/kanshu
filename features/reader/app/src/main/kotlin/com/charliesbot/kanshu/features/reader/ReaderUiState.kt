@@ -17,6 +17,7 @@ sealed interface ReaderUiState {
     val publication: Publication,
     val initialPosition: ReaderPosition?,
     val initialPreferences: ReaderPreferences,
+    val currentChapter: CachedResource,
   ) : ReaderUiState
 
   sealed interface Error : ReaderUiState {
