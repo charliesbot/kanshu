@@ -17,19 +17,12 @@ import org.readium.r2.shared.publication.Publication
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
-  data class Ready(
-    val href: String,
-    val resourceIndex: Int,
-    val resourceCount: Int,
-    val chapterHtml: String,
-  ) : ReaderUiState
+  data object Ready : ReaderUiState
 
   sealed interface Error : ReaderUiState {
     data object NotFound : Error
 
-    data object ParseFailed : Error
-
-    data object ReadFailed : Error
+    data object OpenFailed : Error
   }
 }
 
@@ -54,56 +47,15 @@ class ReaderViewModel(
 
     openJob =
       viewModelScope.launch {
-        var loadedPublication: Publication? = null
-        try {
-          val loadedBook =
-            withContext(ioDispatcher) {
-              when (val result = openBook(seriesId)) {
-                ReaderResult.Error.NotFound -> LoadedReaderBook(ReaderUiState.Error.NotFound)
-                ReaderResult.Error.ParseFailed -> LoadedReaderBook(ReaderUiState.Error.ParseFailed)
-                ReaderResult.Error.ReadFailed -> LoadedReaderBook(ReaderUiState.Error.ReadFailed)
-                is ReaderResult.Success -> {
-                  loadedPublication = result.publication
-                  val loadedState =
-                    openReadableResourceAtOrAfter(result.publication, startIndex = 0)
-                      ?: ReaderUiState.Error.ParseFailed
-                  LoadedReaderBook(
-                    uiState = loadedState,
-                    publicationToKeep =
-                      result.publication.takeIf { loadedState is ReaderUiState.Ready },
-                  )
-                }
-              }
-            }
-          if (currentSeriesId == seriesId) {
-            loadedBook.publicationToKeep?.let { keptPublication ->
-              publication = keptPublication
-              loadedPublication = null
-            }
-            _uiState.value = loadedBook.uiState
+        val result = withContext(ioDispatcher) { openBook(seriesId) }
+        when (result) {
+          is ReaderResult.Success -> {
+            publication = result.publication
+            _uiState.value = ReaderUiState.Ready
           }
-        } finally {
-          loadedPublication?.close()
-        }
-      }
-  }
-
-  fun openNextResource() {
-    val openedPublication = publication ?: return
-    val currentState = _uiState.value as? ReaderUiState.Ready ?: return
-
-    openJob?.cancel()
-    openJob =
-      viewModelScope.launch {
-        val loadedState =
-          withContext(ioDispatcher) {
-            openReadableResourceAtOrAfter(
-              openedPublication = openedPublication,
-              startIndex = currentState.resourceIndex,
-            )
-          }
-        if (publication === openedPublication && loadedState != null) {
-          _uiState.value = loadedState
+          ReaderResult.Error.NotFound -> _uiState.value = ReaderUiState.Error.NotFound
+          ReaderResult.Error.ParseFailed -> _uiState.value = ReaderUiState.Error.OpenFailed
+          ReaderResult.Error.ReadFailed -> _uiState.value = ReaderUiState.Error.OpenFailed
         }
       }
   }
@@ -112,33 +64,4 @@ class ReaderViewModel(
     openJob?.cancel()
     publication?.close()
   }
-
-  private suspend fun openReadableResourceAtOrAfter(
-    openedPublication: Publication,
-    startIndex: Int,
-  ): ReaderUiState? {
-    val readingOrder = openedPublication.readingOrder
-
-    for (index in startIndex until readingOrder.size) {
-      val link = readingOrder[index]
-      val resource = openedPublication.get(link) ?: continue
-      val bytes = resource.read().getOrNull() ?: return ReaderUiState.Error.ReadFailed
-      val chapterHtml = ChapterHtmlExtractor.bodyHtml(bytes.toString(Charsets.UTF_8))
-      if (ChapterHtmlExtractor.hasReadableText(chapterHtml)) {
-        return ReaderUiState.Ready(
-          href = link.href.toString(),
-          resourceIndex = index + 1,
-          resourceCount = openedPublication.readingOrder.size,
-          chapterHtml = chapterHtml,
-        )
-      }
-    }
-
-    return null
-  }
 }
-
-private data class LoadedReaderBook(
-  val uiState: ReaderUiState,
-  val publicationToKeep: Publication? = null,
-)

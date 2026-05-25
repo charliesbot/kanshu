@@ -33,7 +33,6 @@ desugarJdkLibs = "2.1.5"
 androidxFragment = "1.8.9"
 room = "2.8.4"
 ksp = "2.3.8"
-jsoup = "1.22.2"
 robolectric = "4.16.1"
 
 [libraries]
@@ -83,7 +82,6 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
-jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [plugins]
