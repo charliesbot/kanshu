@@ -23,6 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
@@ -71,11 +73,14 @@ private fun ReaderMessage(text: String) {
 private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
   var webView by remember { mutableStateOf<WebView?>(null) }
   var diagnostics by remember { mutableStateOf("") }
+  var diagnosticPanelHeightPx by remember { mutableStateOf(0) }
+  val density = LocalDensity.current
+  val diagnosticPanelHeight = with(density) { diagnosticPanelHeightPx.toDp() }
   val bridge = remember { DiagnosticBridge { diagnostics = it } }
 
   Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
-      modifier = Modifier.fillMaxSize(),
+      modifier = Modifier.fillMaxSize().padding(bottom = diagnosticPanelHeight),
       factory = { context ->
         WebView(context).apply {
           webView = this
@@ -87,6 +92,20 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
           settings.allowContentAccess = false
           settings.blockNetworkLoads = true
           addJavascriptInterface(bridge, "KanshuDiagnostics")
+          addOnLayoutChangeListener {
+            view,
+            left,
+            top,
+            right,
+            bottom,
+            oldLeft,
+            oldTop,
+            oldRight,
+            oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+              (view as WebView).applyNativeGeometry()
+            }
+          }
           webViewClient =
             object : WebViewClient() {
               override fun onPageFinished(view: WebView, url: String?) {
@@ -122,6 +141,7 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
       modifier =
         Modifier.align(Alignment.BottomCenter)
           .fillMaxWidth()
+          .onSizeChanged { diagnosticPanelHeightPx = it.height }
           .background(ComposeColor.White)
           .padding(12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
