@@ -114,6 +114,8 @@ class ReaderViewModelTest {
 
       val state = viewModel.uiState.value as ReaderUiState.Ready
       assertEquals("chapter.xhtml", state.href)
+      assertEquals(2, state.resourceIndex)
+      assertEquals(2, state.resourceCount)
       assertTrue(state.chapterHtml.contains("Chapter text"))
     }
 

@@ -135,6 +135,10 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
       )
       if (diagnostics.isNotBlank()) {
         KanshuText(
+          text = "Resource ${state.resourceIndex}/${state.resourceCount}: ${state.href}",
+          style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        )
+        KanshuText(
           text = diagnostics,
           style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )

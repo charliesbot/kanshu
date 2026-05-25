@@ -17,7 +17,12 @@ import org.readium.r2.shared.publication.Publication
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
-  data class Ready(val href: String, val chapterHtml: String) : ReaderUiState
+  data class Ready(
+    val href: String,
+    val resourceIndex: Int,
+    val resourceCount: Int,
+    val chapterHtml: String,
+  ) : ReaderUiState
 
   sealed interface Error : ReaderUiState {
     data object NotFound : Error
@@ -85,12 +90,17 @@ class ReaderViewModel(
   private suspend fun openFirstChapter(openedPublication: Publication): ReaderUiState {
     if (openedPublication.readingOrder.isEmpty()) return ReaderUiState.Error.ParseFailed
 
-    for (link in openedPublication.readingOrder) {
+    for ((index, link) in openedPublication.readingOrder.withIndex()) {
       val resource = openedPublication.get(link) ?: continue
       val bytes = resource.read().getOrNull() ?: return ReaderUiState.Error.ReadFailed
       val chapterHtml = ChapterHtmlExtractor.bodyHtml(bytes.toString(Charsets.UTF_8))
       if (ChapterHtmlExtractor.hasReadableText(chapterHtml)) {
-        return ReaderUiState.Ready(href = link.href.toString(), chapterHtml = chapterHtml)
+        return ReaderUiState.Ready(
+          href = link.href.toString(),
+          resourceIndex = index + 1,
+          resourceCount = openedPublication.readingOrder.size,
+          chapterHtml = chapterHtml,
+        )
       }
     }
 
