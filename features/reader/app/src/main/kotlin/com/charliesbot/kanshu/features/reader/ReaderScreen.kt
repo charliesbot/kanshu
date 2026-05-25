@@ -77,37 +77,8 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResou
     AndroidView(
       modifier = Modifier.fillMaxSize().padding(bottom = ReaderDiagnosticsPanelHeight),
       factory = { context ->
-        WebView(context).apply {
-          val diagnosticsBridge = DiagnosticBridge { diagnostics = it }
-          webView = this
-          setBackgroundColor(Color.WHITE)
-          isHorizontalScrollBarEnabled = false
-          isVerticalScrollBarEnabled = false
-          settings.javaScriptEnabled = true
-          settings.allowFileAccess = false
-          settings.allowContentAccess = false
-          settings.blockNetworkLoads = true
-          addJavascriptInterface(diagnosticsBridge, "KanshuDiagnostics")
-          addOnLayoutChangeListener {
-            view,
-            left,
-            top,
-            right,
-            bottom,
-            oldLeft,
-            oldTop,
-            oldRight,
-            oldBottom ->
-            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
-              (view as WebView).applyNativeGeometry()
-            }
-          }
-          webViewClient =
-            object : WebViewClient() {
-              override fun onPageFinished(view: WebView, url: String?) {
-                view.applyNativeGeometry()
-              }
-            }
+        WebView(context).configureReaderWebView(onDiagnostics = { diagnostics = it }).also {
+          webView = it
         }
       },
       update = { view ->
@@ -133,34 +104,73 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResou
       },
     )
 
-    Column(
-      modifier =
-        Modifier.align(Alignment.BottomCenter)
-          .fillMaxWidth()
-          .height(ReaderDiagnosticsPanelHeight)
-          .background(ComposeColor.White)
-          .padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      KanshuButton(
-        text = stringResource(R.string.reader_debug_next_page),
-        onClick = {
-          webView?.evaluateJavascript(NextPageScript) { result ->
-            if (result == "true") onNextResource()
-          }
-        },
-        modifier = Modifier.fillMaxWidth(),
-      )
-      if (diagnostics.isNotBlank()) {
-        KanshuText(
-          text = "Resource ${state.resourceIndex}/${state.resourceCount}: ${state.href}",
-          style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
-        KanshuText(
-          text = diagnostics,
-          style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
+    ReaderDiagnosticsPanel(
+      state = state,
+      diagnostics = diagnostics,
+      onNextPage = {
+        webView?.evaluateJavascript(NextPageScript) { result ->
+          if (result == "true") onNextResource()
+        }
+      },
+      modifier = Modifier.align(Alignment.BottomCenter),
+    )
+  }
+}
+
+private fun WebView.configureReaderWebView(onDiagnostics: (String) -> Unit): WebView = apply {
+  val diagnosticsBridge = DiagnosticBridge(onDiagnostics)
+  setBackgroundColor(Color.WHITE)
+  isHorizontalScrollBarEnabled = false
+  isVerticalScrollBarEnabled = false
+  settings.javaScriptEnabled = true
+  settings.allowFileAccess = false
+  settings.allowContentAccess = false
+  settings.blockNetworkLoads = true
+  addJavascriptInterface(diagnosticsBridge, "KanshuDiagnostics")
+  addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom
+    ->
+    if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+      (view as WebView).applyNativeGeometry()
+    }
+  }
+  webViewClient =
+    object : WebViewClient() {
+      override fun onPageFinished(view: WebView, url: String?) {
+        view.applyNativeGeometry()
       }
+    }
+}
+
+@Composable
+private fun ReaderDiagnosticsPanel(
+  state: ReaderUiState.Ready,
+  diagnostics: String,
+  onNextPage: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(ReaderDiagnosticsPanelHeight)
+        .background(ComposeColor.White)
+        .padding(12.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    KanshuButton(
+      text = stringResource(R.string.reader_debug_next_page),
+      onClick = onNextPage,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    if (diagnostics.isNotBlank()) {
+      KanshuText(
+        text = "Resource ${state.resourceIndex}/${state.resourceCount}: ${state.href}",
+        style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
+      KanshuText(
+        text = diagnostics,
+        style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
     }
   }
 }
