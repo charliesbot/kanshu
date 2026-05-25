@@ -3,6 +3,8 @@ package com.charliesbot.kanshu.features.reader
 import android.content.Context
 import android.util.Log
 import android.webkit.MimeTypeMap
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -20,6 +22,7 @@ class CachedResource(
   val path: String,
   val spineIndex: Int,
   val loadId: Int,
+  val targetPageIndex: Int,
   val bytes: ByteArray,
   val mimeType: String,
 ) {
@@ -32,6 +35,7 @@ class CachedResource(
     if (path != other.path) return false
     if (spineIndex != other.spineIndex) return false
     if (loadId != other.loadId) return false
+    if (targetPageIndex != other.targetPageIndex) return false
     if (!bytes.contentEquals(other.bytes)) return false
     if (mimeType != other.mimeType) return false
 
@@ -42,6 +46,7 @@ class CachedResource(
     var result = path.hashCode()
     result = 31 * result + spineIndex
     result = 31 * result + loadId
+    result = 31 * result + targetPageIndex
     result = 31 * result + bytes.contentHashCode()
     result = 31 * result + mimeType.hashCode()
     return result
@@ -54,9 +59,74 @@ class KanshuWebViewClient(
   private val publication: Publication,
   private val readLock: Mutex,
   private val currentChapter: CachedResource,
+  private val onChapterPageFinished: (WebView, CachedResource) -> Unit = { _, _ -> },
+  private val onMainFrameLoadFailed: () -> Unit = {},
 ) : WebViewClient() {
 
   private val activeChapterLoadId: Int = currentChapter.loadId
+
+  override fun onPageFinished(view: WebView, url: String) {
+    val parsed = android.net.Uri.parse(url)
+    if (parsed.isCurrentChapterUrl()) {
+      onChapterPageFinished(view, currentChapter)
+    }
+  }
+
+  override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+    val url = request.url ?: return true
+    if (url.scheme != "https" || url.host != "kanshu.invalid") return true
+
+    val path = KanshuPathNormalizer.normalizeAndRejectTraversal(url.path.orEmpty()) ?: return true
+    if (path != currentChapter.path) return true
+
+    val loadId = url.getQueryParameter("__kanshu_load")?.toIntOrNull()
+    if (loadId == activeChapterLoadId) return false
+
+    val fragment = url.fragment ?: return true
+    val target =
+      url
+        .buildUpon()
+        .clearQuery()
+        .appendQueryParameter("__kanshu_load", activeChapterLoadId.toString())
+        .fragment(fragment)
+        .build()
+    view.loadUrl(target.toString())
+    return true
+  }
+
+  override fun onReceivedError(
+    view: WebView,
+    request: WebResourceRequest,
+    error: WebResourceError,
+  ) {
+    if (request.isForMainFrame && request.url.isCurrentChapterUrl()) {
+      onMainFrameLoadFailed()
+    }
+  }
+
+  override fun onReceivedHttpError(
+    view: WebView,
+    request: WebResourceRequest,
+    errorResponse: WebResourceResponse,
+  ) {
+    if (request.isForMainFrame && request.url.isCurrentChapterUrl()) {
+      onMainFrameLoadFailed()
+    }
+  }
+
+  override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+    onMainFrameLoadFailed()
+    return true
+  }
+
+  private fun android.net.Uri.isCurrentChapterUrl(): Boolean {
+    val path = KanshuPathNormalizer.normalizeAndRejectTraversal(path.orEmpty()) ?: return false
+    val loadId = getQueryParameter("__kanshu_load")?.toIntOrNull()
+    return scheme == "https" &&
+      host == "kanshu.invalid" &&
+      path == currentChapter.path &&
+      loadId == activeChapterLoadId
+  }
 
   override fun shouldInterceptRequest(
     view: WebView,

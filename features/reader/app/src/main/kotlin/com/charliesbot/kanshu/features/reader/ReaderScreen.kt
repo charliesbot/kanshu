@@ -287,6 +287,28 @@ private fun WebView.loadChapter(
       publication = publication,
       readLock = viewModel.readLock,
       currentChapter = currentChapter,
+      onChapterPageFinished = { finishedWebView, chapter ->
+        val script =
+          runCatching {
+              context.assets.open("kanshu-reader.js").bufferedReader(Charsets.UTF_8).use {
+                it.readText()
+              }
+            }
+            .getOrNull()
+        if (script == null) {
+          viewModel.onMainFrameLoadFailed()
+        } else {
+          finishedWebView.evaluateJavascript(
+            viewModel.buildChapterBootstrapScript(
+              loadId = chapter.loadId,
+              targetPageIndex = chapter.targetPageIndex,
+              scriptBody = script,
+            ),
+            null,
+          )
+        }
+      },
+      onMainFrameLoadFailed = viewModel::onMainFrameLoadFailed,
     )
 
   loadUrl("https://kanshu.invalid/${currentChapter.path}?__kanshu_load=${currentChapter.loadId}")

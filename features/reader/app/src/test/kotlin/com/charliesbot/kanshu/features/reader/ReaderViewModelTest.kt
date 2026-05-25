@@ -12,6 +12,7 @@ import com.charliesbot.kanshu.core.sync.SyncRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,6 +27,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -328,7 +330,7 @@ class ReaderViewModelTest {
     viewModel.handleBridgeEvent(
       BridgeEvent.Repaginated(
         chapterLoadId = loadId,
-        settingsRevision = 1,
+        settingsRevision = 0,
         pageCount = 3,
         restoredPageIndex = 0,
         stalled = false,
@@ -348,6 +350,68 @@ class ReaderViewModelTest {
   }
 
   @Test
+  fun `goForward repeated while pending coalesces from pending target`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = readyState.currentChapter.loadId,
+        settingsRevision = 0,
+        pageCount = 3,
+        restoredPageIndex = 0,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
+    val first = async { viewModel.evaluateJs.first() }
+    runCurrent()
+    viewModel.goForward()
+    advanceUntilIdle()
+    assertEquals("kanshu.scrollToPage(1)", first.await())
+
+    val second = async { viewModel.evaluateJs.first() }
+    runCurrent()
+    viewModel.goForward()
+    advanceUntilIdle()
+    assertEquals("kanshu.scrollToPage(2)", second.await())
+  }
+
+  @Test
+  fun `goForward before initial repagination does not emit scroll command`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    viewModel.goForward()
+    advanceUntilIdle()
+
+    assertEquals(null, withTimeoutOrNull(50) { viewModel.evaluateJs.first() })
+    assertEquals(0, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `buildChapterBootstrapScript sets load id before bridge script and repaginates after`() =
+    runTest {
+      coEvery { openBook(any()) } returns ReaderResult.Success(fakePublication(), fakeFile)
+      val viewModel = newViewModel()
+      advanceUntilIdle()
+
+      val script = viewModel.buildChapterBootstrapScript(42, 3, "window.kanshu = {};")
+
+      assertTrue(
+        script.indexOf("window.__kanshuChapterLoadId__ = 42;") <
+          script.indexOf("window.kanshu = {};")
+      )
+      assertTrue(script.endsWith("window.kanshu.repaginate(0, 3);"))
+    }
+
+  @Test
   fun `goBackward within chapter emits evaluateJs scrollToPage`() = runTest {
     val publication = fakePublication()
     coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
@@ -359,7 +423,7 @@ class ReaderViewModelTest {
     viewModel.handleBridgeEvent(
       BridgeEvent.Repaginated(
         chapterLoadId = loadId,
-        settingsRevision = 1,
+        settingsRevision = 0,
         pageCount = 3,
         restoredPageIndex = 2,
         stalled = false,
@@ -391,7 +455,7 @@ class ReaderViewModelTest {
     viewModel.handleBridgeEvent(
       BridgeEvent.Repaginated(
         chapterLoadId = loadId,
-        settingsRevision = 1,
+        settingsRevision = 0,
         pageCount = 3,
         restoredPageIndex = 2,
         stalled = false,
@@ -421,6 +485,17 @@ class ReaderViewModelTest {
     assertEquals(1, readyState.currentChapter.spineIndex)
     assertEquals(0, viewModel.pageIndex.value)
 
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = readyState.currentChapter.loadId,
+        settingsRevision = 0,
+        pageCount = 3,
+        restoredPageIndex = 0,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
     viewModel.goBackward()
     advanceUntilIdle()
 
@@ -445,6 +520,56 @@ class ReaderViewModelTest {
     advanceUntilIdle()
 
     assertEquals(1, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `handleBridgeEvent ignores duplicate settled position reports`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val loadId = readyState.currentChapter.loadId
+    val event =
+      BridgeEvent.PageSettled(chapterLoadId = loadId, pageIndex = 1, progressInSpine = 0.5f)
+
+    viewModel.handleBridgeEvent(event)
+    viewModel.handleBridgeEvent(event)
+    advanceUntilIdle()
+
+    verify(exactly = 1) { sync.setProgress(any(), any(), any(), any()) }
+    assertEquals(1, viewModel.pageIndex.value)
+  }
+
+  @Test
+  fun `handleBridgeEvent rejects stale settings revision repagination`() = runTest {
+    val publication = fakePublication()
+    coEvery { openBook(any()) } returns ReaderResult.Success(publication, fakeFile)
+    val viewModel = newViewModel()
+    advanceUntilIdle()
+
+    val readyState = viewModel.uiState.value as ReaderUiState.Ready
+    val loadId = readyState.currentChapter.loadId
+
+    preferences.seed(ReaderPreferences(fontScale = 1.2f))
+    advanceUntilIdle()
+    preferences.seed(ReaderPreferences(fontScale = 1.3f))
+    advanceUntilIdle()
+
+    viewModel.handleBridgeEvent(
+      BridgeEvent.Repaginated(
+        chapterLoadId = loadId,
+        settingsRevision = 1,
+        pageCount = 9,
+        restoredPageIndex = 8,
+        stalled = false,
+      )
+    )
+    advanceUntilIdle()
+
+    assertEquals(0, viewModel.pageIndex.value)
+    assertEquals(1, viewModel.pageCount.value)
   }
 
   @Test

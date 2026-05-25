@@ -1,11 +1,17 @@
 (function() {
   const bridge = window.kanshuBridge;
-  const loadId = window.__kanshuChapterLoadId__;
   let activeSettingsRevision = 0;
   let scrollTimeout = null;
 
+  function chapterLoadId() {
+    return window.__kanshuChapterLoadId__;
+  }
+
   function afterFontsOrTimeout(callback) {
+    let fired = false;
     const runCallback = () => {
+      if (fired) return;
+      fired = true;
       if (fontTimeout) {
         clearTimeout(fontTimeout);
         fontTimeout = null;
@@ -34,11 +40,11 @@
       const scrollWidth = document.documentElement.scrollWidth || document.body.scrollWidth;
       const viewportWidth = window.innerWidth;
 
-      const pageIndex = Math.round(scrollX / viewportWidth);
+      const pageIndex = Math.floor(scrollX / viewportWidth);
       const maxScrollX = Math.max(0, scrollWidth - viewportWidth);
       const progress = maxScrollX === 0 ? 0.0 : Math.min(1.0, Math.max(0.0, scrollX / maxScrollX));
 
-      bridge.onPageSettled(loadId, pageIndex, progress);
+      bridge.onPageSettled(chapterLoadId(), pageIndex, progress);
     },
 
     repaginate: function(revision, restoredPageIndex = 0) {
@@ -62,18 +68,18 @@
           if (sameCount >= 2) {
             // Layout is stable
             const viewportWidth = window.innerWidth;
-            const pageCount = Math.max(1, Math.round(currentWidth / viewportWidth));
+            const pageCount = Math.max(1, Math.ceil(currentWidth / viewportWidth));
             const clampedRestored = Math.min(pageCount - 1, Math.max(0, restoredPageIndex));
             
             // Snap scroll to correct position
             window.scrollTo(clampedRestored * viewportWidth, 0);
             
-            bridge.onRepaginated(loadId, revision, pageCount, clampedRestored, false);
+            bridge.onRepaginated(chapterLoadId(), revision, pageCount, clampedRestored, false);
           } else if (elapsed > 2000) {
             // Timeout reached, fallback
             const viewportWidth = window.innerWidth;
-            const pageCount = Math.max(1, Math.round(currentWidth / viewportWidth));
-            bridge.onRepaginated(loadId, revision, pageCount, restoredPageIndex, true);
+            const pageCount = Math.max(1, Math.ceil(currentWidth / viewportWidth));
+            bridge.onRepaginated(chapterLoadId(), revision, pageCount, restoredPageIndex, true);
           } else {
             requestAnimationFrame(checkFrame);
           }
@@ -151,17 +157,17 @@
             const newViewportWidth = window.innerWidth;
             const newMaxScrollX = Math.max(0, currentWidth - newViewportWidth);
             const targetScrollX = progressInSpine * newMaxScrollX;
-            const newPageIndex = Math.round(targetScrollX / newViewportWidth);
+            const newPageIndex = Math.floor(targetScrollX / newViewportWidth);
             
             // Snap scroll to target
             window.scrollTo(newPageIndex * newViewportWidth, 0);
             
-            const pageCount = Math.max(1, Math.round(currentWidth / newViewportWidth));
-            bridge.onRepaginated(loadId, revision, pageCount, newPageIndex, false);
+            const pageCount = Math.max(1, Math.ceil(currentWidth / newViewportWidth));
+            bridge.onRepaginated(chapterLoadId(), revision, pageCount, newPageIndex, false);
           } else if (elapsed > 2000) {
             const newViewportWidth = window.innerWidth;
-            const pageCount = Math.max(1, Math.round(currentWidth / newViewportWidth));
-            bridge.onRepaginated(loadId, revision, pageCount, 0, true);
+            const pageCount = Math.max(1, Math.ceil(currentWidth / newViewportWidth));
+            bridge.onRepaginated(chapterLoadId(), revision, pageCount, 0, true);
           } else {
             requestAnimationFrame(checkFrame);
           }
