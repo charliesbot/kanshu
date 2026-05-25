@@ -41,10 +41,8 @@ fun AppNavigation(start: NavKey) {
     transitionSpec = { NoTransition },
     popTransitionSpec = { NoTransition },
     predictivePopTransitionSpec = { NoTransition },
-    // Required for per-entry ViewModelStore — without rememberViewModelStoreNavEntryDecorator,
-    // every entry falls back to the activity's store and `koinViewModel { parametersOf(...) }`
-    // returns the first cached instance with stale params (e.g. opening book B reuses book A's
-    // ReaderViewModel).
+    // Required for per-entry ViewModelStore so feature screens with route-scoped ViewModels do not
+    // reuse the first cached instance with stale params.
     entryDecorators =
       listOf(
         rememberSaveableStateHolderNavEntryDecorator(),

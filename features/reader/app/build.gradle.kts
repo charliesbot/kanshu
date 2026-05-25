@@ -20,30 +20,13 @@ android {
 
 dependencies {
   coreLibraryDesugaring(libs.android.desugar.jdk.libs)
-  // :core:data is a deliberate exception. ReaderResult.Success carries a Readium Publication and
-  // Readium 3.x is an AAR whose public surface uses android.net.Uri, so the reader contract
-  // can't live in :core:domain (kotlin-jvm). The other features stay strict. See CLAUDE.md.
-  implementation(project(":core:model"))
-  implementation(project(":core:data"))
   implementation(project(":core:designsystem"))
-  implementation(project(":core:strings"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.foundation)
   implementation(libs.androidx.compose.ui.tooling.preview)
-  implementation(libs.androidx.lifecycle.runtime.ktx)
-  implementation(libs.androidx.lifecycle.runtime.compose)
-
-  implementation(libs.readium.shared)
-  implementation(libs.jsoup)
   implementation(libs.koin.compose)
-  implementation(libs.koin.compose.viewmodel)
 
   debugImplementation(libs.androidx.compose.ui.tooling)
-
-  testImplementation(libs.junit)
-  testImplementation(libs.mockk)
-  testImplementation(libs.kotlinx.coroutines.test)
-  testImplementation(libs.robolectric)
 }
