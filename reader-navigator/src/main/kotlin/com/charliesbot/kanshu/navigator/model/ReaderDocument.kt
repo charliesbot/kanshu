@@ -1,7 +1,13 @@
 package com.charliesbot.kanshu.navigator.model
 
-data class ReaderDocument(val blocks: List<ReaderBlock>)
+data class ReaderDocument(val blocks: List<ReaderBlock>, val language: String? = null)
 
+/**
+ * Block AST for the native reader engine.
+ *
+ * Phase 0 parser emits [ParagraphBlock] only. [HeadingBlock], [QuoteBlock], [ListBlock],
+ * [HorizontalRule], and [ImageBlock] are scaffolded for Phase 1 parser and layout work.
+ */
 sealed interface ReaderBlock
 
 data class ParagraphBlock(val spans: List<TextSpan>) : ReaderBlock
@@ -17,5 +23,3 @@ data class ListItem(val blocks: List<ReaderBlock>)
 data object HorizontalRule : ReaderBlock
 
 data class ImageBlock(val resourceHref: String, val alt: String?) : ReaderBlock
-
-data class UnsupportedBlock(val tagName: String) : ReaderBlock
