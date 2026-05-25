@@ -72,13 +72,13 @@ private fun ReaderMessage(text: String) {
 private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResource: () -> Unit) {
   var webView by remember { mutableStateOf<WebView?>(null) }
   var diagnostics by remember { mutableStateOf("") }
-  val bridge: DiagnosticBridge = remember { DiagnosticBridge { diagnostics = it } }
 
   Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
       modifier = Modifier.fillMaxSize().padding(bottom = ReaderDiagnosticsPanelHeight),
       factory = { context ->
         WebView(context).apply {
+          val diagnosticsBridge = DiagnosticBridge { diagnostics = it }
           webView = this
           setBackgroundColor(Color.WHITE)
           isHorizontalScrollBarEnabled = false
@@ -87,7 +87,7 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResou
           settings.allowFileAccess = false
           settings.allowContentAccess = false
           settings.blockNetworkLoads = true
-          addJavascriptInterface(bridge, "KanshuDiagnostics")
+          addJavascriptInterface(diagnosticsBridge, "KanshuDiagnostics")
           addOnLayoutChangeListener {
             view,
             left,
