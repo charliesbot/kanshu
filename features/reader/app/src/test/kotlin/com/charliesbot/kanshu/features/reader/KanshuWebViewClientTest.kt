@@ -7,6 +7,7 @@ import android.webkit.WebResourceRequest
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.sync.Mutex
 import org.junit.Before
@@ -36,6 +37,7 @@ class KanshuWebViewClientTest {
       path = "OEBPS/chapter1.xhtml",
       spineIndex = 0,
       loadId = 100,
+      targetPageIndex = 0,
       bytes = mockChapterBytes,
       mimeType = "application/xhtml+xml",
     )
@@ -150,6 +152,175 @@ class KanshuWebViewClientTest {
 
     val streamBytes = res.data.readBytes()
     assertTrue(streamBytes.contentEquals(mockImageBytes))
+  }
+
+  @Test
+  fun testAllowsSameChapterFragmentNavigationWithCurrentLoadId() {
+    val request =
+      createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100#footnote-1")
+
+    val shouldOverride = webViewClient.shouldOverrideUrlLoading(mockk(), request)
+
+    assertEquals(false, shouldOverride)
+  }
+
+  @Test
+  fun testSameChapterFragmentNavigationWithoutLoadIdAppendsLoadId() {
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml#footnote-1")
+    val webView = mockk<android.webkit.WebView>(relaxed = true)
+
+    val shouldOverride = webViewClient.shouldOverrideUrlLoading(webView, request)
+
+    assertEquals(true, shouldOverride)
+    verify {
+      webView.loadUrl("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100#footnote-1")
+    }
+  }
+
+  @Test
+  fun testOverridesCrossChapterNavigation() {
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/chapter2.xhtml#section-2")
+
+    val shouldOverride = webViewClient.shouldOverrideUrlLoading(mockk(), request)
+
+    assertEquals(true, shouldOverride)
+  }
+
+  @Test
+  fun testOverridesExternalNavigation() {
+    val request = createMockRequest("https://example.com/chapter.xhtml")
+
+    val shouldOverride = webViewClient.shouldOverrideUrlLoading(mockk(), request)
+
+    assertEquals(true, shouldOverride)
+  }
+
+  @Test
+  fun testMainFrameHttpErrorCallsFailureCallback() {
+    var failed = false
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onMainFrameLoadFailed = { failed = true },
+      )
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100")
+    every { request.isForMainFrame } returns true
+
+    client.onReceivedHttpError(mockk(), request, mockk())
+
+    assertEquals(true, failed)
+  }
+
+  @Test
+  fun testMainFrameReceivedErrorCallsFailureCallback() {
+    var failed = false
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onMainFrameLoadFailed = { failed = true },
+      )
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100")
+    every { request.isForMainFrame } returns true
+
+    client.onReceivedError(mockk(), request, mockk())
+
+    assertEquals(true, failed)
+  }
+
+  @Test
+  fun testStaleMainFrameHttpErrorDoesNotCallFailureCallback() {
+    var failed = false
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onMainFrameLoadFailed = { failed = true },
+      )
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/old-chapter.xhtml")
+    every { request.isForMainFrame } returns true
+
+    client.onReceivedHttpError(mockk(), request, mockk())
+
+    assertEquals(false, failed)
+  }
+
+  @Test
+  fun testStaleSameChapterLoadIdHttpErrorDoesNotCallFailureCallback() {
+    var failed = false
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onMainFrameLoadFailed = { failed = true },
+      )
+    val request = createMockRequest("https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=99")
+    every { request.isForMainFrame } returns true
+
+    client.onReceivedHttpError(mockk(), request, mockk())
+
+    assertEquals(false, failed)
+  }
+
+  @Test
+  fun testRenderProcessGoneCallsFailureCallbackAndHandlesCrash() {
+    var failed = false
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onMainFrameLoadFailed = { failed = true },
+      )
+
+    val handled = client.onRenderProcessGone(mockk(), mockk())
+
+    assertEquals(true, handled)
+    assertEquals(true, failed)
+  }
+
+  @Test
+  fun testPageFinishedCallsChapterFinishedCallback() {
+    var callbackChapter: CachedResource? = null
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onChapterPageFinished = { _, chapter -> callbackChapter = chapter },
+      )
+
+    client.onPageFinished(mockk(), "https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=100")
+
+    assertEquals(currentChapter, callbackChapter)
+  }
+
+  @Test
+  fun testStalePageFinishedDoesNotCallChapterFinishedCallback() {
+    var callbackChapter: CachedResource? = null
+    val client =
+      KanshuWebViewClient(
+        context = context,
+        publication = publication,
+        readLock = readLock,
+        currentChapter = currentChapter,
+        onChapterPageFinished = { _, chapter -> callbackChapter = chapter },
+      )
+
+    client.onPageFinished(mockk(), "https://kanshu.invalid/OEBPS/chapter1.xhtml?__kanshu_load=99")
+
+    assertEquals(null, callbackChapter)
   }
 
   private fun assertNotNull(actual: Any?) {

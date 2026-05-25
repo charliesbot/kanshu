@@ -134,12 +134,7 @@ object KanshuHtmlSanitizer {
    * declaration-level scrubbing, visual error badging for unrecognized tags, and wraps it inside
    * the trusted Kanshu reader HTML shell.
    */
-  fun sanitizeAndWrap(
-    rawHtml: String,
-    loadId: Int = 0,
-    targetPageIndex: Int = 0,
-    prefs: ReaderPreferences = ReaderPreferences(),
-  ): String {
+  fun sanitizeAndWrap(rawHtml: String, prefs: ReaderPreferences = ReaderPreferences()): String {
     val doc = Jsoup.parse(rawHtml)
 
     // First pass: Walk the DOM tree and clean/badge elements in place
@@ -198,22 +193,6 @@ object KanshuHtmlSanitizer {
     val pageContainer = body.appendElement("main").attr("id", "kanshu-page")
 
     doc.body().children().forEach { child -> pageContainer.appendChild(child.clone()) }
-
-    // Inject JS bridge script at the bottom of the body
-    body.appendElement("script").apply {
-      attr("src", "https://kanshu.invalid/__kanshu__/kanshu-reader.js")
-    }
-    body.appendElement("script").apply {
-      val jsContent =
-        """
-        window.__kanshuChapterLoadId__ = $loadId;
-        window.addEventListener('DOMContentLoaded', () => {
-          window.kanshu.repaginate(0, $targetPageIndex);
-        });
-      """
-          .trimIndent()
-      appendChild(DataNode(jsContent))
-    }
 
     return "<!DOCTYPE html>\n" + shellDoc.outerHtml()
   }

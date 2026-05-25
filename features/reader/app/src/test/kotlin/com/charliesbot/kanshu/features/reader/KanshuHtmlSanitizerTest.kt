@@ -364,21 +364,15 @@ class KanshuHtmlSanitizerTest {
   }
 
   @Test
-  fun testScriptAndPreferenceStyleInjection() {
+  fun testPreferenceStyleInjectionDoesNotInjectBridgeScript() {
     val raw = "<html><body><p>Test</p></body></html>"
     val prefs = ReaderPreferences(font = ReaderFont.Bitter, fontScale = 1.5f)
-    val result =
-      KanshuHtmlSanitizer.sanitizeAndWrap(
-        rawHtml = raw,
-        loadId = 42,
-        targetPageIndex = 3,
-        prefs = prefs,
-      )
+    val result = KanshuHtmlSanitizer.sanitizeAndWrap(rawHtml = raw, prefs = prefs)
 
-    // Verify script tags are injected
-    assertTrue(result.contains("window.__kanshuChapterLoadId__ = 42;"))
-    assertTrue(result.contains("window.kanshu.repaginate(0, 3);"))
-    assertTrue(result.contains("https://kanshu.invalid/__kanshu__/kanshu-reader.js"))
+    // The trusted bridge is injected by Kotlin after WebView load, not written into the shell.
+    assertFalse(result.contains("window.__kanshuChapterLoadId__"))
+    assertFalse(result.contains("window.kanshu.repaginate"))
+    assertFalse(result.contains("https://kanshu.invalid/__kanshu__/kanshu-reader.js"))
 
     // Verify preference CSS variables are injected in style block
     assertTrue(result.contains("--reader-font: \"Bitter-Kanshu\""))
