@@ -4,9 +4,13 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,14 +76,27 @@ private fun ReaderMessage(text: String) {
 private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResource: () -> Unit) {
   var webView by remember { mutableStateOf<WebView?>(null) }
   var diagnostics by remember { mutableStateOf("") }
+  var overlayVisible by remember { mutableStateOf(false) }
 
   Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
       modifier = Modifier.fillMaxSize().padding(bottom = ReaderDiagnosticsPanelHeight),
       factory = { context ->
-        WebView(context).configureReaderWebView(onDiagnostics = { diagnostics = it }).also {
-          webView = it
-        }
+        WebView(context)
+          .configureReaderWebView(
+            onDiagnostics = { diagnostics = it },
+            onTapZone = { view, tapZone ->
+              when (tapZone) {
+                ReaderTapZone.PreviousPage -> view.evaluateJavascript(PreviousPageScript, null)
+                ReaderTapZone.Overlay -> overlayVisible = true
+                ReaderTapZone.NextPage ->
+                  view.evaluateJavascript(NextPageScript) { result ->
+                    if (result == "true") onNextResource()
+                  }
+              }
+            },
+          )
+          .also { webView = it }
       },
       update = { view ->
         if (view.tag != state.href) {
@@ -114,11 +131,58 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResou
       },
       modifier = Modifier.align(Alignment.BottomCenter),
     )
+
+    if (overlayVisible) {
+      ReaderOverlayPlaceholder(
+        onDismiss = { overlayVisible = false },
+        modifier = Modifier.fillMaxSize().padding(bottom = ReaderDiagnosticsPanelHeight),
+      )
+    }
   }
 }
 
-private fun WebView.configureReaderWebView(onDiagnostics: (String) -> Unit): WebView = apply {
-  val diagnosticsBridge = DiagnosticBridge(onDiagnostics)
+@Composable
+private fun ReaderOverlayPlaceholder(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+  val closeLabel = stringResource(R.string.reader_overlay_close)
+
+  Box(
+    modifier = modifier.clickable(onClickLabel = closeLabel, onClick = onDismiss).padding(24.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(KanshuTheme.colors.background)
+          .border(1.dp, KanshuTheme.colors.border)
+          .padding(24.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      KanshuText(
+        text = stringResource(R.string.reader_overlay_placeholder),
+        style = KanshuTheme.typography.titleLarge,
+      )
+    }
+  }
+}
+
+private enum class ReaderTapZone {
+  PreviousPage,
+  Overlay,
+  NextPage,
+}
+
+private fun WebView.configureReaderWebView(
+  onDiagnostics: (String) -> Unit,
+  onTapZone: (WebView, ReaderTapZone) -> Unit,
+): WebView = apply {
+  var hasSelection = false
+  val diagnosticsBridge =
+    DiagnosticBridge(onDiagnostics = onDiagnostics, onSelectionChanged = { hasSelection = it })
+  val tapSlop = ViewConfiguration.get(context).scaledTouchSlop
+  var downX = 0f
+  var downY = 0f
+  var downTime = 0L
+
   setBackgroundColor(Color.WHITE)
   isHorizontalScrollBarEnabled = false
   isVerticalScrollBarEnabled = false
@@ -127,6 +191,27 @@ private fun WebView.configureReaderWebView(onDiagnostics: (String) -> Unit): Web
   settings.allowContentAccess = false
   settings.blockNetworkLoads = true
   addJavascriptInterface(diagnosticsBridge, "KanshuDiagnostics")
+  setOnTouchListener { view, event ->
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        downX = event.x
+        downY = event.y
+        downTime = event.eventTime
+      }
+      MotionEvent.ACTION_UP -> {
+        val distanceX = kotlin.math.abs(event.x - downX)
+        val distanceY = kotlin.math.abs(event.y - downY)
+        val isTap =
+          event.eventTime - downTime < ViewConfiguration.getLongPressTimeout() &&
+            distanceX <= tapSlop &&
+            distanceY <= tapSlop
+        if (isTap && !hasSelection) {
+          onTapZone(view as WebView, event.x.toReaderTapZone(view.width))
+        }
+      }
+    }
+    false
+  }
   addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom
     ->
     if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
@@ -139,6 +224,15 @@ private fun WebView.configureReaderWebView(onDiagnostics: (String) -> Unit): Web
         view.applyNativeGeometry()
       }
     }
+}
+
+private fun Float.toReaderTapZone(width: Int): ReaderTapZone {
+  val sideWidth = width * ReaderSideTapZoneFraction
+  return when {
+    this < sideWidth -> ReaderTapZone.PreviousPage
+    this > width - sideWidth -> ReaderTapZone.NextPage
+    else -> ReaderTapZone.Overlay
+  }
 }
 
 @Composable
@@ -177,14 +271,25 @@ private fun ReaderDiagnosticsPanel(
 
 private val ReaderDiagnosticsPanelHeight = 280.dp
 
-private const val NextPageScript = "window.kanshuNextPage && window.kanshuNextPage()"
+private const val ReaderSideTapZoneFraction = 0.15f
 
-class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
+private const val NextPageScript = "window.kanshuNextPage && window.kanshuNextPage()"
+private const val PreviousPageScript = "window.kanshuPreviousPage && window.kanshuPreviousPage()"
+
+class DiagnosticBridge(
+  private val onDiagnostics: (String) -> Unit,
+  private val onSelectionChanged: (Boolean) -> Unit,
+) {
   private val mainHandler = Handler(Looper.getMainLooper())
 
   @android.webkit.JavascriptInterface
   fun report(metrics: String) {
     mainHandler.post { onDiagnostics(metrics) }
+  }
+
+  @android.webkit.JavascriptInterface
+  fun selectionChanged(hasSelection: Boolean) {
+    mainHandler.post { onSelectionChanged(hasSelection) }
   }
 }
 
@@ -280,6 +385,11 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
             }, null, 2));
           }
 
+          function reportSelection() {
+            const selection = window.getSelection();
+            KanshuDiagnostics.selectionChanged(!!selection && !selection.isCollapsed && selection.toString().length > 0);
+          }
+
           window.kanshuApplyNativeGeometry = function (nativeWidth, nativeHeight) {
             window.__kanshuNativeViewportCssWidth = nativeWidth;
             window.__kanshuNativeViewportCssHeight = nativeHeight;
@@ -298,6 +408,16 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
             return false;
           };
 
+          window.kanshuPreviousPage = function () {
+            if (pageStep <= 0) measure();
+            if (pageStep <= 0) return false;
+            page.scrollLeft = Math.max(page.scrollLeft - pageStep, 0);
+            requestAnimationFrame(measure);
+            return false;
+          };
+
+          document.addEventListener('selectionchange', reportSelection);
+          reportSelection();
           requestAnimationFrame(measure);
         }());
       </script>
