@@ -8,6 +8,7 @@ Replace the `readium-navigator` dependency with a custom, lightweight, e-ink-opt
 
 - `docs/PRD.md` — project north star, e-ink interaction rules (animation ban, ≥48dp touch targets).
 - `docs/READIUM_API.md` — Readium surface reference. Current Gradle pin is 3.2.0; verify any API assumptions against the pinned version before implementation.
+- `docs/READIUM_PAGINATION_EXTRACTION.md` — source-cited notes from Readium 3.2.0 showing how styling and pagination are actually constructed. This doc wins over any older pagination sketch below when they disagree.
 - `docs/KINDLE_TYPOGRAPHY.md` — Kindle-style "layout mine, fonts yours" split underlying §3.5.
 
 ## 2. Problem Statement
@@ -195,11 +196,15 @@ class KanshuWebViewClient(
 
 ### 3.2 CSS Multi-Column Pagination
 
-We layout the active chapter inside a Kanshu-owned shell. Publisher XHTML is inserted inside `#kanshu-page`; Kanshu owns legibility, spacing, and page geometry through CSS variables.
+We layout the active chapter inside a Kanshu-owned shell. Kanshu owns legibility, spacing, and page geometry through CSS variables.
+
+**Measurement-first requirement.** The previous custom pager failed because the proposed `#kanshu-page` column container collapsed to a measured `64px` height. Do not treat the sample shell below as the final implementation contract. The next renderer PR must first run a geometry measurement spike that decides whether the column container is `html`, `body`, or `#kanshu-page`, and logs computed `height`, `clientHeight`, `scrollWidth`, `scrollHeight`, `columnWidth`, and `columnGap` before any progress, settings, TOC, or overlay work returns.
+
+The source-backed extraction in `docs/READIUM_PAGINATION_EXTRACTION.md` is the current authority: Readium 3.2.0 applies CSS columns to `:root`, gives the column container explicit viewport-sized width and height, derives page width from the actual Android WebView viewport divided by `devicePixelRatio`, and repairs `overflow-x: hidden` by forcing root/body overflow back to visible. Kanshu can choose a different shell shape, but it must prove the same invariants with measurements.
 
 The CSS below lives in `features/reader/app/src/main/assets/kanshu-reader.css` and is linked from the shell rather than inlined into every chapter. WebView re-requests the stylesheet and fonts through the local `__kanshu__` route on each chapter load; those asset reads are cheap and avoid stale WebView cache behavior.
 
-The shell template is the contract between sanitizer, CSS, and bridge:
+The shell template below is a provisional sketch for the measurement spike. The responsibilities are contractual: sanitizer output must enter a trusted Kanshu shell, Kanshu CSS must load after publisher CSS, and the bridge must be Kanshu-owned. The exact geometry container is not contractual until Phase 0 proves it.
 
 ```html
 <!DOCTYPE html>
@@ -333,7 +338,7 @@ Set the WebView background color at construction (`Color.WHITE` or the active re
 - No smooth scroll, no ViewPager animation, no transition frames.
 - Target one visible e-ink update after layout is stable, while accepting that WebView can invalidate again after late image/font layout.
 - Chapter boundaries are explicit: next page at the end of a chapter loads the next spine item at page `0`; previous page at page `0` loads the previous spine item at its last page.
-- Navigation crosses the bridge as a **page index**, never a pixel offset. Kotlin calls `kanshu.scrollToPage(index)`; the shell script computes `index * window.innerWidth` in JS and issues `window.scrollTo(...)`. Keeping the multiplication on the JS side avoids DPR drift between `WebView.width` (device pixels) and `window.innerWidth` (CSS pixels), which would otherwise land scrolls off the column boundary and look like §3.9 feedback-guard violations. Bridge reports read `window.scrollX` and `window.innerWidth` from the same JS context.
+- Navigation crosses the bridge as a **page index**, never a persisted pixel offset. Kotlin calls `kanshu.scrollToPage(index)`; the shell script computes `index * pageWidth` and issues an instant DOM scroll. `pageWidth` must not be assumed to be `window.innerWidth` until measured. Readium 3.2.0 avoids `window.innerWidth` on Android because non-integer device pixel ratios can misalign columns; the measurement spike must compare `window.innerWidth`, `document.documentElement.clientWidth`, and `WebView.width / devicePixelRatio` on the Boox target before this contract is finalized. Bridge reports must read scroll offset and page width from the same measurement model.
 - Android `View.scrollTo(...)` is not used because it can move the WebView surface without updating the DOM scroll container measured by the bridge.
 - Native horizontal WebView drag scrolling is disabled: CSS sets `touch-action: pan-y`, and the WebView `OnTouchListener` consumes horizontal drags outside tap zones. All page movement is Kotlin-initiated: Kotlin sets `pendingTarget` before calling `evaluateJavascript`, and `pageIndex` is updated only when confirmed by the §3.9 bridge.
 - **Hardware page keys:** the Compose host forwards hardware page-key events to `goForward()` / `goBackward()` before WebView focus consumes them. Boox devices emit page-turn presses as `KEYCODE_PAGE_UP` / `KEYCODE_PAGE_DOWN` (dedicated page buttons) or `KEYCODE_VOLUME_UP` / `KEYCODE_VOLUME_DOWN` depending on the model; the host handles both. Key events route through the same command-serialization queue as tap/swipe input — they are not a separate path.
@@ -410,7 +415,7 @@ Without this section the pager is "more controllable than Readium" but may still
 
 ### 3.7 CJK / Vertical Writing Stance
 
-The project's name and target audience imply Japanese support, but the `column-width: 100vw` shell in §3.2 only paginates horizontal LTR text correctly. EPUBs declaring `writing-mode: vertical-rl` (common for Japanese light novels) break under the current shell — columns become row strips.
+The project's name and target audience imply Japanese support, but the provisional horizontal shell in §3.2 only paginates horizontal LTR text correctly. EPUBs declaring `writing-mode: vertical-rl` (common for Japanese light novels) require a separate axis. Readium 3.2.0 forces scroll mode for vertical text in its settings resolver and ships separate CJK vertical CSS; Kanshu must not pretend the horizontal pager handles vertical writing.
 
 - **V1 supports horizontal LTR only.** CJK content laid out horizontally renders correctly; vertical writing mode is deferred.
 - **V1.1 follow-up:** add a row-mode pager toggle keyed off explicit content signals: chapter CSS/inline `writing-mode: vertical-rl`, package metadata, and language hints (`ja`, `zh`). Metadata alone is not enough. The follow-up swaps the CSS shell to vertical writing with row-based pagination. Known-shape extension, not a redesign.
@@ -431,6 +436,8 @@ TOC entries come from Streamer via `publication.tableOfContents` (which already 
 ### 3.9 WebView-to-Kotlin State Bridge
 
 The custom pager must keep Kotlin-side `ReaderPosition` synchronized with WebView layout and scroll state, including anchor jumps and settings-triggered repagination.
+
+**Do not implement this section before the geometry spike.** The bridge shape below is still the intended direction, but page-count, page-width, and column-container measurement must be proven first. Until then, implement only a diagnostic JS bridge that reports the geometry values listed in §3.2.
 
 - Register a small `JavascriptInterface` on the reader WebView.
 - The shell script lives at `features/reader/app/src/main/assets/kanshu-reader.js` and is injected with `evaluateJavascript(...)` on chapter load.
@@ -559,6 +566,20 @@ class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
 
 ## 4. Migration Plan
 
+### Phase 0: Geometry Measurement Spike
+
+Before rebuilding the full renderer, add the smallest code slice that can prove pagination geometry:
+
+1. Load one sanitized chapter into a Kanshu-owned shell.
+2. Inject only minimal pagination CSS and a diagnostic JS bridge.
+3. Log computed `height`, `clientHeight`, `scrollWidth`, `scrollHeight`, `columnWidth`, `columnGap`, and each candidate page width.
+4. Compare `window.innerWidth`, `document.documentElement.clientWidth`, and `WebView.width / devicePixelRatio` on the target Boox device.
+5. Confirm whether the column container should be `html`, `body`, or `#kanshu-page`.
+6. Confirm whether root/body `overflow: visible !important` is required to resist publisher `overflow-x: hidden`.
+7. Do not add progress persistence, TOC, settings UI, chapter navigation, overlay UI, or sync in this spike.
+
+Only after this phase proves stable page geometry should the later phases below proceed.
+
 ### Phase 1: Remove Old Reader
 
 1. Delete the `readium-navigator` gradle dependency.
@@ -572,13 +593,13 @@ class KanshuJsBridge(private val emit: (BridgeEvent) -> Unit) {
 1. Expose a dummy reader component/screen (e.g., a simple Compose `Box` or text placeholder showing the title).
 2. Bind the new `ReaderViewModel` to this stub component and register it in the navigation graph.
 3. Establish this compilable, green-building base as the foundation for the new reader implementation.
-4. Begin replacing the placeholder component with the custom `WebView` pager and request interceptor incrementally in the next phase.
+4. Keep this phase limited to a compilable placeholder. The geometry measurement spike is Phase 0 and must be completed before restoring the full custom `WebView` pager.
 
 ### Phase 3: Incremental Custom Reader Implementation
 
 1. **Request Interceptor & Preloader:** Implement the custom request interceptor, path normalization, Jsoup sanitization (§3.10 Bridge Security), lazy sub-resource loading, and synchronous request interception.
-2. **CSS Layout & Styling:** Apply the Kanshu shell, pagination stylesheet, and CSS variables.
-3. **State Bridge & Navigation:** Implement horizontal scrolling, page count measurement, chapter boundaries, and the JS state bridge for position updates.
+2. **CSS Layout & Styling:** Apply the Kanshu shell, pagination stylesheet, and CSS variables using the container and page-width model proven by Phase 0.
+3. **State Bridge & Navigation:** Implement horizontal scrolling, page count measurement, chapter boundaries, and the JS state bridge for position updates using the Phase 0 measurement model.
 4. **Settings & Repagination:** Implement dynamic settings injection and progression-preserving repagination.
 5. **EPD Optimization:** Add the Onyx Maven repository and integrate Boox `EpdController` updates on page turns and reflows.
 6. **Command Serialization & Lifecycle:** Implement command serialization (one in-flight command, queued same-direction repeat tap) and lifecycle invariants (crash recovery, WebView disposal, state restore).
