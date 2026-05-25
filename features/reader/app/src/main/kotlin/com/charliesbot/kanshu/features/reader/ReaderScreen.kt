@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
-import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -42,11 +41,11 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   LaunchedEffect(seriesId) { viewModel.open(seriesId) }
 
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-  ReaderContent(title = title, uiState = uiState)
+  ReaderContent(title = title, uiState = uiState, onNextResource = viewModel::openNextResource)
 }
 
 @Composable
-private fun ReaderContent(title: String, uiState: ReaderUiState) {
+private fun ReaderContent(title: String, uiState: ReaderUiState, onNextResource: () -> Unit) {
   KanshuScaffold {
     when (uiState) {
       ReaderUiState.Loading -> ReaderMessage(stringResource(R.string.reader_status_loading))
@@ -55,7 +54,8 @@ private fun ReaderContent(title: String, uiState: ReaderUiState) {
         ReaderMessage(stringResource(R.string.reader_error_parse_failed))
       ReaderUiState.Error.ReadFailed ->
         ReaderMessage(stringResource(R.string.reader_error_read_failed))
-      is ReaderUiState.Ready -> ReaderWebView(title = title, state = uiState)
+      is ReaderUiState.Ready ->
+        ReaderWebView(title = title, state = uiState, onNextResource = onNextResource)
     }
   }
 }
@@ -69,45 +69,16 @@ private fun ReaderMessage(text: String) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
+private fun ReaderWebView(title: String, state: ReaderUiState.Ready, onNextResource: () -> Unit) {
   var webView by remember { mutableStateOf<WebView?>(null) }
   var diagnostics by remember { mutableStateOf("") }
-  val bridge = remember { DiagnosticBridge { diagnostics = it } }
 
   Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
       modifier = Modifier.fillMaxSize().padding(bottom = ReaderDiagnosticsPanelHeight),
       factory = { context ->
-        WebView(context).apply {
-          webView = this
-          setBackgroundColor(Color.WHITE)
-          isHorizontalScrollBarEnabled = false
-          isVerticalScrollBarEnabled = false
-          settings.javaScriptEnabled = true
-          settings.allowFileAccess = false
-          settings.allowContentAccess = false
-          settings.blockNetworkLoads = true
-          addJavascriptInterface(bridge, "KanshuDiagnostics")
-          addOnLayoutChangeListener {
-            view,
-            left,
-            top,
-            right,
-            bottom,
-            oldLeft,
-            oldTop,
-            oldRight,
-            oldBottom ->
-            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
-              (view as WebView).applyNativeGeometry()
-            }
-          }
-          webViewClient =
-            object : WebViewClient() {
-              override fun onPageFinished(view: WebView, url: String?) {
-                view.applyNativeGeometry()
-              }
-            }
+        WebView(context).configureReaderWebView(onDiagnostics = { diagnostics = it }).also {
+          webView = it
         }
       },
       update = { view ->
@@ -133,42 +104,85 @@ private fun ReaderWebView(title: String, state: ReaderUiState.Ready) {
       },
     )
 
-    Column(
-      modifier =
-        Modifier.align(Alignment.BottomCenter)
-          .fillMaxWidth()
-          .height(ReaderDiagnosticsPanelHeight)
-          .background(ComposeColor.White)
-          .padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      KanshuButton(
-        text = stringResource(R.string.reader_debug_next_page),
-        onClick = {
-          webView?.evaluateJavascript("window.kanshuNextPage && window.kanshuNextPage()", null)
-        },
-        modifier = Modifier.fillMaxWidth(),
-      )
-      if (diagnostics.isNotBlank()) {
-        KanshuText(
-          text = "Resource ${state.resourceIndex}/${state.resourceCount}: ${state.href}",
-          style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
-        KanshuText(
-          text = diagnostics,
-          style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-        )
+    ReaderDiagnosticsPanel(
+      state = state,
+      diagnostics = diagnostics,
+      onNextPage = {
+        webView?.evaluateJavascript(NextPageScript) { result ->
+          if (result == "true") onNextResource()
+        }
+      },
+      modifier = Modifier.align(Alignment.BottomCenter),
+    )
+  }
+}
+
+private fun WebView.configureReaderWebView(onDiagnostics: (String) -> Unit): WebView = apply {
+  val diagnosticsBridge = DiagnosticBridge(onDiagnostics)
+  setBackgroundColor(Color.WHITE)
+  isHorizontalScrollBarEnabled = false
+  isVerticalScrollBarEnabled = false
+  settings.javaScriptEnabled = true
+  settings.allowFileAccess = false
+  settings.allowContentAccess = false
+  settings.blockNetworkLoads = true
+  addJavascriptInterface(diagnosticsBridge, "KanshuDiagnostics")
+  addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom
+    ->
+    if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+      (view as WebView).applyNativeGeometry()
+    }
+  }
+  webViewClient =
+    object : WebViewClient() {
+      override fun onPageFinished(view: WebView, url: String?) {
+        view.applyNativeGeometry()
       }
+    }
+}
+
+@Composable
+private fun ReaderDiagnosticsPanel(
+  state: ReaderUiState.Ready,
+  diagnostics: String,
+  onNextPage: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(ReaderDiagnosticsPanelHeight)
+        .background(ComposeColor.White)
+        .padding(12.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    KanshuButton(
+      text = stringResource(R.string.reader_debug_next_page),
+      onClick = onNextPage,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    if (diagnostics.isNotBlank()) {
+      KanshuText(
+        text = "Resource ${state.resourceIndex}/${state.resourceCount}: ${state.href}",
+        style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
+      KanshuText(
+        text = diagnostics,
+        style = KanshuTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
     }
   }
 }
 
 private val ReaderDiagnosticsPanelHeight = 280.dp
 
-private class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
+private const val NextPageScript = "window.kanshuNextPage && window.kanshuNextPage()"
+
+class DiagnosticBridge(private val onDiagnostics: (String) -> Unit) {
   private val mainHandler = Handler(Looper.getMainLooper())
 
-  @JavascriptInterface
+  @android.webkit.JavascriptInterface
   fun report(metrics: String) {
     mainHandler.post { onDiagnostics(metrics) }
   }
@@ -229,6 +243,7 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
         (function () {
           const page = document.getElementById('kanshu-page');
           let pageStep = 0;
+          let pageCount = 1;
 
           function numberValue(value) {
             const parsed = Number.parseFloat(value);
@@ -244,7 +259,8 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
             const pageWidth = nativeWidth || document.documentElement.clientWidth || window.innerWidth;
             pageStep = columnWidth + columnGap;
             const contentWidth = Math.max(columnWidth, page.scrollWidth - columnGap);
-            const pageCount = Math.max(1, Math.ceil(contentWidth / pageStep));
+            pageCount = Math.max(1, Math.ceil(contentWidth / pageStep));
+            const currentPage = pageStep > 0 ? Math.round(page.scrollLeft / pageStep) + 1 : 1;
             KanshuDiagnostics.report(JSON.stringify({
               container: '#kanshu-page',
               computedHeight: style.height,
@@ -258,6 +274,7 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
               nativeViewportCssWidth: nativeWidth,
               nativeViewportCssHeight: nativeHeight,
               pageWidth: pageWidth,
+              currentPage: currentPage,
               pageCount: pageCount,
               scrollLeft: page.scrollLeft
             }, null, 2));
@@ -273,8 +290,12 @@ private fun paginatedHtml(title: String, chapterHtml: String): String =
 
           window.kanshuNextPage = function () {
             if (pageStep <= 0) measure();
-            page.scrollLeft = page.scrollLeft + pageStep;
+            if (pageStep <= 0) return false;
+            const currentPageIndex = Math.round(page.scrollLeft / pageStep);
+            if (currentPageIndex >= pageCount - 1) return true;
+            page.scrollLeft = Math.min(page.scrollLeft + pageStep, pageStep * (pageCount - 1));
             requestAnimationFrame(measure);
+            return false;
           };
 
           requestAnimationFrame(measure);
@@ -295,5 +316,7 @@ private fun String.escapeHtml(): String =
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun ReaderContentLoadingPreview() {
-  KanshuTheme { ReaderContent(title = "Book", uiState = ReaderUiState.Loading) }
+  KanshuTheme {
+    ReaderContent(title = "Book", uiState = ReaderUiState.Loading, onNextResource = {})
+  }
 }

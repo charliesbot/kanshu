@@ -64,7 +64,9 @@ class ReaderViewModel(
                 ReaderResult.Error.ReadFailed -> LoadedReaderBook(ReaderUiState.Error.ReadFailed)
                 is ReaderResult.Success -> {
                   loadedPublication = result.publication
-                  val loadedState = openFirstChapter(result.publication)
+                  val loadedState =
+                    openReadableResourceAtOrAfter(result.publication, startIndex = 0)
+                      ?: ReaderUiState.Error.ParseFailed
                   LoadedReaderBook(
                     uiState = loadedState,
                     publicationToKeep =
@@ -86,15 +88,39 @@ class ReaderViewModel(
       }
   }
 
+  fun openNextResource() {
+    val openedPublication = publication ?: return
+    val currentState = _uiState.value as? ReaderUiState.Ready ?: return
+
+    openJob?.cancel()
+    openJob =
+      viewModelScope.launch {
+        val loadedState =
+          withContext(ioDispatcher) {
+            openReadableResourceAtOrAfter(
+              openedPublication = openedPublication,
+              startIndex = currentState.resourceIndex,
+            )
+          }
+        if (publication === openedPublication && loadedState != null) {
+          _uiState.value = loadedState
+        }
+      }
+  }
+
   override fun onCleared() {
     openJob?.cancel()
     publication?.close()
   }
 
-  private suspend fun openFirstChapter(openedPublication: Publication): ReaderUiState {
-    if (openedPublication.readingOrder.isEmpty()) return ReaderUiState.Error.ParseFailed
+  private suspend fun openReadableResourceAtOrAfter(
+    openedPublication: Publication,
+    startIndex: Int,
+  ): ReaderUiState? {
+    val readingOrder = openedPublication.readingOrder
 
-    for ((index, link) in openedPublication.readingOrder.withIndex()) {
+    for (index in startIndex until readingOrder.size) {
+      val link = readingOrder[index]
       val resource = openedPublication.get(link) ?: continue
       val bytes = resource.read().getOrNull() ?: return ReaderUiState.Error.ReadFailed
       val chapterHtml = ChapterHtmlExtractor.bodyHtml(bytes.toString(Charsets.UTF_8))
@@ -108,7 +134,7 @@ class ReaderViewModel(
       }
     }
 
-    return ReaderUiState.Error.ParseFailed
+    return null
   }
 }
 

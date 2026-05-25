@@ -119,6 +119,102 @@ class ReaderViewModelTest {
       assertTrue(state.chapterHtml.contains("Chapter text"))
     }
 
+  @Test
+  fun `opens next reading order resource`() =
+    runTest(testDispatcher) {
+      val publication =
+        testPublicationWithResources(
+          listOf(
+            ChapterFixture(
+              href = "chapter-1.xhtml",
+              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
+            ),
+            ChapterFixture(
+              href = "chapter-2.xhtml",
+              resource = testResource("<html><body><p>Chapter two</p></body></html>".toByteArray()),
+            ),
+          )
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.openNextResource()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value as ReaderUiState.Ready
+      assertEquals("chapter-2.xhtml", state.href)
+      assertEquals(2, state.resourceIndex)
+      assertEquals(2, state.resourceCount)
+      assertTrue(state.chapterHtml.contains("Chapter two"))
+    }
+
+  @Test
+  fun `opening next resource skips empty resources`() =
+    runTest(testDispatcher) {
+      val publication =
+        testPublicationWithResources(
+          listOf(
+            ChapterFixture(
+              href = "chapter-1.xhtml",
+              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
+            ),
+            ChapterFixture(
+              href = "separator.xhtml",
+              resource =
+                testResource("<html><body><img src='separator.jpg'></body></html>".toByteArray()),
+            ),
+            ChapterFixture(
+              href = "chapter-2.xhtml",
+              resource = testResource("<html><body><p>Chapter two</p></body></html>".toByteArray()),
+            ),
+          )
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.openNextResource()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value as ReaderUiState.Ready
+      assertEquals("chapter-2.xhtml", state.href)
+      assertEquals(3, state.resourceIndex)
+      assertEquals(3, state.resourceCount)
+      assertTrue(state.chapterHtml.contains("Chapter two"))
+    }
+
+  @Test
+  fun `opening next resource at final readable resource does nothing`() =
+    runTest(testDispatcher) {
+      val publication =
+        testPublicationWithResources(
+          listOf(
+            ChapterFixture(
+              href = "chapter-1.xhtml",
+              resource = testResource("<html><body><p>Chapter one</p></body></html>".toByteArray()),
+            ),
+            ChapterFixture(
+              href = "backmatter.xhtml",
+              resource =
+                testResource("<html><body><img src='backmatter.jpg'></body></html>".toByteArray()),
+            ),
+          )
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.openNextResource()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value as ReaderUiState.Ready
+      assertEquals("chapter-1.xhtml", state.href)
+      assertEquals(1, state.resourceIndex)
+      assertEquals(2, state.resourceCount)
+      assertTrue(state.chapterHtml.contains("Chapter one"))
+    }
+
   private fun viewModel(source: ReaderSource): ReaderViewModel =
     ReaderViewModel(OpenBookUseCase(source), ioDispatcher = testDispatcher)
 
