@@ -1,0 +1,30 @@
+package com.charliesbot.kanshu.navigator.engine
+
+import android.text.StaticLayout
+
+sealed interface PageEntry {
+  val blockIndex: Int
+  val yOffsetPx: Float
+  val visibleHeightPx: Float
+  val drawOffsetXPx: Float
+
+  data class FullBlock(
+    override val blockIndex: Int,
+    override val yOffsetPx: Float,
+    override val visibleHeightPx: Float,
+    override val drawOffsetXPx: Float,
+    val layout: StaticLayout,
+  ) : PageEntry
+
+  data class SplitBlock(
+    override val blockIndex: Int,
+    override val yOffsetPx: Float,
+    override val visibleHeightPx: Float,
+    override val drawOffsetXPx: Float,
+    val layout: StaticLayout,
+    val lineRange: IntRange,
+    val firstLineTopPx: Float,
+  ) : PageEntry
+}
+
+data class ReaderPage(val entries: List<PageEntry>)
