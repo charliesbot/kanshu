@@ -12,7 +12,15 @@ internal object PageRenderer {
     verticalMarginPx: Float,
   ) {
     canvas.drawColor(android.graphics.Color.WHITE)
+    canvas.save()
+    canvas.clipRect(
+      horizontalMarginPx,
+      verticalMarginPx,
+      canvas.width - horizontalMarginPx,
+      canvas.height - verticalMarginPx,
+    )
     page.entries.forEach { entry -> drawEntry(canvas, entry, horizontalMarginPx, verticalMarginPx) }
+    canvas.restore()
   }
 
   private fun drawEntry(
@@ -33,8 +41,8 @@ internal object PageRenderer {
       }
 
       is PageEntry.SplitBlock -> {
-        val clipTop = y
-        val clipBottom = y + entry.visibleHeightPx
+        val clipTop = y + 1f
+        val clipBottom = y + entry.visibleHeightPx - 1f
         canvas.save()
         canvas.clipRect(horizontalMarginPx, clipTop, canvas.width.toFloat(), clipBottom)
         canvas.translate(x, y - entry.firstLineTopPx)

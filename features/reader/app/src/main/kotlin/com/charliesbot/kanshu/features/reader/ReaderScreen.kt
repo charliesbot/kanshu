@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.features.reader
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,7 +38,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
       ReaderStatusMessage(message = stringResource(R.string.reader_error_parse_failed))
 
     is ReaderUiState.Reading -> {
-      Box(modifier = Modifier.fillMaxSize()) {
+      Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         ReaderPageViewer(
           document = state.document,
           preferences = preferences,
