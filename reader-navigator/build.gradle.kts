@@ -9,6 +9,8 @@ android {
 
   defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
 
+  testOptions { unitTests.isIncludeAndroidResources = true }
+
   buildFeatures { compose = true }
 
   compileOptions {
@@ -22,8 +24,13 @@ dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.foundation)
+  implementation(libs.kotlinx.coroutines.core)
   implementation(libs.jsoup)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+
+  androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.test.runner)
 }
