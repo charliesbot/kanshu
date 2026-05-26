@@ -1,6 +1,5 @@
 package com.charliesbot.kanshu.features.reader
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -27,7 +26,6 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
 
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
-  val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
   val preferences = remember { ReaderPreferences() }
 
   when (val state = uiState) {
@@ -44,22 +42,10 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
           document = state.document,
           preferences = preferences,
           currentPage = currentPage,
-          onPageCount = viewModel::onPageCount,
+          onPageCount = { count -> viewModel.onPageCount(state.document, count) },
           onLayoutFailed = viewModel::onLayoutFailed,
           modifier = Modifier.fillMaxSize(),
         )
-        if (pageCount == 0) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize().background(KanshuTheme.colors.background).padding(24.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            KanshuText(
-              text = stringResource(R.string.reader_status_paginating),
-              style = KanshuTheme.typography.titleLarge,
-            )
-          }
-        }
         ReaderTapZones(onPrevious = viewModel::previousPage, onNext = viewModel::nextPage)
       }
     }

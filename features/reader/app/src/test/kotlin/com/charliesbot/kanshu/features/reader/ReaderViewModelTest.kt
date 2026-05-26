@@ -14,6 +14,7 @@ import io.mockk.verify
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -189,6 +190,147 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `nextPage on last page opens next readable spine item`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentDocument(), 1)
+
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value
+      assertTrue(state is ReaderUiState.Reading)
+      assertEquals(
+        listOf("Second chapter ".repeat(6).trim()),
+        (state as ReaderUiState.Reading).document.paragraphText(),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `nextPage on last page stays put when there is no next readable spine item`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentDocument(), 1)
+
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value
+      assertTrue(state is ReaderUiState.Reading)
+      assertEquals(
+        listOf("Hello ".repeat(10).trim()),
+        (state as ReaderUiState.Reading).document.paragraphText(),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `stale page count callback after chapter change is ignored`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      val firstDocument = viewModel.currentDocument()
+      viewModel.onPageCount(firstDocument, 1)
+
+      viewModel.nextPage()
+      advanceUntilIdle()
+      viewModel.onPageCount(firstDocument, 99)
+
+      assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `nextPage on last page ignores duplicate next spine open while loading`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublicationWithReadDelays(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>" to 0,
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>" to 1_000,
+                "<html><body><p>${"Third chapter ".repeat(6)}</p></body></html>" to 0,
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentDocument(), 1)
+
+      viewModel.nextPage()
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value
+      assertTrue(state is ReaderUiState.Reading)
+      assertEquals(
+        listOf("Second chapter ".repeat(6).trim()),
+        (state as ReaderUiState.Reading).document.paragraphText(),
+      )
+    }
+
+  @Test
+  fun `opening another series cancels pending next spine open`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublicationWithReadDelays(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>" to 0,
+                "<html><body><p>${"Stale chapter ".repeat(6)}</p></body></html>" to 1_000,
+              ),
+            2 to testPublication("<html><body><p>${"Fresh chapter ".repeat(6)}</p></body></html>"),
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentDocument(), 1)
+
+      viewModel.nextPage()
+      viewModel.open(2)
+      advanceUntilIdle()
+
+      val state = viewModel.uiState.value
+      assertTrue(state is ReaderUiState.Reading)
+      assertEquals(
+        listOf("Fresh chapter ".repeat(6).trim()),
+        (state as ReaderUiState.Reading).document.paragraphText(),
+      )
+    }
+
+  @Test
   fun `duplicate open with same seriesId is no-op`() =
     runTest(testDispatcher) {
       val publication = testPublication()
@@ -205,15 +347,36 @@ class ReaderViewModelTest {
   private fun viewModel(source: ReaderSource): ReaderViewModel =
     ReaderViewModel(OpenBookUseCase(source), ioDispatcher = testDispatcher)
 
-  private fun testPublication(
-    xhtml: String = "<html><body><p>${"Hello ".repeat(10)}</p></body></html>"
-  ): Publication {
-    val resource =
-      mockk<Resource> { coEvery { read() } returns Try.success(xhtml.encodeToByteArray()) }
-    val link = mockk<Link>(relaxed = true)
+  private fun testPublication(vararg xhtml: String): Publication {
+    val spine =
+      xhtml.takeIf { items -> items.isNotEmpty() }
+        ?: arrayOf("<html><body><p>${"Hello ".repeat(10)}</p></body></html>")
+    val links = spine.indices.map { index -> mockk<Link>(relaxed = true) }
+    val resources =
+      spine.map { content ->
+        mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
+      }
     return mockk(relaxUnitFun = true) {
-      every { readingOrder } returns listOf(link)
-      every { get(link) } returns resource
+      every { readingOrder } returns links
+      links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
+    }
+  }
+
+  private fun testPublicationWithReadDelays(vararg spine: Pair<String, Long>): Publication {
+    val links = spine.indices.map { index -> mockk<Link>(relaxed = true) }
+    val resources =
+      spine.map { (content, readDelayMillis) ->
+        mockk<Resource> {
+          coEvery { read() } coAnswers
+            {
+              delay(readDelayMillis)
+              Try.success(content.encodeToByteArray())
+            }
+        }
+      }
+    return mockk(relaxUnitFun = true) {
+      every { readingOrder } returns links
+      links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
     }
   }
 
@@ -222,6 +385,12 @@ class ReaderViewModelTest {
       put("reader", this@closeThroughStore)
       clear()
     }
+  }
+
+  private fun ReaderViewModel.currentDocument(): ReaderDocument {
+    val state = uiState.value
+    assertTrue(state is ReaderUiState.Reading)
+    return (state as ReaderUiState.Reading).document
   }
 }
 

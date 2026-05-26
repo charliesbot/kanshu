@@ -15,6 +15,8 @@ private const val TAG = "ReaderSpine"
 /** Minimum flattened text before a spine item counts as readable chapter content. */
 private const val MIN_READABLE_CHARS = 40
 
+internal data class ReadableSpineItem(val spineIndex: Int, val document: ReaderDocument)
+
 private val SKIP_SPINE_HREF =
   Regex(
     pattern = """(cover|titlepage|title-page|half-title|halftitle|frontcover|front-cover)""",
@@ -46,9 +48,15 @@ internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
  * First spine item with parseable paragraph content (skips cover pages, image-only spreads, and
  * empty front matter).
  */
-internal suspend fun Publication.readFirstReadableChapter(): ReaderDocument? {
-  Log.d(TAG, "scanning ${readingOrder.size} spine items for readable text")
-  for (index in readingOrder.indices) {
+internal suspend fun Publication.readFirstReadableChapter(): ReaderDocument? =
+  readNextReadableSpineItem(afterSpineIndex = -1)?.document
+
+internal suspend fun Publication.readNextReadableSpineItem(
+  afterSpineIndex: Int
+): ReadableSpineItem? {
+  Log.d(TAG, "scanning ${readingOrder.size} spine items after spine[$afterSpineIndex]")
+  val startIndex = (afterSpineIndex + 1).coerceAtLeast(0)
+  for (index in startIndex until readingOrder.size) {
     val link = readingOrder[index]
     if (shouldSkipSpineHref(link.href.toString())) {
       Log.d(TAG, "spine[$index]: skipping cover-like href=${link.href}")
@@ -75,7 +83,7 @@ internal suspend fun Publication.readFirstReadableChapter(): ReaderDocument? {
       TAG,
       "using spine[$index] href=${link.href} blocks=${document.blocks.size} chars=$textLength",
     )
-    return document
+    return ReadableSpineItem(spineIndex = index, document = document)
   }
   Log.d(TAG, "no spine item produced readable blocks")
   return null
