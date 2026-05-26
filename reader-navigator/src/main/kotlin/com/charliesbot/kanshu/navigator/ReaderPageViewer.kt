@@ -24,6 +24,7 @@ import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.render.ReaderPageCanvasView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,7 +44,7 @@ fun ReaderPageViewer(
 
   BoxWithConstraints(modifier = modifier) {
     val viewport = rememberReaderViewport(maxWidth, maxHeight)
-    var pages by remember { mutableStateOf<List<ReaderPage>?>(null) }
+    var pages by remember(document) { mutableStateOf<List<ReaderPage>?>(null) }
     val styleResolver =
       remember(preferences, viewport.density, typeface) {
         BlockStyleResolver(preferences, typeface, viewport.density)
@@ -171,6 +172,8 @@ private suspend fun layoutPages(
           shouldContinue = { generation == currentGeneration() },
         )
     }
+  } catch (e: CancellationException) {
+    throw e
   } catch (e: Exception) {
     if (generation == currentGeneration()) {
       Log.d(TAG, "layout failed gen=$generation", e)

@@ -9,6 +9,7 @@ import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,8 +46,10 @@ class ReaderViewModel(
   val pageCount: StateFlow<Int> = _pageCount.asStateFlow()
 
   private var openJob: Job? = null
+  private var nextSpineJob: Job? = null
   private var currentSeriesId: Int? = null
   private var publication: Publication? = null
+  private var currentSpineIndex = -1
 
   private fun lastPageIndex(): Int = (_pageCount.value - 1).coerceAtLeast(0)
 
@@ -57,8 +60,11 @@ class ReaderViewModel(
     _currentPage.value = 0
     _pageCount.value = 0
     openJob?.cancel()
+    nextSpineJob?.cancel()
+    nextSpineJob = null
     publication?.close()
     publication = null
+    currentSpineIndex = -1
 
     openJob =
       viewModelScope.launch {
@@ -71,14 +77,17 @@ class ReaderViewModel(
               TAG,
               "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
             )
-            val document =
-              withContext(ioDispatcher) { result.publication.readFirstReadableChapter() }
-            if (document == null) {
+            val spineItem =
+              withContext(ioDispatcher) {
+                result.publication.readNextReadableSpineItem(afterSpineIndex = -1)
+              }
+            if (spineItem == null) {
               failOpen("open($seriesId): no readable chapter → OpenFailed")
               return@launch
             }
-            Log.d(TAG, "open($seriesId): Reading with ${document.blocks.size} blocks")
-            _uiState.value = ReaderUiState.Reading(document)
+            currentSpineIndex = spineItem.spineIndex
+            Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
+            _uiState.value = ReaderUiState.Reading(spineItem.document)
           }
           ReaderResult.Error.NotFound -> {
             Log.d(TAG, "open($seriesId): NotFound")
@@ -94,7 +103,12 @@ class ReaderViewModel(
       }
   }
 
-  fun onPageCount(count: Int) {
+  fun onPageCount(document: ReaderDocument, count: Int) {
+    val reading = _uiState.value as? ReaderUiState.Reading
+    if (reading?.document !== document) {
+      Log.d(TAG, "onPageCount($count) ignored for stale document")
+      return
+    }
     Log.d(TAG, "onPageCount($count)")
     _pageCount.value = count
     _currentPage.update { page -> page.coerceIn(0, lastPageIndex()) }
@@ -110,11 +124,52 @@ class ReaderViewModel(
   }
 
   fun nextPage() {
+    if (_pageCount.value == 0) {
+      Log.d(TAG, "nextPage ignored while page count is unknown")
+      return
+    }
+    if (_currentPage.value >= lastPageIndex()) {
+      openNextReadableSpineItem()
+      return
+    }
     _currentPage.update { page ->
       val next = (page + 1).coerceAtMost(lastPageIndex())
       Log.d(TAG, "nextPage: $page → $next (of ${_pageCount.value})")
       next
     }
+  }
+
+  private fun openNextReadableSpineItem() {
+    if (nextSpineJob?.isActive == true) return
+    val currentPublication = publication ?: return
+    val startingSpineIndex = currentSpineIndex
+    nextSpineJob =
+      viewModelScope.launch {
+        try {
+          val nextItem =
+            withContext(ioDispatcher) {
+              currentPublication.readNextReadableSpineItem(afterSpineIndex = startingSpineIndex)
+            }
+          if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
+            Log.d(TAG, "nextPage: ignored stale spine open after spine[$startingSpineIndex]")
+            return@launch
+          }
+          if (nextItem == null) {
+            Log.d(TAG, "nextPage: no readable spine item after spine[$currentSpineIndex]")
+            return@launch
+          }
+          currentSpineIndex = nextItem.spineIndex
+          _currentPage.value = 0
+          _pageCount.value = 0
+          Log.d(TAG, "nextPage: opened spine[${nextItem.spineIndex}]")
+          _uiState.value = ReaderUiState.Reading(nextItem.document)
+        } finally {
+          val runningJob = currentCoroutineContext()[Job]
+          if (nextSpineJob === runningJob) {
+            nextSpineJob = null
+          }
+        }
+      }
   }
 
   fun previousPage() {
@@ -127,6 +182,7 @@ class ReaderViewModel(
 
   override fun onCleared() {
     openJob?.cancel()
+    nextSpineJob?.cancel()
     publication?.close()
   }
 }
