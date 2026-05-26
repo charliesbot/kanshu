@@ -32,6 +32,7 @@
 
     <!-- Reader screen -->
     <string name="reader_status_loading">Opening book…</string>
+    <string name="reader_status_paginating">Preparing pages…</string>
     <string name="reader_error_not_found">Book not found.</string>
     <string name="reader_error_parse_failed">Could not read this book.</string>
     <string name="reader_error_read_failed">Could not load the book file.</string>

@@ -23,6 +23,7 @@ dependencies {
   implementation(project(":core:data"))
   implementation(project(":core:designsystem"))
   implementation(project(":core:strings"))
+  implementation(project(":reader-navigator"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.koin.bom))
   implementation(libs.androidx.compose.ui)
