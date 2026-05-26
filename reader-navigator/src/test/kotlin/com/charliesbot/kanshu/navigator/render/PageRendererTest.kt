@@ -66,7 +66,7 @@ class PageRendererTest {
   }
 
   @Test
-  fun draw_orphanCatalogLine_rendersOnFirstPage() {
+  fun draw_overflowingTrailingLine_rendersOnSecondPage() {
     val blocks =
       List(18) { index ->
         ParagraphBlock(listOf(TextLeaf("Copyright paragraph $index. ${"text ".repeat(25)}")))
@@ -87,12 +87,12 @@ class PageRendererTest {
           styleResolver = styleResolver::resolve,
         )
 
-    assertEquals(1, pages.size)
+    assertEquals(2, pages.size)
 
     val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
     PageRenderer.draw(
       canvas = Canvas(bitmap),
-      page = pages.single(),
+      page = pages.last(),
       horizontalMarginPx = horizontalMarginPx,
       verticalMarginPx = verticalMarginPx,
     )

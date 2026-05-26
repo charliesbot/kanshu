@@ -50,16 +50,6 @@ class ReaderLayoutEngine {
 
     fun drawOffsetX(style: BlockStyle): Float = style.indentPx + style.prefixWidthPx
 
-    fun estimatedLineHeightPx(measured: MeasuredBlock): Float {
-      if (measured.layout.lineCount == 0) return 0f
-      return measured.layout.getLineBottom(0) - measured.layout.getLineTop(0).toFloat()
-    }
-
-    fun fitsWithOrphanSlack(measured: MeasuredBlock, remainingHeight: Float): Boolean {
-      val layoutHeight = measured.layout.height.toFloat()
-      return layoutHeight <= remainingHeight + estimatedLineHeightPx(measured)
-    }
-
     fun addFullBlock(measured: MeasuredBlock, yOffset: Float) {
       currentEntries.add(
         PageEntry.FullBlock(
@@ -96,34 +86,70 @@ class ReaderLayoutEngine {
       previousMarginBottom = measured.style.marginBottomPx
     }
 
-    fun splitBlock(measured: MeasuredBlock) {
+    fun firstLineHeight(layout: StaticLayout, lineStart: Int): Float =
+      layout.getLineBottom(lineStart).toFloat() - layout.getLineTop(lineStart).toFloat()
+
+    fun lastLineThatFits(layout: StaticLayout, lineStart: Int, availableHeight: Float): Int {
+      var lineEnd = lineStart
+      val firstLineTop = layout.getLineTop(lineStart).toFloat()
+      while (lineEnd < layout.lineCount - 1) {
+        val height = layout.getLineBottom(lineEnd + 1).toFloat() - firstLineTop
+        if (height > availableHeight) break
+        lineEnd++
+      }
+      return lineEnd
+    }
+
+    fun canFitAnyLine(layout: StaticLayout, lineStart: Int, availableHeight: Float): Boolean {
+      if (availableHeight <= 0f) return false
+      return firstLineHeight(layout, lineStart) <= availableHeight
+    }
+
+    fun addSplitBlockAcrossPages(measured: MeasuredBlock, firstPageYOffset: Float = 0f) {
       val layout = measured.layout
       var lineStart = 0
+      var yOffset = firstPageYOffset
       while (lineStart < layout.lineCount) {
-        if (currentEntries.isNotEmpty()) {
+        val availableHeight = contentHeightPx - yOffset
+        if (!canFitAnyLine(layout, lineStart, availableHeight) && currentEntries.isNotEmpty()) {
           flushPage()
+          yOffset = 0f
+          continue
         }
 
-        val remainingHeight = contentHeightPx - yCursor
-
-        var lineEnd = lineStart
-        while (lineEnd < layout.lineCount - 1) {
-          val height =
-            layout.getLineBottom(lineEnd + 1).toFloat() - layout.getLineTop(lineStart).toFloat()
-          if (height > remainingHeight) break
-          lineEnd++
-        }
-
+        val lineEnd = lastLineThatFits(layout, lineStart, availableHeight)
         val firstLineTop = layout.getLineTop(lineStart).toFloat()
         val visibleHeight = layout.getLineBottom(lineEnd).toFloat() - firstLineTop
-        addSplitBlock(measured, yCursor, lineStart..lineEnd, visibleHeight, firstLineTop)
+        addSplitBlock(measured, yOffset, lineStart..lineEnd, visibleHeight, firstLineTop)
         lineStart = lineEnd + 1
+        if (lineStart < layout.lineCount) {
+          flushPage()
+          yOffset = 0f
+        }
       }
     }
 
-    measuredBlocks.forEach { measured ->
-      if (!shouldContinue()) return emptyList()
+    fun addOverflowingBlock(measured: MeasuredBlock, blockY: Float, remainingHeight: Float) {
+      if (
+        currentEntries.isNotEmpty() &&
+          canFitAnyLine(measured.layout, lineStart = 0, remainingHeight)
+      ) {
+        addSplitBlockAcrossPages(measured, blockY)
+        return
+      }
 
+      if (currentEntries.isNotEmpty()) {
+        flushPage()
+      }
+
+      if (measured.layout.height.toFloat() <= contentHeightPx) {
+        addFullBlock(measured, 0f)
+      } else {
+        addSplitBlockAcrossPages(measured)
+      }
+    }
+
+    fun addMeasuredBlock(measured: MeasuredBlock) {
       val style = measured.style
       val layoutHeight = measured.layout.height.toFloat()
       val topMargin =
@@ -131,23 +157,17 @@ class ReaderLayoutEngine {
       val blockY = yCursor + topMargin
       val remainingHeight = contentHeightPx - blockY
 
-      if (layoutHeight <= remainingHeight || fitsWithOrphanSlack(measured, remainingHeight)) {
+      if (layoutHeight <= remainingHeight) {
         addFullBlock(measured, blockY)
-        return@forEach
+        return
       }
 
-      if (currentEntries.isNotEmpty()) {
-        flushPage()
-        val retryRemaining = contentHeightPx
-        if (layoutHeight <= retryRemaining) {
-          addFullBlock(measured, 0f)
-          return@forEach
-        }
-        splitBlock(measured)
-        return@forEach
-      }
+      addOverflowingBlock(measured, blockY, remainingHeight)
+    }
 
-      splitBlock(measured)
+    measuredBlocks.forEach { measured ->
+      if (!shouldContinue()) return emptyList()
+      addMeasuredBlock(measured)
     }
 
     flushPage()

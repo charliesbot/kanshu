@@ -92,7 +92,7 @@ class ReaderLayoutEngineTest {
   }
 
   @Test
-  fun layout_trailingOrphanLine_staysOnPreviousPage() {
+  fun layout_overflowingTrailingLine_movesToNextPage() {
     val blocks =
       List(18) { index ->
         ParagraphBlock(
@@ -113,7 +113,70 @@ class ReaderLayoutEngineTest {
           styleResolver = styleResolver::resolve,
         )
 
-    assertEquals(1, pages.size)
-    assertEquals(19, pages.single().entries.map { it.blockIndex }.distinct().size)
+    assertEquals(2, pages.size)
+    assertEquals(18, pages.first().entries.map { it.blockIndex }.distinct().size)
+    assertEquals(18, pages.last().entries.single().blockIndex)
+  }
+
+  @Test
+  fun layout_entriesStayWithinContentHeight() {
+    val blocks =
+      List(18) { index ->
+        ParagraphBlock(listOf(TextLeaf("Copyright paragraph $index. ${"text ".repeat(25)}")))
+      } + ParagraphBlock(listOf(TextLeaf("E3-20230509-JV-PC-REV")))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 632, heightPx = 840, density = 2f)
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+    val contentHeightPx = viewport.heightPx - verticalMarginPx * 2
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = ReaderDocument(blocks = blocks),
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    pages.forEachIndexed { pageIndex, page ->
+      page.entries.forEach { entry ->
+        assertTrue(
+          "page $pageIndex entry ${entry.blockIndex} exceeds content height",
+          entry.yOffsetPx + entry.visibleHeightPx <= contentHeightPx,
+        )
+      }
+    }
+  }
+
+  @Test
+  fun layout_overflowingParagraphUsesRemainingPageSpace() {
+    val leadingBlocks =
+      List(5) { index ->
+        ParagraphBlock(listOf(TextLeaf("Lead paragraph $index with enough words to wrap once.")))
+      }
+    val overflowingBlock =
+      ParagraphBlock(listOf(TextLeaf(List(80) { "overflow line $it" }.joinToString("\n"))))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 500, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = ReaderDocument(blocks = leadingBlocks + overflowingBlock),
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    assertTrue(
+      "first page should use remaining space for the next paragraph",
+      pages.first().entries.any { entry ->
+        entry is PageEntry.SplitBlock && entry.blockIndex == leadingBlocks.size
+      },
+    )
   }
 }
