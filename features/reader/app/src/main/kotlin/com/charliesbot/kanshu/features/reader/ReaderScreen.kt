@@ -8,13 +8,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
@@ -28,7 +31,11 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
 
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
+  val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
   val preferences = remember { ReaderPreferences() }
+  var previewPreferences by remember { mutableStateOf(preferences) }
+  var overlayVisible by remember { mutableStateOf(false) }
+  var readerPrefsVisible by remember { mutableStateOf(false) }
 
   when (val state = uiState) {
     ReaderUiState.Loading ->
@@ -50,7 +57,102 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             modifier = Modifier.fillMaxSize(),
           )
         }
-        ReaderTapZones(onPrevious = viewModel::previousPage, onNext = viewModel::nextPage)
+        ReaderTapZones(
+          onPrevious = {
+            overlayVisible = false
+            viewModel.previousPage()
+          },
+          onCenter = { overlayVisible = true },
+          onNext = {
+            overlayVisible = false
+            viewModel.nextPage()
+          },
+        )
+        if (overlayVisible) {
+          ReaderOverlay(
+            title = title,
+            pageLabel =
+              stringResource(
+                R.string.reader_overlay_page_label,
+                currentPage + 1,
+                pageCount.coerceAtLeast(1),
+              ),
+            onOpenReaderPrefs = {
+              overlayVisible = false
+              readerPrefsVisible = true
+            },
+            onDismiss = { overlayVisible = false },
+          )
+        }
+        KanshuBottomSheet(isOpen = readerPrefsVisible, onDismiss = { readerPrefsVisible = false }) {
+          ReaderPrefsBottomSheet(
+            prefs = previewPreferences,
+            callbacks =
+              ReaderPrefsCallbacks(
+                onFontChange = { previewPreferences = previewPreferences.copy(font = it) },
+                onFontScaleChange = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      fontScale =
+                        it.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
+                    )
+                },
+                onMarginsChange = { previewPreferences = previewPreferences.copy(margins = it) },
+                onAlignmentChange = {
+                  previewPreferences = previewPreferences.copy(alignment = it)
+                },
+                onLineSpacingChange = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      lineSpacing =
+                        it.coerceIn(
+                          ReaderPreferences.LINE_SPACING_MIN,
+                          ReaderPreferences.LINE_SPACING_MAX,
+                        )
+                    )
+                },
+                onParagraphSpacingChange = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      paragraphSpacing =
+                        it.coerceIn(
+                          ReaderPreferences.PARAGRAPH_SPACING_MIN,
+                          ReaderPreferences.PARAGRAPH_SPACING_MAX,
+                        )
+                    )
+                },
+                onWordSpacingChange = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      wordSpacing =
+                        it.coerceIn(
+                          ReaderPreferences.WORD_SPACING_MIN,
+                          ReaderPreferences.WORD_SPACING_MAX,
+                        )
+                    )
+                },
+                onLetterSpacingChange = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      letterSpacing =
+                        it.coerceIn(
+                          ReaderPreferences.LETTER_SPACING_MIN,
+                          ReaderPreferences.LETTER_SPACING_MAX,
+                        )
+                    )
+                },
+                onResetSpacing = {
+                  previewPreferences =
+                    previewPreferences.copy(
+                      lineSpacing = ReaderPreferences.LINE_SPACING_DEFAULT,
+                      paragraphSpacing = ReaderPreferences.PARAGRAPH_SPACING_DEFAULT,
+                      wordSpacing = ReaderPreferences.WORD_SPACING_DEFAULT,
+                      letterSpacing = ReaderPreferences.LETTER_SPACING_DEFAULT,
+                    )
+                },
+              ),
+          )
+        }
       }
     }
   }
