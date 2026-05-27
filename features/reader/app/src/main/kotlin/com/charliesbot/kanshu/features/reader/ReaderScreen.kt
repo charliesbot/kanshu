@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,14 +40,16 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
 
     is ReaderUiState.Reading -> {
       Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-        ReaderPageViewer(
-          document = state.document,
-          preferences = preferences,
-          currentPage = currentPage,
-          onPageCount = { count -> viewModel.onPageCount(state.document, count) },
-          onLayoutFailed = viewModel::onLayoutFailed,
-          modifier = Modifier.fillMaxSize(),
-        )
+        key(state.spineIndex) {
+          ReaderPageViewer(
+            document = state.document,
+            preferences = preferences,
+            currentPage = currentPage,
+            onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
+            onLayoutFailed = viewModel::onLayoutFailed,
+            modifier = Modifier.fillMaxSize(),
+          )
+        }
         ReaderTapZones(onPrevious = viewModel::previousPage, onNext = viewModel::nextPage)
       }
     }

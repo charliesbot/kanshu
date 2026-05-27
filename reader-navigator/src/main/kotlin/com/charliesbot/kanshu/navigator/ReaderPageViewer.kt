@@ -134,7 +134,7 @@ private fun LaunchedReaderLayout(
       return@LaunchedEffect
     }
 
-    if (laidOut.isEmpty() || laidOut.all { page -> page.entries.isEmpty() }) {
+    if (!laidOut.hasRenderablePage()) {
       Log.d(TAG, "layout empty gen=$generation pages=${laidOut.size}")
       onPages(null)
       onLayoutFailed()
@@ -181,6 +181,8 @@ private suspend fun layoutPages(
     }
     null
   }
+
+internal fun List<ReaderPage>.hasRenderablePage(): Boolean = isNotEmpty()
 
 @Composable
 private fun ReaderPageAndroidView(
