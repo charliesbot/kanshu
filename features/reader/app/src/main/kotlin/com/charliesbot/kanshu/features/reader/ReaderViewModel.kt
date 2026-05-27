@@ -23,7 +23,7 @@ private const val TAG = "ReaderViewModel"
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
-  data class Reading(val document: ReaderDocument) : ReaderUiState
+  data class Reading(val spineIndex: Int, val document: ReaderDocument) : ReaderUiState
 
   sealed interface Error : ReaderUiState {
     data object NotFound : Error
@@ -79,15 +79,19 @@ class ReaderViewModel(
             )
             val spineItem =
               withContext(ioDispatcher) {
-                result.publication.readNextReadableSpineItem(afterSpineIndex = -1)
+                result.publication.readNextSpineItem(afterSpineIndex = -1)
               }
             if (spineItem == null) {
-              failOpen("open($seriesId): no readable chapter → OpenFailed")
+              failOpen("open($seriesId): no spine item → OpenFailed")
               return@launch
             }
             currentSpineIndex = spineItem.spineIndex
             Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
-            _uiState.value = ReaderUiState.Reading(spineItem.document)
+            _uiState.value =
+              ReaderUiState.Reading(
+                spineIndex = spineItem.spineIndex,
+                document = spineItem.document,
+              )
           }
           ReaderResult.Error.NotFound -> {
             Log.d(TAG, "open($seriesId): NotFound")
@@ -103,10 +107,10 @@ class ReaderViewModel(
       }
   }
 
-  fun onPageCount(document: ReaderDocument, count: Int) {
+  fun onPageCount(spineIndex: Int, count: Int) {
     val reading = _uiState.value as? ReaderUiState.Reading
-    if (reading?.document !== document) {
-      Log.d(TAG, "onPageCount($count) ignored for stale document")
+    if (reading?.spineIndex != spineIndex) {
+      Log.d(TAG, "onPageCount($count) ignored for stale spine[$spineIndex]")
       return
     }
     Log.d(TAG, "onPageCount($count)")
@@ -129,7 +133,7 @@ class ReaderViewModel(
       return
     }
     if (_currentPage.value >= lastPageIndex()) {
-      openNextReadableSpineItem()
+      openNextSpineItem()
       return
     }
     _currentPage.update { page ->
@@ -139,7 +143,7 @@ class ReaderViewModel(
     }
   }
 
-  private fun openNextReadableSpineItem() {
+  private fun openNextSpineItem() {
     if (nextSpineJob?.isActive == true) return
     val currentPublication = publication ?: return
     val startingSpineIndex = currentSpineIndex
@@ -148,21 +152,22 @@ class ReaderViewModel(
         try {
           val nextItem =
             withContext(ioDispatcher) {
-              currentPublication.readNextReadableSpineItem(afterSpineIndex = startingSpineIndex)
+              currentPublication.readNextSpineItem(afterSpineIndex = startingSpineIndex)
             }
           if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
             Log.d(TAG, "nextPage: ignored stale spine open after spine[$startingSpineIndex]")
             return@launch
           }
           if (nextItem == null) {
-            Log.d(TAG, "nextPage: no readable spine item after spine[$currentSpineIndex]")
+            Log.d(TAG, "nextPage: no spine item after spine[$currentSpineIndex]")
             return@launch
           }
           currentSpineIndex = nextItem.spineIndex
           _currentPage.value = 0
           _pageCount.value = 0
           Log.d(TAG, "nextPage: opened spine[${nextItem.spineIndex}]")
-          _uiState.value = ReaderUiState.Reading(nextItem.document)
+          _uiState.value =
+            ReaderUiState.Reading(spineIndex = nextItem.spineIndex, document = nextItem.document)
         } finally {
           val runningJob = currentCoroutineContext()[Job]
           if (nextSpineJob === runningJob) {

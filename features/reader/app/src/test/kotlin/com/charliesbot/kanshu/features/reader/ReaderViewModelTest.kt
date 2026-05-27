@@ -134,7 +134,7 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `skips empty spine item and reads first chapter with text`() =
+  fun `open respects cover-like first spine item`() =
     runTest(testDispatcher) {
       val coverLink =
         mockk<Link>(relaxed = true) { every { href } returns Href("OEBPS/xhtml/cover.xhtml")!! }
@@ -166,16 +166,45 @@ class ReaderViewModelTest {
       viewModel.open(1)
       advanceUntilIdle()
 
-      val state = viewModel.uiState.value
-      assertTrue(state is ReaderUiState.Reading)
-      assertEquals(
-        listOf("Word ".repeat(30).trim()),
-        (state as ReaderUiState.Reading).document.paragraphText(),
-      )
+      assertEquals(listOf("Cover"), viewModel.currentDocument().paragraphText())
     }
 
   @Test
-  fun `styled text counts as readable chapter content`() =
+  fun `empty first spine item opens and next page advances to following spine item`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      val firstDocument = viewModel.currentDocument()
+      assertTrue(firstDocument.blocks.isEmpty())
+
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      val secondState = viewModel.uiState.value
+      assertTrue(secondState is ReaderUiState.Reading)
+      assertEquals(
+        listOf("Second chapter ".repeat(6).trim()),
+        (secondState as ReaderUiState.Reading).document.paragraphText(),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `styled text opens as spine content`() =
     runTest(testDispatcher) {
       val publication =
         testPublication(
@@ -190,7 +219,7 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `nextPage on last page opens next readable spine item`() =
+  fun `nextPage on last page opens next spine item`() =
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
@@ -205,7 +234,7 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(viewModel.currentDocument(), 1)
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
       advanceUntilIdle()
@@ -221,13 +250,34 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `nextPage on last page stays put when there is no next readable spine item`() =
+  fun `nextPage emits Reading state for adjacent identical spine documents`() =
+    runTest(testDispatcher) {
+      val imageOnly = "<html><body><p><img alt=\"image\" src=\"cover.jpg\"/></p></body></html>"
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication(imageOnly, imageOnly)))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      assertEquals(0, viewModel.currentSpineIndex())
+      assertEquals(listOf("image"), viewModel.currentDocument().paragraphText())
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      assertEquals(1, viewModel.currentSpineIndex())
+      assertEquals(listOf("image"), viewModel.currentDocument().paragraphText())
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `nextPage on last page stays put when there is no next spine item`() =
     runTest(testDispatcher) {
       val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(viewModel.currentDocument(), 1)
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
       advanceUntilIdle()
@@ -237,6 +287,38 @@ class ReaderViewModelTest {
       assertEquals(
         listOf("Hello ".repeat(10).trim()),
         (state as ReaderUiState.Reading).document.paragraphText(),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `nextPage does not skip unreadable next spine item`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublicationWithMissingResource(
+                missingResourceIndex = 1,
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Broken chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Third chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+      assertEquals(
+        listOf("First chapter ".repeat(6).trim()),
+        viewModel.currentDocument().paragraphText(),
       )
       assertEquals(0, viewModel.currentPage.value)
       assertEquals(1, viewModel.pageCount.value)
@@ -258,12 +340,12 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      val firstDocument = viewModel.currentDocument()
-      viewModel.onPageCount(firstDocument, 1)
+      val firstSpineIndex = viewModel.currentSpineIndex()
+      viewModel.onPageCount(firstSpineIndex, 1)
 
       viewModel.nextPage()
       advanceUntilIdle()
-      viewModel.onPageCount(firstDocument, 99)
+      viewModel.onPageCount(firstSpineIndex, 99)
 
       assertEquals(0, viewModel.pageCount.value)
     }
@@ -285,7 +367,7 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(viewModel.currentDocument(), 1)
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
       viewModel.nextPage()
@@ -316,7 +398,7 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(viewModel.currentDocument(), 1)
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
       viewModel.open(2)
@@ -380,6 +462,23 @@ class ReaderViewModelTest {
     }
   }
 
+  private fun testPublicationWithMissingResource(
+    missingResourceIndex: Int,
+    vararg xhtml: String,
+  ): Publication {
+    val links = xhtml.indices.map { mockk<Link>(relaxed = true) }
+    val resources =
+      xhtml.map { content ->
+        mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
+      }
+    return mockk(relaxUnitFun = true) {
+      every { readingOrder } returns links
+      links.forEachIndexed { index, link ->
+        every { get(link) } returns resources[index].takeUnless { index == missingResourceIndex }
+      }
+    }
+  }
+
   private fun ReaderViewModel.closeThroughStore() {
     ViewModelStore().apply {
       put("reader", this@closeThroughStore)
@@ -391,6 +490,12 @@ class ReaderViewModelTest {
     val state = uiState.value
     assertTrue(state is ReaderUiState.Reading)
     return (state as ReaderUiState.Reading).document
+  }
+
+  private fun ReaderViewModel.currentSpineIndex(): Int {
+    val state = uiState.value
+    assertTrue(state is ReaderUiState.Reading)
+    return (state as ReaderUiState.Reading).spineIndex
   }
 }
 

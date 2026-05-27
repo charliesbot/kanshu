@@ -12,16 +12,7 @@ import org.readium.r2.shared.publication.Publication
 
 private const val TAG = "ReaderSpine"
 
-/** Minimum flattened text before a spine item counts as readable chapter content. */
-private const val MIN_READABLE_CHARS = 40
-
-internal data class ReadableSpineItem(val spineIndex: Int, val document: ReaderDocument)
-
-private val SKIP_SPINE_HREF =
-  Regex(
-    pattern = """(cover|titlepage|title-page|half-title|halftitle|frontcover|front-cover)""",
-    option = RegexOption.IGNORE_CASE,
-  )
+internal data class SpineItem(val spineIndex: Int, val document: ReaderDocument)
 
 internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
   val link = readingOrder.getOrNull(spineIndex)
@@ -44,52 +35,31 @@ internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
   return xhtml
 }
 
-/**
- * First spine item with parseable paragraph content (skips cover pages, image-only spreads, and
- * empty front matter).
- */
-internal suspend fun Publication.readFirstReadableChapter(): ReaderDocument? =
-  readNextReadableSpineItem(afterSpineIndex = -1)?.document
+internal suspend fun Publication.readFirstSpineItem(): ReaderDocument? =
+  readNextSpineItem(afterSpineIndex = -1)?.document
 
-internal suspend fun Publication.readNextReadableSpineItem(
-  afterSpineIndex: Int
-): ReadableSpineItem? {
-  Log.d(TAG, "scanning ${readingOrder.size} spine items after spine[$afterSpineIndex]")
-  val startIndex = (afterSpineIndex + 1).coerceAtLeast(0)
-  for (index in startIndex until readingOrder.size) {
-    val link = readingOrder[index]
-    if (shouldSkipSpineHref(link.href.toString())) {
-      Log.d(TAG, "spine[$index]: skipping cover-like href=${link.href}")
-      continue
-    }
-
-    val xhtml = readSpineXhtml(index) ?: continue
-    val document = EpubParser.parse(xhtml).document
-    val flattened = document.flattenedText()
-    val textLength = flattened.length
-    Log.d(
-      TAG,
-      "spine[$index]: parsed blocks=${document.blocks.size} chars=$textLength language=${document.language}",
-    )
-
-    if (document.blocks.isEmpty()) continue
-
-    if (textLength < MIN_READABLE_CHARS) {
-      Log.d(TAG, "spine[$index]: skipping short text ($textLength chars)")
-      continue
-    }
-
-    Log.d(
-      TAG,
-      "using spine[$index] href=${link.href} blocks=${document.blocks.size} chars=$textLength",
-    )
-    return ReadableSpineItem(spineIndex = index, document = document)
+internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineItem? {
+  val index = afterSpineIndex + 1
+  Log.d(TAG, "reading spine[$index] after spine[$afterSpineIndex] of ${readingOrder.size}")
+  val link = readingOrder.getOrNull(index)
+  if (link == null) {
+    Log.d(TAG, "spine[$index]: no next link in readingOrder")
+    return null
   }
-  Log.d(TAG, "no spine item produced readable blocks")
-  return null
+  val xhtml = readSpineXhtml(index) ?: return null
+  val document = EpubParser.parse(xhtml).document
+  val flattened = document.flattenedText()
+  val textLength = flattened.length
+  Log.d(
+    TAG,
+    "spine[$index]: parsed blocks=${document.blocks.size} chars=$textLength language=${document.language}",
+  )
+  Log.d(
+    TAG,
+    "using spine[$index] href=${link.href} blocks=${document.blocks.size} chars=$textLength",
+  )
+  return SpineItem(spineIndex = index, document = document)
 }
-
-private fun shouldSkipSpineHref(href: String): Boolean = SKIP_SPINE_HREF.containsMatchIn(href)
 
 private fun ReaderDocument.flattenedText(): String =
   blocks.filterIsInstance<ParagraphBlock>().flatMap { block -> block.spans }.flattenedText().trim()
