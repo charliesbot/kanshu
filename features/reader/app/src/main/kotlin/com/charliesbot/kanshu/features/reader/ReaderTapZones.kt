@@ -11,10 +11,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 
 @Composable
-fun ReaderTapZones(onPrevious: () -> Unit, onNext: () -> Unit, modifier: Modifier = Modifier) {
+fun ReaderTapZones(
+  onPrevious: () -> Unit,
+  onCenter: () -> Unit,
+  onNext: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
   Row(modifier = modifier.fillMaxSize()) {
     TapZone(onClick = onPrevious, modifier = Modifier.weight(1f))
-    Box(modifier = Modifier.weight(1f).fillMaxHeight())
+    TapZone(onClick = onCenter, modifier = Modifier.weight(1f))
     TapZone(onClick = onNext, modifier = Modifier.weight(1f))
   }
 }

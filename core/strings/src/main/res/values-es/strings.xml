@@ -47,6 +47,7 @@
     <string name="reader_overlay_previous_chapter">Capítulo anterior</string>
     <string name="reader_overlay_next_chapter">Capítulo siguiente</string>
     <string name="reader_overlay_sync_to_furthest">Sincronizar con el punto más avanzado</string>
+    <string name="reader_overlay_page_label">Página %1$d de %2$d</string>
     <string name="reader_sync_already_at_furthest">Ya estás en el punto más avanzado</string>
     <string name="reader_sync_prompt_title">¿Continuar desde otro dispositivo?</string>
     <string name="reader_sync_prompt_body_with_device">%1$s ha leído hasta el %2$d %%. ¿Aplicar esta posición?</string>
