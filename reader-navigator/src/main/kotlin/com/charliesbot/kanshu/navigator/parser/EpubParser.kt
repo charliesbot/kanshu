@@ -8,7 +8,7 @@ import org.jsoup.nodes.Document
 /**
  * Parses EPUB spine XHTML into a [ParseResult].
  *
- * Phase 0 output is paragraph-only with bold/italic inline spans. Unsupported structure unwraps to
+ * Parses semantic block structure with bold/italic inline spans. Unsupported structure unwraps to
  * text; tag counts live in [ParseResult.diagnostics], not on the reading surface.
  */
 object EpubParser {

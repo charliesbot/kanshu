@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.StyleSpan
+import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
@@ -14,6 +15,7 @@ import com.charliesbot.kanshu.navigator.model.TextSpan
 internal object SpanFlattener {
   fun flatten(block: ReaderBlock): CharSequence? =
     when (block) {
+      is HeadingBlock -> flattenSpans(block.spans)
       is ParagraphBlock -> flattenSpans(block.spans)
       else -> null
     }
