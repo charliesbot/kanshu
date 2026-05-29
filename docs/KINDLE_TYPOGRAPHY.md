@@ -59,13 +59,17 @@ For Kanshu: don't expect Kindle parity on covers by passing publisher cover CSS 
 
 ## Summary for Implementation
 
-To replicate Kindle's quality, a reader should move away from "render the publisher CSS as-is" and toward **opinionated normalization**:
+To replicate Kindle's quality, a reader should move away from both extremes: neither "render the publisher CSS as-is" nor "ignore publisher CSS entirely" is the right model. The target is **opinionated normalization**:
 
-1. **Honor structural CSS** (headings, blockquotes, indents, list structure).
+1. **Consume semantic structure first** (headings, blockquotes, lists, emphasis, images).
 2. **Inject robust defaults** for things publishers commonly miss (justification, list padding, heading margins).
-3. **Constrain** known-fragile properties (`position: absolute`, hardcoded widths that don't account for the viewport).
-4. **Override legibility & spacing CSS** with user preferences (font family, font size, line height, margins, alignment, paragraph spacing, and word/letter spacing).
-5. **Treat cover pages as a separate concern** — don't assume publisher CSS will fill the viewport.
+3. **Measure residual structural CSS reliance** after semantic tags render, using real EPUBs rather than fixture-only assumptions.
+4. **Allowlist only high-value structural CSS signals** when corpus data justifies them, such as `text-align` for scene breaks/signatures or fallback `font-style` / `font-weight` when semantic tags are absent.
+5. **Constrain** known-fragile properties (`position: absolute`, hardcoded widths that don't account for the viewport).
+6. **Override legibility & spacing CSS** with user preferences (font family, font size, line height, margins, alignment defaults, paragraph spacing, and word/letter spacing).
+7. **Treat cover pages as a separate concern** — don't assume publisher CSS will fill the viewport.
+
+For Kanshu specifically, this means semantic XHTML tags land before CSS extraction. A CSS layer should be external-stylesheet-aware and data-gated; inline styles or convenient class names alone are not enough evidence for real EPUB behavior. Kanshu should not build a full cascade/layout engine unless corpus measurements prove the smaller allowlist cannot preserve readable structure.
 
 ## References
 

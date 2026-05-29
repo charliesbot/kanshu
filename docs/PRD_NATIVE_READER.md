@@ -26,7 +26,14 @@ The reader should feel like a native e-ink text surface, not an app wrapped arou
 
 ### Corpus and Fidelity Expectations
 
-Kanshu does not evaluate publisher CSS live. Structure is inferred from XHTML tags, not computed styles. That is intentional and matches the Kindle-style split in `docs/KINDLE_TYPOGRAPHY.md`, but it means fidelity is phased:
+Kanshu does not evaluate publisher CSS live or implement a browser-style cascade. Structure is consumed in stages:
+
+1. Semantic XHTML tags are authoritative for the first native-rendering slices.
+2. Reader preferences own legibility typography: font, size, line height, margins, alignment defaults, paragraph spacing, word spacing, and letter spacing.
+3. After semantic block rendering lands, diagnostics measure residual structural CSS reliance in real EPUBs.
+4. Only measured high-value CSS signals are considered for a tiny allowlist, likely block alignment and fallback bold/italic when semantic tags are absent.
+
+This follows the Kindle-style split in `docs/KINDLE_TYPOGRAPHY.md`: publisher markup and selected structural signals shape the book, while Kanshu owns the reading typography. Because Kanshu is not a browser engine, fidelity is phased:
 
 | Phase | Reading experience                                                                                                                                                             |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -180,7 +187,7 @@ Use Ares as a **reference** when implementing `EpubParser`:
 
 Do not import `:htmlparser` or share a module yet. The ASTs diverge (`ParsedContent` vs `ReaderBlock`) and the render paths are incompatible. Revisit a shared parser-only library only if both projects stabilize on identical block semantics.
 
-This model preserves structural intent (headings, quotes, list nesting, emphasis) without carrying live CSS. It follows the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`: publisher CSS shapes structure, Kanshu owns legibility and spacing.
+This model preserves structural intent (headings, quotes, list nesting, emphasis) without carrying live CSS. Semantic tags are the first source of truth. A later, data-gated CSS signal layer may add narrowly scoped structural hints, but Kanshu does not apply publisher typography wholesale. It follows the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`: publisher markup and selected structural signals shape structure, while Kanshu owns legibility and spacing.
 
 ### XHTML Element Mapping
 
@@ -425,6 +432,8 @@ All measurements on the Boox Go 7 Gen 2 B&W with representative EPUBs from the u
 **Single text engine.** `StaticLayout` is both the measurement artifact and the rendering artifact. There is no second text engine to diverge from. Line breaks, heights, and character positions are determined once and drawn exactly as computed.
 
 **Geometry is available from layout.** `StaticLayout` exposes `getLineCount()`, `getLineStart()`, `getLineEnd()`, `getLineTop()`, `getLineBottom()`, `getOffsetForHorizontal()`, and `getLineForVertical()`. Hit-testing, selection, and highlights use these APIs directly on the precomputed layouts. No separate geometry-retention pass during rendering.
+
+**CSS signal extraction is parse-time only.** If a later phase reads stylesheet or inline-style hints, it resolves them once per spine item off the UI thread and stores the resulting simple values on `ReaderBlock` / `TextSpan`. Pagination, page turns, Canvas drawing, hit-testing, and selection must not parse CSS, match selectors, inspect class lists, or re-resolve style rules. CSS extraction is measured against the first-page-readiness budget; if stylesheets are malformed, too large, or slow to process, Kanshu skips the CSS hints and falls back to semantic tags.
 
 ### Profiling Protocol
 
@@ -735,6 +744,8 @@ Add remaining block types to the parser and renderer:
 - Horizontal rules.
 - Inline images (chapter ornaments).
 
+After semantic blocks render, add diagnostics for residual structural CSS reliance in real Kavita EPUBs. Measure class usage on structural elements, inline style usage, and external stylesheet rules for the small candidate allowlist (block alignment and fallback bold/italic). This is measurement only; it does not change rendering.
+
 ### Phase 2: Typography Preferences and E-ink Baseline
 
 Wire `ReaderPreferences` to the rendering step:
@@ -749,6 +760,10 @@ Introduce baseline Boox EPD integration early — full Canvas redraw on every pa
 - If not: document standard Android behavior as baseline; defer Boox-specific control to Phase 5.
 
 Either way, profile ghosting and refresh latency on the Boox Go 7 alongside typography changes during Phase 2. Deeper EPD tuning (per-content-type modes, A2 for fast skim) remains Phase 5.
+
+### Phase 2.5: Data-Gated CSS Signals
+
+If Phase 1 diagnostics show real books need it, add a tiny structural CSS signal allowlist. The initial candidate surface is block alignment (`text-align`) and fallback inline emphasis (`font-style`, `font-weight`) when semantic tags are absent. External stylesheets must be considered; inline styles and convenient class names alone are not enough evidence. Typography ownership stays with `ReaderPreferences`, and no live cascade/layout engine is introduced.
 
 ### Phase 3: Full Selection and Interaction
 
