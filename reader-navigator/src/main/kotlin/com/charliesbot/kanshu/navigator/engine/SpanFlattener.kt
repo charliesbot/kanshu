@@ -34,7 +34,11 @@ internal object SpanFlattener {
         applyStyle(builder, start, builder.length, span.style)
       }
 
-      is StyledGroup -> span.children.forEach { appendSpan(builder, it) }
+      is StyledGroup -> {
+        val start = builder.length
+        span.children.forEach { appendSpan(builder, it) }
+        applyStyle(builder, start, builder.length, span.style)
+      }
 
       else -> Unit
     }
