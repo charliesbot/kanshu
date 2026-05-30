@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.parser
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import org.jsoup.nodes.Element
@@ -47,9 +48,10 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
 
       "div" -> parseInlineOrChildren(element, blocks)
 
+      "blockquote" -> quoteFromChildren(element.childNodes())?.let(blocks::add)
+
       "section",
       "article",
-      "blockquote",
       "li" -> appendParsed(element.childNodes(), blocks)
 
       "ul",
@@ -103,6 +105,11 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
     if (spans.isEmpty()) return null
     val level = tag.removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
     return HeadingBlock(level = level, spans = spans)
+  }
+
+  private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
+    val children = parse(nodes)
+    return if (children.isEmpty()) null else QuoteBlock(children)
   }
 
   private fun altParagraph(element: Element): ParagraphBlock? =

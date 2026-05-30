@@ -5,8 +5,8 @@ data class ReaderDocument(val blocks: List<ReaderBlock>, val language: String? =
 /**
  * Block AST for the native reader engine.
  *
- * Phase 0 parser emits [ParagraphBlock] only. [HeadingBlock], [QuoteBlock], [ListBlock],
- * [HorizontalRule], and [ImageBlock] are scaffolded for Phase 1 parser and layout work.
+ * Native rendering is intentionally staged: paragraphs, headings, rules, and quotes are active
+ * today; lists and images are scaffolded for later parser and layout slices.
  */
 sealed interface ReaderBlock
 

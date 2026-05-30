@@ -13,6 +13,8 @@ sealed interface PageEntry {
     override val yOffsetPx: Float,
     override val visibleHeightPx: Float,
     override val drawOffsetXPx: Float,
+    val leadingRuleOffsetXPx: Float = 0f,
+    val leadingRuleStrokeWidthPx: Float = 0f,
     val layout: StaticLayout,
   ) : PageEntry
 
@@ -21,6 +23,8 @@ sealed interface PageEntry {
     override val yOffsetPx: Float,
     override val visibleHeightPx: Float,
     override val drawOffsetXPx: Float,
+    val leadingRuleOffsetXPx: Float = 0f,
+    val leadingRuleStrokeWidthPx: Float = 0f,
     val layout: StaticLayout,
     val lineRange: IntRange,
     val firstLineTopPx: Float,

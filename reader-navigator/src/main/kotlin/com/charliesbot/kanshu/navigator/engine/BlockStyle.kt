@@ -14,4 +14,6 @@ data class BlockStyle(
   val prefixWidthPx: Float,
   val marginTopPx: Float,
   val marginBottomPx: Float,
+  val leadingRuleOffsetXPx: Float = 0f,
+  val leadingRuleStrokeWidthPx: Float = 0f,
 )

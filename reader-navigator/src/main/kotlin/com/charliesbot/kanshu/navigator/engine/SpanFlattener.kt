@@ -5,8 +5,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.StyleSpan
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.StyledGroup
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -17,8 +19,27 @@ internal object SpanFlattener {
     when (block) {
       is HeadingBlock -> flattenSpans(block.spans)
       is ParagraphBlock -> flattenSpans(block.spans)
+      is QuoteBlock -> flattenQuote(block)
       else -> null
     }
+
+  private fun flattenQuote(block: QuoteBlock): CharSequence? {
+    val builder = SpannableStringBuilder()
+    block.children.forEach { child ->
+      val childText =
+        when (child) {
+          is HeadingBlock -> flattenSpans(child.spans)
+          is ParagraphBlock -> flattenSpans(child.spans)
+          is QuoteBlock -> flattenQuote(child)
+          is HorizontalRule -> null
+          else -> null
+        }
+      if (childText.isNullOrBlank()) return@forEach
+      if (builder.isNotEmpty()) builder.append("\n\n")
+      builder.append(childText)
+    }
+    return if (builder.isEmpty()) null else builder
+  }
 
   private fun flattenSpans(spans: List<TextSpan>): CharSequence {
     val builder = SpannableStringBuilder()
