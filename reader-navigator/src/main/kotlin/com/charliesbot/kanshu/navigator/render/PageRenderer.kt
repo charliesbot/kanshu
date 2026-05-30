@@ -35,6 +35,7 @@ internal object PageRenderer {
     when (entry) {
       is PageEntry.FullBlock -> {
         drawLeadingRule(canvas, entry, horizontalMarginPx, y)
+        drawMarker(canvas, entry.markerText, horizontalMarginPx + entry.markerOffsetXPx, y, entry)
         canvas.save()
         canvas.translate(x, y)
         entry.layout.draw(canvas)
@@ -45,6 +46,7 @@ internal object PageRenderer {
         val clipTop = y + 1f
         val clipBottom = y + entry.visibleHeightPx - 1f
         drawLeadingRule(canvas, entry, horizontalMarginPx, y)
+        drawMarker(canvas, entry.markerText, horizontalMarginPx + entry.markerOffsetXPx, y, entry)
         canvas.save()
         canvas.clipRect(horizontalMarginPx, clipTop, canvas.width.toFloat(), clipBottom)
         canvas.translate(x, y - entry.firstLineTopPx)
@@ -84,6 +86,30 @@ internal object PageRenderer {
     val ruleX = horizontalMarginPx + ruleOffsetX
     rulePaint.strokeWidth = strokeWidth.coerceAtLeast(1f)
     canvas.drawLine(ruleX, y, ruleX, y + entry.visibleHeightPx, rulePaint)
+  }
+
+  private fun drawMarker(
+    canvas: AndroidCanvas,
+    markerText: String?,
+    x: Float,
+    y: Float,
+    entry: PageEntry,
+  ) {
+    if (markerText == null) return
+    val baseline =
+      when (entry) {
+        is PageEntry.FullBlock -> y + entry.layout.getLineBaseline(0)
+        is PageEntry.SplitBlock ->
+          y + entry.layout.getLineBaseline(entry.lineRange.first) - entry.firstLineTopPx
+        is PageEntry.HorizontalRule -> return
+      }
+    val paint =
+      when (entry) {
+        is PageEntry.FullBlock -> entry.layout.paint
+        is PageEntry.SplitBlock -> entry.layout.paint
+        is PageEntry.HorizontalRule -> return
+      }
+    canvas.drawText(markerText, x, baseline, paint)
   }
 
   private val rulePaint =

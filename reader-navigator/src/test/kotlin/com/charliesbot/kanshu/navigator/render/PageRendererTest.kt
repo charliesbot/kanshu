@@ -10,6 +10,8 @@ import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ListBlock
+import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -170,6 +172,53 @@ class PageRendererTest {
 
     val ruleX = (horizontalMarginPx + entry.leadingRuleOffsetXPx).toInt()
     assertTrue(hasNonBackgroundPixelNearX(bitmap, ruleX))
+  }
+
+  @Test
+  fun draw_listBlock_rendersMarkerInGutter() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(
+              blocks =
+                listOf(
+                  ListBlock(
+                    ordered = false,
+                    items =
+                      listOf(
+                        ListItem(
+                          listOf(ParagraphBlock(listOf(TextLeaf("List item for rendering."))))
+                        )
+                      ),
+                  )
+                )
+            ),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.FullBlock
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+    )
+
+    val markerX = (horizontalMarginPx + entry.markerOffsetXPx).toInt()
+    val textX = (horizontalMarginPx + entry.drawOffsetXPx).toInt()
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, markerX))
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, textX))
   }
 
   private fun hasNonBackgroundPixel(bitmap: Bitmap): Boolean {

@@ -5,8 +5,8 @@ data class ReaderDocument(val blocks: List<ReaderBlock>, val language: String? =
 /**
  * Block AST for the native reader engine.
  *
- * Native rendering is intentionally staged: paragraphs, headings, rules, and quotes are active
- * today; lists and images are scaffolded for later parser and layout slices.
+ * Native rendering is intentionally staged: paragraphs, headings, rules, quotes, and lists are
+ * active today; images are scaffolded for a later parser and layout slice.
  */
 sealed interface ReaderBlock
 

@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator.engine
 
 import android.text.StaticLayout
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlin.math.max
@@ -31,6 +32,23 @@ class ReaderLayoutEngine {
             heightPx = viewport.density.coerceAtLeast(1f),
           )
         )
+        return@forEachIndexed
+      }
+      if (block is ListBlock) {
+        block.items.forEachIndexed { itemIndex, item ->
+          val text = SpanFlattener.flatten(item) ?: return@forEachIndexed
+          if (text.isBlank()) return@forEachIndexed
+          val layout = StaticLayoutFactory.build(text, style, contentWidthPx, justify)
+          val markerText = if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER
+          measuredBlocks.add(
+            MeasuredBlock.Text(
+              blockIndex = index,
+              style = style,
+              layout = layout,
+              markerText = markerText,
+            )
+          )
+        }
         return@forEachIndexed
       }
       val text = SpanFlattener.flatten(block) ?: return@forEachIndexed
@@ -68,6 +86,8 @@ class ReaderLayoutEngine {
           drawOffsetXPx = drawOffsetX(measured.style),
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
+          markerText = measured.markerText,
+          markerOffsetXPx = 0f,
           layout = measured.layout,
         )
       )
@@ -90,6 +110,8 @@ class ReaderLayoutEngine {
           drawOffsetXPx = drawOffsetX(measured.style),
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
+          markerText = if (lineRange.first == 0) measured.markerText else null,
+          markerOffsetXPx = 0f,
           layout = measured.layout,
           lineRange = lineRange,
           firstLineTopPx = firstLineTop,
@@ -224,6 +246,7 @@ private sealed interface MeasuredBlock {
     override val blockIndex: Int,
     override val style: BlockStyle,
     val layout: StaticLayout,
+    val markerText: String? = null,
   ) : MeasuredBlock
 
   data class Rule(
@@ -232,3 +255,5 @@ private sealed interface MeasuredBlock {
     val heightPx: Float,
   ) : MeasuredBlock
 }
+
+private const val BULLET_MARKER = "\u2022"
