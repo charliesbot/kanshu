@@ -1,5 +1,7 @@
 package com.charliesbot.kanshu.navigator.parser
 
+import com.charliesbot.kanshu.navigator.model.HeadingBlock
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -96,13 +98,17 @@ class EpubParserTest {
   }
 
   @Test
-  fun parse_mixedStructure_unwrapsToParagraphsOnly() {
+  fun parse_mixedStructure_preservesHeadingsAndUnwrapsUnsupportedStructure() {
     val result = EpubParser.parse(loadFixture("mixed-structure.xhtml"))
 
     assertEquals("es", result.document.language)
+    assertTrue(result.document.blocks.first() is HeadingBlock)
+    assertEquals(
+      "Chapter Title",
+      spanText((result.document.blocks.first() as HeadingBlock).spans.single()),
+    )
     assertEquals(
       listOf(
-        "Chapter Title",
         "Quoted text.",
         "First item",
         "Second item",
@@ -110,8 +116,36 @@ class EpubParserTest {
       ),
       result.document.paragraphText(),
     )
-    assertTrue(result.document.blocks.all { it is ParagraphBlock })
     assertEquals(1, result.diagnostics.unsupportedInlineTags["ruby"])
+  }
+
+  @Test
+  fun parse_headingsAndRules_preservesSemanticBlocks() {
+    val result =
+      EpubParser.parse(
+        """
+        <html>
+          <body>
+            <h1>Chapter <em>One</em></h1>
+            <p>Opening paragraph.</p>
+            <hr/>
+            <h3>Section</h3>
+          </body>
+        </html>
+        """
+          .trimIndent()
+      )
+
+    assertEquals(4, result.document.blocks.size)
+    assertEquals(
+      listOf(TextLeaf("Chapter "), TextLeaf("One", InlineStyle.Italic)),
+      (result.document.blocks[0] as HeadingBlock).spans,
+    )
+    assertEquals(1, (result.document.blocks[0] as HeadingBlock).level)
+    assertTrue(result.document.blocks[1] is ParagraphBlock)
+    assertTrue(result.document.blocks[2] is HorizontalRule)
+    assertEquals(3, (result.document.blocks[3] as HeadingBlock).level)
+    assertTrue(result.diagnostics.unsupportedBlockTags["hr"] == null)
   }
 
   @Test

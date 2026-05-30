@@ -49,6 +49,19 @@ internal object PageRenderer {
         entry.layout.draw(canvas)
         canvas.restore()
       }
+
+      is PageEntry.HorizontalRule -> {
+        val ruleY = y + entry.visibleHeightPx / 2f
+        val rightX = canvas.width - horizontalMarginPx - entry.drawOffsetXPx
+        rulePaint.strokeWidth = entry.visibleHeightPx.coerceAtLeast(1f)
+        canvas.drawLine(x, ruleY, rightX, ruleY, rulePaint)
+      }
     }
   }
+
+  private val rulePaint =
+    android.graphics.Paint().apply {
+      color = android.graphics.Color.BLACK
+      isAntiAlias = false
+    }
 }

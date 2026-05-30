@@ -6,6 +6,8 @@ import android.text.Layout
 import android.text.TextPaint
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.navigator.model.HeadingBlock
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 
@@ -18,6 +20,8 @@ internal class BlockStyleResolver(
 
   fun resolve(block: ReaderBlock): BlockStyle? =
     when (block) {
+      is HeadingBlock -> headingStyle(block.level)
+      is HorizontalRule -> ruleStyle()
       is ParagraphBlock -> paragraphStyle()
       else -> null
     }
@@ -42,6 +46,60 @@ internal class BlockStyleResolver(
       indentPx = 0f,
       prefixWidthPx = 0f,
       marginTopPx = 0f,
+      marginBottomPx = preferences.paragraphSpacing * fontSizePx,
+    )
+  }
+
+  private fun headingStyle(level: Int): BlockStyle {
+    val headingScale =
+      when (level.coerceIn(1, 6)) {
+        1 -> 1.65f
+        2 -> 1.45f
+        3 -> 1.25f
+        else -> 1.12f
+      }
+    val headingSizePx = fontSizePx * headingScale
+    val paint =
+      TextPaint().apply {
+        this.typeface = Typeface.create(typeface, Typeface.BOLD)
+        textSize = headingSizePx
+        color = Color.BLACK
+        isAntiAlias = true
+        letterSpacing = preferences.letterSpacing
+      }
+
+    return BlockStyle(
+      paint = paint,
+      lineSpacingMultiplier = preferences.lineSpacing,
+      lineSpacingAdd = 0f,
+      hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE,
+      alignment = Layout.Alignment.ALIGN_NORMAL,
+      breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
+      indentPx = 0f,
+      prefixWidthPx = 0f,
+      marginTopPx = headingSizePx * if (level <= 3) 1.2f else 0.8f,
+      marginBottomPx = headingSizePx * if (level <= 3) 0.6f else 0.4f,
+    )
+  }
+
+  private fun ruleStyle(): BlockStyle {
+    val paint =
+      TextPaint().apply {
+        color = Color.BLACK
+        strokeWidth = density.coerceAtLeast(1f)
+        isAntiAlias = false
+      }
+
+    return BlockStyle(
+      paint = paint,
+      lineSpacingMultiplier = 1f,
+      lineSpacingAdd = 0f,
+      hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE,
+      alignment = Layout.Alignment.ALIGN_NORMAL,
+      breakStrategy = Layout.BREAK_STRATEGY_SIMPLE,
+      indentPx = 0f,
+      prefixWidthPx = 0f,
+      marginTopPx = preferences.paragraphSpacing * fontSizePx,
       marginBottomPx = preferences.paragraphSpacing * fontSizePx,
     )
   }

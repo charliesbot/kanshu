@@ -1,97 +1,108 @@
 package com.charliesbot.kanshu.navigator.parser
 
+import com.charliesbot.kanshu.navigator.model.HeadingBlock
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
 /**
- * Phase 0 block parser: always emits [ParagraphBlock] only.
+ * Block parser for native reader structure.
  *
- * Headings, quotes, lists, images, and rules unwrap to flat paragraphs with preserved text. Rich
- * [ReaderBlock] variants from the scaffold exist for Phase 1 layout and rendering, not this parser
- * slice. See `docs/PRD_NATIVE_READER.md` Phase 0 parser output.
+ * Unsupported structures still unwrap to text with diagnostics. Lists, quotes, and images are kept
+ * lossy until their renderer slices land.
  */
 internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollector) {
   private val inlineSpanExtractor = InlineSpanExtractor(diagnostics)
 
-  fun parse(nodes: List<Node>): List<ParagraphBlock> {
-    val paragraphs = mutableListOf<ParagraphBlock>()
+  fun parse(nodes: List<Node>): List<ReaderBlock> {
+    val blocks = mutableListOf<ReaderBlock>()
     for (node in nodes) {
       when (node) {
         is TextNode -> {
           if (node.text().isBlank()) continue
-          paragraphFromInline(listOf(node))?.let(paragraphs::add)
+          paragraphFromInline(listOf(node))?.let(blocks::add)
         }
 
-        is Element -> parseElement(node, paragraphs)
+        is Element -> parseElement(node, blocks)
       }
     }
-    return paragraphs
+    return blocks
   }
 
-  private fun parseElement(element: Element, paragraphs: MutableList<ParagraphBlock>) {
-    when (element.tagName().lowercase()) {
-      "p" -> paragraphFromInline(element.childNodes())?.let(paragraphs::add)
+  private fun parseElement(element: Element, blocks: MutableList<ReaderBlock>) {
+    val tag = element.tagName().lowercase()
+    when (tag) {
+      "p" -> paragraphFromInline(element.childNodes())?.let(blocks::add)
 
-      "div",
       "h1",
       "h2",
       "h3",
       "h4",
       "h5",
-      "h6" -> parseInlineOrChildren(element, paragraphs)
+      "h6" -> headingFromInline(tag, element.childNodes())?.let(blocks::add)
+
+      "div" -> parseInlineOrChildren(element, blocks)
 
       "section",
       "article",
       "blockquote",
-      "li" -> appendParsed(element.childNodes(), paragraphs)
+      "li" -> appendParsed(element.childNodes(), blocks)
 
       "ul",
       "ol" -> {
         val listItems = element.select("> li")
         if (listItems.isEmpty()) {
-          appendParsed(element.childNodes(), paragraphs)
+          appendParsed(element.childNodes(), blocks)
         } else {
-          listItems.forEach { listItem -> appendParsed(listItem.childNodes(), paragraphs) }
+          listItems.forEach { listItem -> appendParsed(listItem.childNodes(), blocks) }
         }
       }
 
       "img" -> {
         diagnostics.recordUnsupportedBlock("img")
-        altParagraph(element)?.let(paragraphs::add)
+        altParagraph(element)?.let(blocks::add)
       }
 
-      "hr" -> diagnostics.recordUnsupportedBlock("hr")
+      "hr" -> blocks.add(HorizontalRule)
 
       "table" -> {
         diagnostics.recordUnsupportedBlock("table")
-        textParagraph(element.text())?.let(paragraphs::add)
+        textParagraph(element.text())?.let(blocks::add)
       }
 
       else -> {
         diagnostics.recordUnsupportedBlock(element.tagName())
-        appendParsed(element.childNodes(), paragraphs)
+        appendParsed(element.childNodes(), blocks)
       }
     }
   }
 
-  private fun parseInlineOrChildren(element: Element, paragraphs: MutableList<ParagraphBlock>) {
+  private fun parseInlineOrChildren(element: Element, blocks: MutableList<ReaderBlock>) {
     if (element.hasBlockChild()) {
-      appendParsed(element.childNodes(), paragraphs)
+      appendParsed(element.childNodes(), blocks)
     } else {
-      paragraphFromInline(element.childNodes())?.let(paragraphs::add)
+      paragraphFromInline(element.childNodes())?.let(blocks::add)
     }
   }
 
-  private fun appendParsed(nodes: List<Node>, paragraphs: MutableList<ParagraphBlock>) {
-    paragraphs.addAll(parse(nodes))
+  private fun appendParsed(nodes: List<Node>, blocks: MutableList<ReaderBlock>) {
+    blocks.addAll(parse(nodes))
   }
 
   private fun paragraphFromInline(nodes: List<Node>): ParagraphBlock? {
     val spans = inlineSpanExtractor.extract(nodes)
     return if (spans.isEmpty()) null else ParagraphBlock(spans)
+  }
+
+  private fun headingFromInline(tag: String, nodes: List<Node>): HeadingBlock? {
+    val spans = inlineSpanExtractor.extract(nodes)
+    if (spans.isEmpty()) return null
+    val level = tag.removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
+    return HeadingBlock(level = level, spans = spans)
   }
 
   private fun altParagraph(element: Element): ParagraphBlock? =

@@ -2,6 +2,8 @@ package com.charliesbot.kanshu.navigator.engine
 
 import android.graphics.Typeface
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.navigator.model.HeadingBlock
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -89,6 +91,38 @@ class ReaderLayoutEngineTest {
         )
 
     assertEquals(1, pages.size)
+  }
+
+  @Test
+  fun layout_headingAndHorizontalRule_producesRenderableEntries() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            HeadingBlock(level = 1, spans = listOf(TextLeaf("Chapter One"))),
+            HorizontalRule,
+            ParagraphBlock(listOf(TextLeaf("Opening paragraph."))),
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries
+    assertEquals(3, entries.size)
+    assertTrue(entries[0] is PageEntry.FullBlock)
+    assertTrue(entries[1] is PageEntry.HorizontalRule)
+    assertTrue(entries[2] is PageEntry.FullBlock)
   }
 
   @Test

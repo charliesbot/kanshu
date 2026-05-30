@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.engine
 
 import android.text.StaticLayout
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlin.math.max
@@ -18,16 +19,24 @@ class ReaderLayoutEngine {
     val contentWidthPx = (viewport.widthPx - horizontalMarginPx * 2).toInt().coerceAtLeast(1)
     val contentHeightPx = (viewport.heightPx - verticalMarginPx * 2).coerceAtLeast(1f)
 
-    data class MeasuredBlock(val blockIndex: Int, val style: BlockStyle, val layout: StaticLayout)
-
     val measuredBlocks = mutableListOf<MeasuredBlock>()
     document.blocks.forEachIndexed { index, block ->
       if (!shouldContinue()) return emptyList()
       val style = styleResolver(block) ?: return@forEachIndexed
+      if (block is HorizontalRule) {
+        measuredBlocks.add(
+          MeasuredBlock.Rule(
+            blockIndex = index,
+            style = style,
+            heightPx = viewport.density.coerceAtLeast(1f),
+          )
+        )
+        return@forEachIndexed
+      }
       val text = SpanFlattener.flatten(block) ?: return@forEachIndexed
       if (text.isBlank()) return@forEachIndexed
       val layout = StaticLayoutFactory.build(text, style, contentWidthPx, justify)
-      measuredBlocks.add(MeasuredBlock(index, style, layout))
+      measuredBlocks.add(MeasuredBlock.Text(index, style, layout))
     }
 
     if (measuredBlocks.isEmpty()) {
@@ -50,7 +59,7 @@ class ReaderLayoutEngine {
 
     fun drawOffsetX(style: BlockStyle): Float = style.indentPx + style.prefixWidthPx
 
-    fun addFullBlock(measured: MeasuredBlock, yOffset: Float) {
+    fun addFullBlock(measured: MeasuredBlock.Text, yOffset: Float) {
       currentEntries.add(
         PageEntry.FullBlock(
           blockIndex = measured.blockIndex,
@@ -65,7 +74,7 @@ class ReaderLayoutEngine {
     }
 
     fun addSplitBlock(
-      measured: MeasuredBlock,
+      measured: MeasuredBlock.Text,
       yOffset: Float,
       lineRange: IntRange,
       visibleHeight: Float,
@@ -83,6 +92,19 @@ class ReaderLayoutEngine {
         )
       )
       yCursor = yOffset + visibleHeight
+      previousMarginBottom = measured.style.marginBottomPx
+    }
+
+    fun addRule(measured: MeasuredBlock.Rule, yOffset: Float) {
+      currentEntries.add(
+        PageEntry.HorizontalRule(
+          blockIndex = measured.blockIndex,
+          yOffsetPx = yOffset,
+          visibleHeightPx = measured.heightPx,
+          drawOffsetXPx = drawOffsetX(measured.style),
+        )
+      )
+      yCursor = yOffset + measured.heightPx
       previousMarginBottom = measured.style.marginBottomPx
     }
 
@@ -105,7 +127,7 @@ class ReaderLayoutEngine {
       return firstLineHeight(layout, lineStart) <= availableHeight
     }
 
-    fun addSplitBlockAcrossPages(measured: MeasuredBlock, firstPageYOffset: Float = 0f) {
+    fun addSplitBlockAcrossPages(measured: MeasuredBlock.Text, firstPageYOffset: Float = 0f) {
       val layout = measured.layout
       var lineStart = 0
       var yOffset = firstPageYOffset
@@ -129,7 +151,7 @@ class ReaderLayoutEngine {
       }
     }
 
-    fun addOverflowingBlock(measured: MeasuredBlock, blockY: Float, remainingHeight: Float) {
+    fun addOverflowingBlock(measured: MeasuredBlock.Text, blockY: Float, remainingHeight: Float) {
       if (
         currentEntries.isNotEmpty() &&
           canFitAnyLine(measured.layout, lineStart = 0, remainingHeight)
@@ -151,18 +173,33 @@ class ReaderLayoutEngine {
 
     fun addMeasuredBlock(measured: MeasuredBlock) {
       val style = measured.style
-      val layoutHeight = measured.layout.height.toFloat()
+      val blockHeight =
+        when (measured) {
+          is MeasuredBlock.Text -> measured.layout.height.toFloat()
+          is MeasuredBlock.Rule -> measured.heightPx
+        }
       val topMargin =
         if (currentEntries.isEmpty()) 0f else max(previousMarginBottom, style.marginTopPx)
       val blockY = yCursor + topMargin
       val remainingHeight = contentHeightPx - blockY
 
-      if (layoutHeight <= remainingHeight) {
-        addFullBlock(measured, blockY)
-        return
+      when (measured) {
+        is MeasuredBlock.Rule -> {
+          if (blockHeight > remainingHeight && currentEntries.isNotEmpty()) {
+            flushPage()
+            addRule(measured, 0f)
+          } else {
+            addRule(measured, blockY)
+          }
+        }
+        is MeasuredBlock.Text -> {
+          if (blockHeight <= remainingHeight) {
+            addFullBlock(measured, blockY)
+          } else {
+            addOverflowingBlock(measured, blockY, remainingHeight)
+          }
+        }
       }
-
-      addOverflowingBlock(measured, blockY, remainingHeight)
     }
 
     measuredBlocks.forEach { measured ->
@@ -173,4 +210,21 @@ class ReaderLayoutEngine {
     flushPage()
     return pages.ifEmpty { listOf(ReaderPage(emptyList())) }
   }
+}
+
+private sealed interface MeasuredBlock {
+  val blockIndex: Int
+  val style: BlockStyle
+
+  data class Text(
+    override val blockIndex: Int,
+    override val style: BlockStyle,
+    val layout: StaticLayout,
+  ) : MeasuredBlock
+
+  data class Rule(
+    override val blockIndex: Int,
+    override val style: BlockStyle,
+    val heightPx: Float,
+  ) : MeasuredBlock
 }

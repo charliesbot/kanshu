@@ -9,6 +9,7 @@ import com.charliesbot.kanshu.navigator.engine.BlockStyleResolver
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
+import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -93,6 +94,37 @@ class PageRendererTest {
     PageRenderer.draw(
       canvas = Canvas(bitmap),
       page = pages.last(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+    )
+
+    assertTrue(hasNonBackgroundPixel(bitmap))
+  }
+
+  @Test
+  fun draw_horizontalRule_rendersLine() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = ReaderDocument(blocks = listOf(HorizontalRule)),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    assertTrue(pages.single().entries.single() is PageEntry.HorizontalRule)
+
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
       horizontalMarginPx = horizontalMarginPx,
       verticalMarginPx = verticalMarginPx,
     )

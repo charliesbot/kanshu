@@ -25,6 +25,13 @@ sealed interface PageEntry {
     val lineRange: IntRange,
     val firstLineTopPx: Float,
   ) : PageEntry
+
+  data class HorizontalRule(
+    override val blockIndex: Int,
+    override val yOffsetPx: Float,
+    override val visibleHeightPx: Float,
+    override val drawOffsetXPx: Float,
+  ) : PageEntry
 }
 
 data class ReaderPage(val entries: List<PageEntry>)
