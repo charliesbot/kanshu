@@ -9,6 +9,7 @@ import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 
 internal class BlockStyleResolver(
@@ -23,6 +24,7 @@ internal class BlockStyleResolver(
       is HeadingBlock -> headingStyle(block.level)
       is HorizontalRule -> ruleStyle()
       is ParagraphBlock -> paragraphStyle()
+      is QuoteBlock -> quoteStyle()
       else -> null
     }
 
@@ -101,6 +103,34 @@ internal class BlockStyleResolver(
       prefixWidthPx = 0f,
       marginTopPx = preferences.paragraphSpacing * fontSizePx,
       marginBottomPx = preferences.paragraphSpacing * fontSizePx,
+    )
+  }
+
+  private fun quoteStyle(): BlockStyle {
+    val paint =
+      TextPaint().apply {
+        this.typeface = typeface
+        textSize = fontSizePx
+        color = Color.BLACK
+        isAntiAlias = true
+        letterSpacing = preferences.letterSpacing
+      }
+    val leadingRuleStrokeWidthPx = density.coerceAtLeast(1f)
+    val leadingRuleGapPx = fontSizePx * 0.6f
+
+    return BlockStyle(
+      paint = paint,
+      lineSpacingMultiplier = preferences.lineSpacing,
+      lineSpacingAdd = 0f,
+      hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,
+      alignment = Layout.Alignment.ALIGN_NORMAL,
+      breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
+      indentPx = 0f,
+      prefixWidthPx = leadingRuleGapPx,
+      marginTopPx = preferences.paragraphSpacing * fontSizePx,
+      marginBottomPx = preferences.paragraphSpacing * fontSizePx,
+      leadingRuleOffsetXPx = 0f,
+      leadingRuleStrokeWidthPx = leadingRuleStrokeWidthPx,
     )
   }
 

@@ -4,6 +4,7 @@ import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.StyledGroup
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -108,15 +109,42 @@ class EpubParserTest {
       spanText((result.document.blocks.first() as HeadingBlock).spans.single()),
     )
     assertEquals(
-      listOf(
-        "Quoted text.",
-        "First item",
-        "Second item",
-        "Closing paragraph with a 漢kan annotation.",
-      ),
+      listOf("First item", "Second item", "Closing paragraph with a 漢kan annotation."),
       result.document.paragraphText(),
     )
+    val quote = result.document.blocks[1] as QuoteBlock
+    assertEquals(listOf("Quoted text."), ReaderDocument(quote.children).paragraphText())
     assertEquals(1, result.diagnostics.unsupportedInlineTags["ruby"])
+  }
+
+  @Test
+  fun parse_blockquote_preservesQuoteChildren() {
+    val result =
+      EpubParser.parse(
+        """
+        <html>
+          <body>
+            <blockquote>
+              <p>First quoted paragraph.</p>
+              <p>Second <em>quoted</em> paragraph.</p>
+            </blockquote>
+            <p>After quote.</p>
+          </body>
+        </html>
+        """
+          .trimIndent()
+      )
+
+    val quote = result.document.blocks[0] as QuoteBlock
+    assertEquals(
+      listOf("First quoted paragraph.", "Second quoted paragraph."),
+      ReaderDocument(quote.children).paragraphText(),
+    )
+    assertEquals(
+      TextLeaf("quoted", InlineStyle.Italic),
+      ((quote.children[1] as ParagraphBlock).spans[1]),
+    )
+    assertTrue(result.document.blocks[1] is ParagraphBlock)
   }
 
   @Test

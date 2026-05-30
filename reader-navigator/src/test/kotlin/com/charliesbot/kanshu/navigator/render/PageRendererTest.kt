@@ -11,6 +11,7 @@ import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import org.junit.Assert.assertEquals
@@ -132,10 +133,60 @@ class PageRendererTest {
     assertTrue(hasNonBackgroundPixel(bitmap))
   }
 
+  @Test
+  fun draw_blockQuote_rendersLeadingRuleInGutter() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(
+              blocks =
+                listOf(
+                  QuoteBlock(
+                    listOf(ParagraphBlock(listOf(TextLeaf("Quoted paragraph for rendering."))))
+                  )
+                )
+            ),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.FullBlock
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+    )
+
+    val ruleX = (horizontalMarginPx + entry.leadingRuleOffsetXPx).toInt()
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, ruleX))
+  }
+
   private fun hasNonBackgroundPixel(bitmap: Bitmap): Boolean {
     for (x in 0 until bitmap.width step 8) {
       for (y in 0 until bitmap.height step 8) {
         if (bitmap.getPixel(x, y) != Color.WHITE) return true
+      }
+    }
+    return false
+  }
+
+  private fun hasNonBackgroundPixelNearX(bitmap: Bitmap, x: Int): Boolean {
+    val fromX = (x - 2).coerceAtLeast(0)
+    val toX = (x + 2).coerceAtMost(bitmap.width - 1)
+    for (scanX in fromX..toX) {
+      for (y in 0 until bitmap.height step 4) {
+        if (bitmap.getPixel(scanX, y) != Color.WHITE) return true
       }
     }
     return false

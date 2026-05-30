@@ -66,6 +66,8 @@ class ReaderLayoutEngine {
           yOffsetPx = yOffset,
           visibleHeightPx = measured.layout.height.toFloat(),
           drawOffsetXPx = drawOffsetX(measured.style),
+          leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
+          leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           layout = measured.layout,
         )
       )
@@ -86,6 +88,8 @@ class ReaderLayoutEngine {
           yOffsetPx = yOffset,
           visibleHeightPx = visibleHeight,
           drawOffsetXPx = drawOffsetX(measured.style),
+          leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
+          leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           layout = measured.layout,
           lineRange = lineRange,
           firstLineTopPx = firstLineTop,
