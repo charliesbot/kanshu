@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator
 
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,6 +25,10 @@ import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.render.ReaderPageCanvasView
+import com.charliesbot.kanshu.navigator.render.ReaderPageTapZone
+import com.charliesbot.kanshu.navigator.render.SelectionPageTurnDirection
+import com.charliesbot.kanshu.navigator.selection.TextSelection
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,10 +42,16 @@ fun ReaderPageViewer(
   currentPage: Int,
   onPageCount: (Int) -> Unit,
   onLayoutFailed: () -> Unit = {},
+  onPreviousPage: (() -> Unit)? = null,
+  onCenterTap: (() -> Unit)? = null,
+  onNextPage: (() -> Unit)? = null,
+  onTextSelected: ((String, RectF) -> Unit)? = null,
+  onSelectionCleared: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
   val typeface = remember(preferences.font) { loadReaderTypeface(context.assets, preferences.font) }
+  val selectionLocale = remember(document.language) { document.language.toSelectionLocale() }
 
   BoxWithConstraints(modifier = modifier) {
     val viewport = rememberReaderViewport(maxWidth, maxHeight)
@@ -62,16 +73,174 @@ fun ReaderPageViewer(
     )
 
     val page = pages?.getOrNull(currentPage.coerceAtLeast(0))
+    var selectionCarryState by remember(document) { mutableStateOf(SelectionCarryState()) }
+    var pendingSelectionSeedPage by remember(document) { mutableStateOf<Int?>(null) }
+    var pendingSelectionSeedAtPageEnd by remember(document) { mutableStateOf(false) }
+    var pendingRestoredSelection by remember(document) { mutableStateOf<TextSelection?>(null) }
     if (page != null) {
+      val shouldSeedSelection = pendingSelectionSeedPage == currentPage
       ReaderPageAndroidView(
         page = page,
         currentPage = currentPage,
+        selectionTextPrefix = selectionCarryState.prefixPages.toSelectionTextPrefix(),
+        selectionTextSuffix = selectionCarryState.suffixPages.toSelectionTextSuffix(),
+        restoredSelection = if (shouldSeedSelection) pendingRestoredSelection else null,
+        seedSelectionAtPageStart =
+          shouldSeedSelection && pendingRestoredSelection == null && !pendingSelectionSeedAtPageEnd,
+        seedSelectionAtPageEnd =
+          shouldSeedSelection && pendingRestoredSelection == null && pendingSelectionSeedAtPageEnd,
+        selectionLocale = selectionLocale,
         styleResolver = styleResolver,
+        onTapZone = { zone ->
+          when (zone) {
+            ReaderPageTapZone.Previous -> onPreviousPage?.invoke()
+            ReaderPageTapZone.Center -> onCenterTap?.invoke()
+            ReaderPageTapZone.Next -> onNextPage?.invoke()
+          }
+        },
+        onTextSelected = { text, anchor -> onTextSelected?.invoke(text, anchor) },
+        onSelectionCleared = {
+          selectionCarryState = SelectionCarryState()
+          pendingSelectionSeedPage = null
+          pendingSelectionSeedAtPageEnd = false
+          pendingRestoredSelection = null
+          onSelectionCleared?.invoke()
+        },
+        onSelectionPageTurn = { direction, _, pageSelectedText, currentSelection ->
+          val laidOutPages = pages ?: return@ReaderPageAndroidView false
+          // Cross-spine selection needs ownership above this composable because ReaderScreen keys
+          // ReaderPageViewer by spine index. Keep this slice within the current laid-out document.
+          val turn =
+            selectionCarryState.turnSelectionPage(
+              direction = direction,
+              currentPage = currentPage,
+              lastPageIndex = laidOutPages.lastIndex,
+              pageSelectedText = pageSelectedText,
+              currentSelection = currentSelection,
+            ) ?: return@ReaderPageAndroidView false
+          selectionCarryState = turn.carryState
+          pendingSelectionSeedPage = turn.targetPage
+          pendingSelectionSeedAtPageEnd = turn.seedAtPageEnd
+          pendingRestoredSelection = turn.restoredSelection
+          when (direction) {
+            SelectionPageTurnDirection.Previous -> onPreviousPage?.invoke()
+            SelectionPageTurnDirection.Next -> onNextPage?.invoke()
+          }
+          true
+        },
+        onSelectionSeeded = {
+          if (pendingSelectionSeedPage == currentPage) {
+            pendingSelectionSeedPage = null
+            pendingSelectionSeedAtPageEnd = false
+            pendingRestoredSelection = null
+          }
+        },
         modifier = Modifier.fillMaxSize(),
       )
     }
   }
 }
+
+internal data class SelectionCarryState(
+  val prefixPages: List<String> = emptyList(),
+  val suffixPages: List<String> = emptyList(),
+  val pageSelections: Map<Int, TextSelection> = emptyMap(),
+)
+
+internal data class SelectionPageTurnState(
+  val carryState: SelectionCarryState,
+  val targetPage: Int,
+  val seedAtPageEnd: Boolean,
+  val restoredSelection: TextSelection?,
+)
+
+internal fun SelectionCarryState.turnSelectionPage(
+  direction: SelectionPageTurnDirection,
+  currentPage: Int,
+  lastPageIndex: Int,
+  pageSelectedText: String,
+  currentSelection: TextSelection,
+): SelectionPageTurnState? =
+  when (direction) {
+    SelectionPageTurnDirection.Previous ->
+      turnToPreviousSelectionPage(
+        currentPage = currentPage,
+        pageSelectedText = pageSelectedText,
+        currentSelection = currentSelection,
+      )
+    SelectionPageTurnDirection.Next ->
+      turnToNextSelectionPage(
+        currentPage = currentPage,
+        lastPageIndex = lastPageIndex,
+        pageSelectedText = pageSelectedText,
+        currentSelection = currentSelection,
+      )
+  }
+
+private fun SelectionCarryState.turnToPreviousSelectionPage(
+  currentPage: Int,
+  pageSelectedText: String,
+  currentSelection: TextSelection,
+): SelectionPageTurnState? {
+  if (currentPage <= 0) return null
+
+  val targetPage = currentPage - 1
+  val restoredSelection = pageSelections[targetPage]
+  return SelectionPageTurnState(
+    carryState =
+      copy(
+        prefixPages = prefixPages.dropLast(1),
+        suffixPages = previousPageSuffix(pageSelectedText),
+        pageSelections = saveSelection(currentPage, currentSelection),
+      ),
+    targetPage = targetPage,
+    seedAtPageEnd = restoredSelection == null,
+    restoredSelection = restoredSelection,
+  )
+}
+
+private fun SelectionCarryState.turnToNextSelectionPage(
+  currentPage: Int,
+  lastPageIndex: Int,
+  pageSelectedText: String,
+  currentSelection: TextSelection,
+): SelectionPageTurnState? {
+  if (currentPage >= lastPageIndex) return null
+
+  val targetPage = currentPage + 1
+  return SelectionPageTurnState(
+    carryState =
+      copy(
+        prefixPages = prefixPages + pageSelectedText,
+        suffixPages = emptyList(),
+        pageSelections = saveSelection(currentPage, currentSelection),
+      ),
+    targetPage = targetPage,
+    seedAtPageEnd = false,
+    restoredSelection = pageSelections[targetPage],
+  )
+}
+
+private fun SelectionCarryState.previousPageSuffix(pageSelectedText: String): List<String> =
+  if (prefixPages.isEmpty()) listOf(pageSelectedText) + suffixPages else emptyList()
+
+private fun SelectionCarryState.saveSelection(
+  pageIndex: Int,
+  selection: TextSelection,
+): Map<Int, TextSelection> = pageSelections + (pageIndex to selection)
+
+private fun List<String>.toSelectionTextPrefix(): String =
+  if (isEmpty()) "" else joinToString(separator = "\n\n", postfix = "\n\n")
+
+private fun List<String>.toSelectionTextSuffix(): String =
+  if (isEmpty()) "" else joinToString(separator = "\n\n", prefix = "\n\n")
+
+internal fun String?.toSelectionLocale(): Locale =
+  if (isNullOrBlank()) {
+    Locale.getDefault()
+  } else {
+    Locale.forLanguageTag(this).takeUnless { it.language.isBlank() } ?: Locale.getDefault()
+  }
 
 @Composable
 private fun rememberReaderViewport(width: Dp, height: Dp): ReaderViewport {
@@ -188,7 +357,18 @@ internal fun List<ReaderPage>.hasRenderablePage(): Boolean = isNotEmpty()
 private fun ReaderPageAndroidView(
   page: ReaderPage,
   currentPage: Int,
+  selectionTextPrefix: String,
+  selectionTextSuffix: String,
+  restoredSelection: TextSelection?,
+  seedSelectionAtPageStart: Boolean,
+  seedSelectionAtPageEnd: Boolean,
+  selectionLocale: Locale,
   styleResolver: BlockStyleResolver,
+  onTapZone: (ReaderPageTapZone) -> Unit,
+  onTextSelected: (String, RectF) -> Unit,
+  onSelectionCleared: () -> Unit,
+  onSelectionPageTurn: (SelectionPageTurnDirection, String, String, TextSelection) -> Boolean,
+  onSelectionSeeded: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   // StaticLayout.draw() targets android.graphics.Canvas; a View gives reliable invalidation on
@@ -202,8 +382,22 @@ private fun ReaderPageAndroidView(
         page = page,
         horizontalMarginPx = styleResolver.horizontalMarginPx(),
         verticalMarginPx = styleResolver.verticalMarginPx(),
+        onTapZone = onTapZone,
+        onTextSelected = onTextSelected,
+        onSelectionCleared = onSelectionCleared,
+        onSelectionPageTurn = onSelectionPageTurn,
+        selectionTextPrefix = selectionTextPrefix,
+        selectionTextSuffix = selectionTextSuffix,
+        selectionLocale = selectionLocale,
+        restoredSelection = restoredSelection,
+        seedSelectionAtPageStart = seedSelectionAtPageStart,
+        seedSelectionAtPageEnd = seedSelectionAtPageEnd,
       )
+      if (restoredSelection != null || seedSelectionAtPageStart || seedSelectionAtPageEnd) {
+        onSelectionSeeded()
+      }
     },
+    onRelease = { view -> view.release() },
   )
 }
 

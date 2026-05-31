@@ -1,6 +1,9 @@
 package com.charliesbot.kanshu.navigator.render
 
 import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 
@@ -10,8 +13,9 @@ internal object PageRenderer {
     page: ReaderPage,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
+    selectionRects: List<RectF> = emptyList(),
   ) {
-    canvas.drawColor(android.graphics.Color.WHITE)
+    canvas.drawColor(Color.WHITE)
     canvas.save()
     canvas.clipRect(
       horizontalMarginPx,
@@ -19,6 +23,7 @@ internal object PageRenderer {
       canvas.width - horizontalMarginPx,
       canvas.height - verticalMarginPx,
     )
+    selectionRects.forEach { rect -> canvas.drawRect(rect, selectionPaint) }
     page.entries.forEach { entry -> drawEntry(canvas, entry, horizontalMarginPx, verticalMarginPx) }
     canvas.restore()
   }
@@ -113,8 +118,14 @@ internal object PageRenderer {
   }
 
   private val rulePaint =
-    android.graphics.Paint().apply {
-      color = android.graphics.Color.BLACK
+    Paint().apply {
+      color = Color.BLACK
+      isAntiAlias = false
+    }
+
+  private val selectionPaint =
+    Paint().apply {
+      color = Color.LTGRAY
       isAntiAlias = false
     }
 }

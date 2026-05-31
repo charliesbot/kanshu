@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.render
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.Typeface
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.engine.BlockStyleResolver
@@ -281,6 +282,45 @@ class PageRendererTest {
     assertTrue(hasNonBackgroundPixelNearX(bitmap, nestedTextX))
   }
 
+  @Test
+  fun draw_selectionRects_rendersHighlightBehindText() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(blocks = listOf(ParagraphBlock(listOf(TextLeaf("Selectable"))))),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.FullBlock
+    val selectionRect =
+      RectF(
+        horizontalMarginPx + entry.drawOffsetXPx,
+        verticalMarginPx + entry.yOffsetPx,
+        horizontalMarginPx + entry.drawOffsetXPx + 40f,
+        verticalMarginPx + entry.yOffsetPx + entry.visibleHeightPx,
+      )
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      selectionRects = listOf(selectionRect),
+    )
+
+    assertTrue(hasHighlightPixel(bitmap, selectionRect))
+  }
+
   private fun hasNonBackgroundPixel(bitmap: Bitmap): Boolean {
     for (x in 0 until bitmap.width step 8) {
       for (y in 0 until bitmap.height step 8) {
@@ -296,6 +336,18 @@ class PageRendererTest {
     for (scanX in fromX..toX) {
       for (y in 0 until bitmap.height step 4) {
         if (bitmap.getPixel(scanX, y) != Color.WHITE) return true
+      }
+    }
+    return false
+  }
+
+  private fun hasHighlightPixel(bitmap: Bitmap, rect: RectF): Boolean {
+    for (x in
+      rect.left.toInt().coerceAtLeast(0)..rect.right.toInt().coerceAtMost(bitmap.width - 1)) {
+      for (y in
+        rect.top.toInt().coerceAtLeast(0)..rect.bottom.toInt().coerceAtMost(bitmap.height - 1)) {
+        val pixel = bitmap.getPixel(x, y)
+        if (pixel != Color.WHITE && pixel != Color.BLACK) return true
       }
     }
     return false

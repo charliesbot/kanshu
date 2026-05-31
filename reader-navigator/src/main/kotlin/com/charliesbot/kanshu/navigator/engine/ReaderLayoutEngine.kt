@@ -22,6 +22,9 @@ class ReaderLayoutEngine {
     val contentHeightPx = (viewport.heightPx - verticalMarginPx * 2).coerceAtLeast(1f)
 
     val measuredBlocks = mutableListOf<MeasuredBlock>()
+    var nextSyntheticSelectionId = document.blocks.size
+    fun syntheticSelectionId(): Int = nextSyntheticSelectionId++
+
     document.blocks.forEachIndexed { index, block ->
       if (!shouldContinue()) return emptyList()
       val style = styleResolver(block) ?: return@forEachIndexed
@@ -43,6 +46,7 @@ class ReaderLayoutEngine {
           depth = 0,
           contentWidthPx = contentWidthPx,
           justify = justify,
+          selectionId = ::syntheticSelectionId,
           measuredBlocks = measuredBlocks,
         )
         return@forEachIndexed
@@ -50,7 +54,15 @@ class ReaderLayoutEngine {
       val text = SpanFlattener.flatten(block) ?: return@forEachIndexed
       if (text.isBlank()) return@forEachIndexed
       val layout = StaticLayoutFactory.build(text, style, contentWidthPx, justify)
-      measuredBlocks.add(MeasuredBlock.Text(index, style, layout))
+      measuredBlocks.add(
+        MeasuredBlock.Text(
+          blockIndex = index,
+          selectionId = index,
+          style = style,
+          layout = layout,
+          textJustified = justify,
+        )
+      )
     }
 
     if (measuredBlocks.isEmpty()) {
@@ -84,9 +96,11 @@ class ReaderLayoutEngine {
       currentEntries.add(
         PageEntry.FullBlock(
           blockIndex = measured.blockIndex,
+          selectionId = measured.selectionId,
           yOffsetPx = yOffset,
           visibleHeightPx = measured.layout.height.toFloat(),
           drawOffsetXPx = drawOffsetX(measured),
+          textJustified = measured.textJustified,
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           markerText = measured.markerText,
@@ -108,9 +122,11 @@ class ReaderLayoutEngine {
       currentEntries.add(
         PageEntry.SplitBlock(
           blockIndex = measured.blockIndex,
+          selectionId = measured.selectionId,
           yOffsetPx = yOffset,
           visibleHeightPx = visibleHeight,
           drawOffsetXPx = drawOffsetX(measured),
+          textJustified = measured.textJustified,
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           markerText = if (lineRange.first == 0) measured.markerText else null,
@@ -248,6 +264,7 @@ private fun appendListBlock(
   depth: Int,
   contentWidthPx: Int,
   justify: Boolean,
+  selectionId: () -> Int,
   measuredBlocks: MutableList<MeasuredBlock>,
 ) {
   block.items.forEachIndexed { itemIndex, item ->
@@ -260,9 +277,11 @@ private fun appendListBlock(
         measuredBlocks.add(
           MeasuredBlock.Text(
             blockIndex = blockIndex,
+            selectionId = selectionId(),
             style = style,
             layout =
               StaticLayoutFactory.build(text, style.withListDepth(depth), contentWidthPx, justify),
+            textJustified = justify,
             markerText =
               if (emittedItemText) null
               else if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER,
@@ -284,6 +303,7 @@ private fun appendListBlock(
           depth = depth + 1,
           contentWidthPx = contentWidthPx,
           justify = justify,
+          selectionId = selectionId,
           measuredBlocks = measuredBlocks,
         )
       } else {
@@ -304,8 +324,10 @@ private sealed interface MeasuredBlock {
 
   data class Text(
     override val blockIndex: Int,
+    val selectionId: Int,
     override val style: BlockStyle,
     val layout: StaticLayout,
+    val textJustified: Boolean,
     val markerText: String? = null,
     val depth: Int = 0,
   ) : MeasuredBlock
