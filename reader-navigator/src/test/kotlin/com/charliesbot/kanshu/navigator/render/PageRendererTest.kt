@@ -221,6 +221,66 @@ class PageRendererTest {
     assertTrue(hasNonBackgroundPixelNearX(bitmap, textX))
   }
 
+  @Test
+  fun draw_nestedListBlock_rendersNestedMarkerAtDeeperGutter() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 500, heightPx = 400, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(
+              blocks =
+                listOf(
+                  ListBlock(
+                    ordered = true,
+                    items =
+                      listOf(
+                        ListItem(
+                          listOf(
+                            ParagraphBlock(listOf(TextLeaf("Part one"))),
+                            ListBlock(
+                              ordered = true,
+                              items =
+                                listOf(
+                                  ListItem(
+                                    listOf(ParagraphBlock(listOf(TextLeaf("Nested chapter"))))
+                                  )
+                                ),
+                            ),
+                          )
+                        )
+                      ),
+                  )
+                )
+            ),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries.map { it as PageEntry.FullBlock }
+    assertEquals(2, entries.size)
+    assertTrue(entries[1].markerOffsetXPx > entries[0].markerOffsetXPx)
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+    )
+
+    val nestedMarkerX = (horizontalMarginPx + entries[1].markerOffsetXPx).toInt()
+    val nestedTextX = (horizontalMarginPx + entries[1].drawOffsetXPx).toInt()
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, nestedMarkerX))
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, nestedTextX))
+  }
+
   private fun hasNonBackgroundPixel(bitmap: Bitmap): Boolean {
     for (x in 0 until bitmap.width step 8) {
       for (y in 0 until bitmap.height step 8) {
