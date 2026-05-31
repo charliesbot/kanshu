@@ -4,15 +4,22 @@ import android.text.StaticLayout
 
 sealed interface PageEntry {
   val blockIndex: Int
+  val selectionId: Int
+    get() = blockIndex
+
   val yOffsetPx: Float
   val visibleHeightPx: Float
   val drawOffsetXPx: Float
+  val textJustified: Boolean
+    get() = false
 
   data class FullBlock(
     override val blockIndex: Int,
+    override val selectionId: Int = blockIndex,
     override val yOffsetPx: Float,
     override val visibleHeightPx: Float,
     override val drawOffsetXPx: Float,
+    override val textJustified: Boolean = false,
     val leadingRuleOffsetXPx: Float = 0f,
     val leadingRuleStrokeWidthPx: Float = 0f,
     val markerText: String? = null,
@@ -22,9 +29,11 @@ sealed interface PageEntry {
 
   data class SplitBlock(
     override val blockIndex: Int,
+    override val selectionId: Int = blockIndex,
     override val yOffsetPx: Float,
     override val visibleHeightPx: Float,
     override val drawOffsetXPx: Float,
+    override val textJustified: Boolean = false,
     val leadingRuleOffsetXPx: Float = 0f,
     val leadingRuleStrokeWidthPx: Float = 0f,
     val markerText: String? = null,

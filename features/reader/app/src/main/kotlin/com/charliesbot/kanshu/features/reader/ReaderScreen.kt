@@ -36,6 +36,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   var previewPreferences by remember { mutableStateOf(preferences) }
   var overlayVisible by remember { mutableStateOf(false) }
   var readerPrefsVisible by remember { mutableStateOf(false) }
+  var selectedText by remember { mutableStateOf<ReaderSelectedText?>(null) }
 
   when (val state = uiState) {
     ReaderUiState.Loading ->
@@ -54,20 +55,25 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             currentPage = currentPage,
             onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
             onLayoutFailed = viewModel::onLayoutFailed,
+            onPreviousPage = {
+              overlayVisible = false
+              viewModel.previousPage()
+            },
+            onCenterTap = { overlayVisible = true },
+            onNextPage = {
+              overlayVisible = false
+              viewModel.nextPage()
+            },
+            onTextSelected = { text, anchor ->
+              overlayVisible = false
+              readerPrefsVisible = false
+              selectedText = ReaderSelectedText(text = text, anchor = anchor)
+            },
+            onSelectionCleared = { selectedText = null },
             modifier = Modifier.fillMaxSize(),
           )
         }
-        ReaderTapZones(
-          onPrevious = {
-            overlayVisible = false
-            viewModel.previousPage()
-          },
-          onCenter = { overlayVisible = true },
-          onNext = {
-            overlayVisible = false
-            viewModel.nextPage()
-          },
-        )
+        selectedText?.let { selection -> ReaderSelectionPopup(selection) }
         if (overlayVisible) {
           ReaderOverlay(
             title = title,
