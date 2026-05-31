@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.engine
 import android.text.StaticLayout
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ListBlock
+import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlin.math.max
@@ -35,20 +36,15 @@ class ReaderLayoutEngine {
         return@forEachIndexed
       }
       if (block is ListBlock) {
-        block.items.forEachIndexed { itemIndex, item ->
-          val text = SpanFlattener.flatten(item) ?: return@forEachIndexed
-          if (text.isBlank()) return@forEachIndexed
-          val layout = StaticLayoutFactory.build(text, style, contentWidthPx, justify)
-          val markerText = if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER
-          measuredBlocks.add(
-            MeasuredBlock.Text(
-              blockIndex = index,
-              style = style,
-              layout = layout,
-              markerText = markerText,
-            )
-          )
-        }
+        appendListBlock(
+          blockIndex = index,
+          block = block,
+          style = style,
+          depth = 0,
+          contentWidthPx = contentWidthPx,
+          justify = justify,
+          measuredBlocks = measuredBlocks,
+        )
         return@forEachIndexed
       }
       val text = SpanFlattener.flatten(block) ?: return@forEachIndexed
@@ -75,6 +71,13 @@ class ReaderLayoutEngine {
       previousMarginBottom = 0f
     }
 
+    fun depthOffsetX(style: BlockStyle, depth: Int): Float = depth * style.prefixWidthPx
+
+    fun drawOffsetX(measured: MeasuredBlock.Text): Float =
+      measured.style.indentPx +
+        measured.style.prefixWidthPx +
+        depthOffsetX(measured.style, measured.depth)
+
     fun drawOffsetX(style: BlockStyle): Float = style.indentPx + style.prefixWidthPx
 
     fun addFullBlock(measured: MeasuredBlock.Text, yOffset: Float) {
@@ -83,11 +86,11 @@ class ReaderLayoutEngine {
           blockIndex = measured.blockIndex,
           yOffsetPx = yOffset,
           visibleHeightPx = measured.layout.height.toFloat(),
-          drawOffsetXPx = drawOffsetX(measured.style),
+          drawOffsetXPx = drawOffsetX(measured),
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           markerText = measured.markerText,
-          markerOffsetXPx = 0f,
+          markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
           layout = measured.layout,
         )
       )
@@ -107,11 +110,11 @@ class ReaderLayoutEngine {
           blockIndex = measured.blockIndex,
           yOffsetPx = yOffset,
           visibleHeightPx = visibleHeight,
-          drawOffsetXPx = drawOffsetX(measured.style),
+          drawOffsetXPx = drawOffsetX(measured),
           leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
           leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
           markerText = if (lineRange.first == 0) measured.markerText else null,
-          markerOffsetXPx = 0f,
+          markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
           layout = measured.layout,
           lineRange = lineRange,
           firstLineTopPx = firstLineTop,
@@ -238,6 +241,63 @@ class ReaderLayoutEngine {
   }
 }
 
+private fun appendListBlock(
+  blockIndex: Int,
+  block: ListBlock,
+  style: BlockStyle,
+  depth: Int,
+  contentWidthPx: Int,
+  justify: Boolean,
+  measuredBlocks: MutableList<MeasuredBlock>,
+) {
+  block.items.forEachIndexed { itemIndex, item ->
+    val textBlocks = mutableListOf<ReaderBlock>()
+    var emittedItemText = false
+
+    fun flushTextBlocks() {
+      val text = SpanFlattener.flatten(ListItem(textBlocks))
+      if (!text.isNullOrBlank()) {
+        measuredBlocks.add(
+          MeasuredBlock.Text(
+            blockIndex = blockIndex,
+            style = style,
+            layout =
+              StaticLayoutFactory.build(text, style.withListDepth(depth), contentWidthPx, justify),
+            markerText =
+              if (emittedItemText) null
+              else if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER,
+            depth = depth,
+          )
+        )
+        emittedItemText = true
+      }
+      textBlocks.clear()
+    }
+
+    item.blocks.forEach { child ->
+      if (child is ListBlock) {
+        flushTextBlocks()
+        appendListBlock(
+          blockIndex = blockIndex,
+          block = child,
+          style = style,
+          depth = depth + 1,
+          contentWidthPx = contentWidthPx,
+          justify = justify,
+          measuredBlocks = measuredBlocks,
+        )
+      } else {
+        textBlocks.add(child)
+      }
+    }
+
+    flushTextBlocks()
+  }
+}
+
+private fun BlockStyle.withListDepth(depth: Int): BlockStyle =
+  copy(indentPx = indentPx + prefixWidthPx * depth)
+
 private sealed interface MeasuredBlock {
   val blockIndex: Int
   val style: BlockStyle
@@ -247,6 +307,7 @@ private sealed interface MeasuredBlock {
     override val style: BlockStyle,
     val layout: StaticLayout,
     val markerText: String? = null,
+    val depth: Int = 0,
   ) : MeasuredBlock
 
   data class Rule(

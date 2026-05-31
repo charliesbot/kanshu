@@ -233,6 +233,116 @@ class ReaderLayoutEngineTest {
   }
 
   @Test
+  fun layout_nestedList_emitsIndentedChildEntriesWithoutBlankGap() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ListBlock(
+              ordered = true,
+              items =
+                listOf(
+                  ListItem(
+                    listOf(
+                      ParagraphBlock(listOf(TextLeaf("PART ONE: CONSPIRITUALITY 101"))),
+                      ListBlock(
+                        ordered = true,
+                        items =
+                          listOf(
+                            ListItem(listOf(ParagraphBlock(listOf(TextLeaf("Charlotte's Web"))))),
+                            ListItem(
+                              listOf(
+                                ParagraphBlock(listOf(TextLeaf("The Mystic and Paranoid Trifecta")))
+                              )
+                            ),
+                          ),
+                      ),
+                    )
+                  ),
+                  ListItem(listOf(ParagraphBlock(listOf(TextLeaf("PART TWO: STRANGE ATTRACTORS"))))),
+                ),
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 700, heightPx = 900, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries.map { it as PageEntry.FullBlock }
+    assertEquals(4, entries.size)
+    assertEquals("1.", entries[0].markerText)
+    assertEquals("1.", entries[1].markerText)
+    assertEquals("2.", entries[2].markerText)
+    assertEquals("2.", entries[3].markerText)
+    assertTrue(entries[1].drawOffsetXPx > entries[0].drawOffsetXPx)
+    assertTrue(entries[1].markerOffsetXPx > entries[0].markerOffsetXPx)
+    assertTrue(
+      "nested list should not start after a blank paragraph-sized gap",
+      entries[1].yOffsetPx - entries[0].yOffsetPx <= entries[0].visibleHeightPx * 1.25f,
+    )
+  }
+
+  @Test
+  fun layout_nestedList_preservesListItemBlockOrder() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ListBlock(
+              ordered = true,
+              items =
+                listOf(
+                  ListItem(
+                    listOf(
+                      ParagraphBlock(listOf(TextLeaf("Before nested list"))),
+                      ListBlock(
+                        ordered = true,
+                        items =
+                          listOf(ListItem(listOf(ParagraphBlock(listOf(TextLeaf("Nested item")))))),
+                      ),
+                      ParagraphBlock(listOf(TextLeaf("After nested list"))),
+                    )
+                  )
+                ),
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 700, heightPx = 900, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries.map { it as PageEntry.FullBlock }
+    assertEquals(3, entries.size)
+    assertEquals("Before nested list", entries[0].layout.text.toString())
+    assertEquals("Nested item", entries[1].layout.text.toString())
+    assertEquals("After nested list", entries[2].layout.text.toString())
+    assertEquals("1.", entries[0].markerText)
+    assertEquals("1.", entries[1].markerText)
+    assertEquals(null, entries[2].markerText)
+    assertEquals(entries[0].drawOffsetXPx, entries[2].drawOffsetXPx, 0.01f)
+  }
+
+  @Test
   fun layout_overflowingTrailingLine_movesToNextPage() {
     val blocks =
       List(18) { index ->
