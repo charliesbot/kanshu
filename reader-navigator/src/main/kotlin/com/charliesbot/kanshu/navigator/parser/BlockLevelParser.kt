@@ -2,6 +2,8 @@ package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ListBlock
+import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
@@ -55,14 +57,7 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
       "li" -> appendParsed(element.childNodes(), blocks)
 
       "ul",
-      "ol" -> {
-        val listItems = element.select("> li")
-        if (listItems.isEmpty()) {
-          appendParsed(element.childNodes(), blocks)
-        } else {
-          listItems.forEach { listItem -> appendParsed(listItem.childNodes(), blocks) }
-        }
-      }
+      "ol" -> listFromChildren(ordered = tag == "ol", element = element)?.let(blocks::add)
 
       "img" -> {
         diagnostics.recordUnsupportedBlock("img")
@@ -110,6 +105,15 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
   private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
     val children = parse(nodes)
     return if (children.isEmpty()) null else QuoteBlock(children)
+  }
+
+  private fun listFromChildren(ordered: Boolean, element: Element): ListBlock? {
+    val items =
+      element.select("> li").mapNotNull { listItem ->
+        val blocks = parse(listItem.childNodes())
+        if (blocks.isEmpty()) null else ListItem(blocks)
+      }
+    return if (items.isEmpty()) null else ListBlock(ordered = ordered, items = items)
   }
 
   private fun altParagraph(element: Element): ParagraphBlock? =

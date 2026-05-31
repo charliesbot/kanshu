@@ -4,6 +4,8 @@ import android.graphics.Typeface
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ListBlock
+import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -155,6 +157,79 @@ class ReaderLayoutEngineTest {
     assertTrue(entry.drawOffsetXPx > 0f)
     assertTrue(entry.leadingRuleStrokeWidthPx > 0f)
     assertTrue(entry.leadingRuleOffsetXPx < entry.drawOffsetXPx)
+  }
+
+  @Test
+  fun layout_listBlock_indentsItemsAndCarriesMarkers() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ListBlock(
+              ordered = true,
+              items =
+                listOf(
+                  ListItem(listOf(ParagraphBlock(listOf(TextLeaf("First item"))))),
+                  ListItem(listOf(ParagraphBlock(listOf(TextLeaf("Second item"))))),
+                ),
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries
+    assertEquals(2, entries.size)
+    val firstEntry = entries[0] as PageEntry.FullBlock
+    val secondEntry = entries[1] as PageEntry.FullBlock
+    assertEquals("1.", firstEntry.markerText)
+    assertEquals("2.", secondEntry.markerText)
+    assertTrue(firstEntry.markerOffsetXPx < firstEntry.drawOffsetXPx)
+    assertTrue(firstEntry.drawOffsetXPx > 0f)
+  }
+
+  @Test
+  fun layout_blockQuoteWithList_keepsListTextVisible() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            QuoteBlock(
+              listOf(
+                ListBlock(
+                  ordered = false,
+                  items = listOf(ListItem(listOf(ParagraphBlock(listOf(TextLeaf("Quoted item")))))),
+                )
+              )
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    assertTrue(pages.single().entries.single() is PageEntry.FullBlock)
   }
 
   @Test

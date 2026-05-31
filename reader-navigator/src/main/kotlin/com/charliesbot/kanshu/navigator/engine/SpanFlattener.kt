@@ -7,6 +7,8 @@ import android.text.style.StyleSpan
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.ListBlock
+import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
@@ -18,17 +20,36 @@ internal object SpanFlattener {
   fun flatten(block: ReaderBlock): CharSequence? =
     when (block) {
       is HeadingBlock -> flattenSpans(block.spans)
+      is ListBlock -> flattenList(block)
       is ParagraphBlock -> flattenSpans(block.spans)
       is QuoteBlock -> flattenQuote(block)
       else -> null
     }
 
+  fun flatten(item: ListItem): CharSequence? = flattenBlocks(item.blocks)
+
   private fun flattenQuote(block: QuoteBlock): CharSequence? {
+    return flattenBlocks(block.children)
+  }
+
+  private fun flattenList(block: ListBlock): CharSequence? {
     val builder = SpannableStringBuilder()
-    block.children.forEach { child ->
+    block.items.forEach { item ->
+      val itemText = flatten(item)
+      if (itemText.isNullOrBlank()) return@forEach
+      if (builder.isNotEmpty()) builder.append("\n")
+      builder.append(itemText)
+    }
+    return if (builder.isEmpty()) null else builder
+  }
+
+  private fun flattenBlocks(blocks: List<ReaderBlock>): CharSequence? {
+    val builder = SpannableStringBuilder()
+    blocks.forEach { child ->
       val childText =
         when (child) {
           is HeadingBlock -> flattenSpans(child.spans)
+          is ListBlock -> flattenList(child)
           is ParagraphBlock -> flattenSpans(child.spans)
           is QuoteBlock -> flattenQuote(child)
           is HorizontalRule -> null

@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.parser
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -109,11 +110,15 @@ class EpubParserTest {
       spanText((result.document.blocks.first() as HeadingBlock).spans.single()),
     )
     assertEquals(
-      listOf("First item", "Second item", "Closing paragraph with a 漢kan annotation."),
+      listOf("Closing paragraph with a 漢kan annotation."),
       result.document.paragraphText(),
     )
     val quote = result.document.blocks[1] as QuoteBlock
     assertEquals(listOf("Quoted text."), ReaderDocument(quote.children).paragraphText())
+    val list = result.document.blocks[2] as ListBlock
+    assertEquals(2, list.items.size)
+    assertEquals(listOf("First item"), ReaderDocument(list.items[0].blocks).paragraphText())
+    assertEquals(listOf("Second item"), ReaderDocument(list.items[1].blocks).paragraphText())
     assertEquals(1, result.diagnostics.unsupportedInlineTags["ruby"])
   }
 
@@ -145,6 +150,62 @@ class EpubParserTest {
       ((quote.children[1] as ParagraphBlock).spans[1]),
     )
     assertTrue(result.document.blocks[1] is ParagraphBlock)
+  }
+
+  @Test
+  fun parse_lists_preservesListItems() {
+    val result =
+      EpubParser.parse(
+        """
+        <html>
+          <body>
+            <ol>
+              <li>First item</li>
+              <li><p>Second <em>item</em></p></li>
+            </ol>
+            <p>After list.</p>
+          </body>
+        </html>
+        """
+          .trimIndent()
+      )
+
+    val list = result.document.blocks[0] as ListBlock
+    assertTrue(list.ordered)
+    assertEquals(2, list.items.size)
+    assertEquals(listOf("First item"), ReaderDocument(list.items[0].blocks).paragraphText())
+    assertEquals(listOf("Second item"), ReaderDocument(list.items[1].blocks).paragraphText())
+    assertEquals(
+      TextLeaf("item", InlineStyle.Italic),
+      ((list.items[1].blocks.single() as ParagraphBlock).spans[1]),
+    )
+    assertTrue(result.document.blocks[1] is ParagraphBlock)
+  }
+
+  @Test
+  fun parse_blockquoteWithList_preservesNestedList() {
+    val result =
+      EpubParser.parse(
+        """
+        <html>
+          <body>
+            <blockquote>
+              <ul>
+                <li>Quoted list item</li>
+              </ul>
+            </blockquote>
+          </body>
+        </html>
+        """
+          .trimIndent()
+      )
+
+    val quote = result.document.blocks.single() as QuoteBlock
+    val list = quote.children.single() as ListBlock
+    assertEquals(
+      listOf("Quoted list item"),
+      ReaderDocument(list.items.single().blocks).paragraphText(),
+    )
   }
 
   @Test
