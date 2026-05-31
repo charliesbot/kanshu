@@ -27,7 +27,11 @@ import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.render.ReaderPageCanvasView
 import com.charliesbot.kanshu.navigator.render.ReaderPageTapZone
 import com.charliesbot.kanshu.navigator.render.SelectionPageTurnDirection
+import com.charliesbot.kanshu.navigator.selection.SelectionCarryState
 import com.charliesbot.kanshu.navigator.selection.TextSelection
+import com.charliesbot.kanshu.navigator.selection.toSelectionTextPrefix
+import com.charliesbot.kanshu.navigator.selection.toSelectionTextSuffix
+import com.charliesbot.kanshu.navigator.selection.turnSelectionPage
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -140,100 +144,6 @@ fun ReaderPageViewer(
     }
   }
 }
-
-internal data class SelectionCarryState(
-  val prefixPages: List<String> = emptyList(),
-  val suffixPages: List<String> = emptyList(),
-  val pageSelections: Map<Int, TextSelection> = emptyMap(),
-)
-
-internal data class SelectionPageTurnState(
-  val carryState: SelectionCarryState,
-  val targetPage: Int,
-  val seedAtPageEnd: Boolean,
-  val restoredSelection: TextSelection?,
-)
-
-internal fun SelectionCarryState.turnSelectionPage(
-  direction: SelectionPageTurnDirection,
-  currentPage: Int,
-  lastPageIndex: Int,
-  pageSelectedText: String,
-  currentSelection: TextSelection,
-): SelectionPageTurnState? =
-  when (direction) {
-    SelectionPageTurnDirection.Previous ->
-      turnToPreviousSelectionPage(
-        currentPage = currentPage,
-        pageSelectedText = pageSelectedText,
-        currentSelection = currentSelection,
-      )
-    SelectionPageTurnDirection.Next ->
-      turnToNextSelectionPage(
-        currentPage = currentPage,
-        lastPageIndex = lastPageIndex,
-        pageSelectedText = pageSelectedText,
-        currentSelection = currentSelection,
-      )
-  }
-
-private fun SelectionCarryState.turnToPreviousSelectionPage(
-  currentPage: Int,
-  pageSelectedText: String,
-  currentSelection: TextSelection,
-): SelectionPageTurnState? {
-  if (currentPage <= 0) return null
-
-  val targetPage = currentPage - 1
-  val restoredSelection = pageSelections[targetPage]
-  return SelectionPageTurnState(
-    carryState =
-      copy(
-        prefixPages = prefixPages.dropLast(1),
-        suffixPages = previousPageSuffix(pageSelectedText),
-        pageSelections = saveSelection(currentPage, currentSelection),
-      ),
-    targetPage = targetPage,
-    seedAtPageEnd = restoredSelection == null,
-    restoredSelection = restoredSelection,
-  )
-}
-
-private fun SelectionCarryState.turnToNextSelectionPage(
-  currentPage: Int,
-  lastPageIndex: Int,
-  pageSelectedText: String,
-  currentSelection: TextSelection,
-): SelectionPageTurnState? {
-  if (currentPage >= lastPageIndex) return null
-
-  val targetPage = currentPage + 1
-  return SelectionPageTurnState(
-    carryState =
-      copy(
-        prefixPages = prefixPages + pageSelectedText,
-        suffixPages = emptyList(),
-        pageSelections = saveSelection(currentPage, currentSelection),
-      ),
-    targetPage = targetPage,
-    seedAtPageEnd = false,
-    restoredSelection = pageSelections[targetPage],
-  )
-}
-
-private fun SelectionCarryState.previousPageSuffix(pageSelectedText: String): List<String> =
-  if (prefixPages.isEmpty()) listOf(pageSelectedText) + suffixPages else emptyList()
-
-private fun SelectionCarryState.saveSelection(
-  pageIndex: Int,
-  selection: TextSelection,
-): Map<Int, TextSelection> = pageSelections + (pageIndex to selection)
-
-private fun List<String>.toSelectionTextPrefix(): String =
-  if (isEmpty()) "" else joinToString(separator = "\n\n", postfix = "\n\n")
-
-private fun List<String>.toSelectionTextSuffix(): String =
-  if (isEmpty()) "" else joinToString(separator = "\n\n", prefix = "\n\n")
 
 internal fun String?.toSelectionLocale(): Locale =
   if (isNullOrBlank()) {
