@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator
 
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +46,7 @@ fun ReaderPageViewer(
   preferences: ReaderPreferences,
   currentPage: Int,
   onPageCount: (Int) -> Unit,
+  onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit = {},
   onLayoutFailed: () -> Unit = {},
   onPreviousPage: (() -> Unit)? = null,
   onCenterTap: (() -> Unit)? = null,
@@ -73,6 +75,7 @@ fun ReaderPageViewer(
       styleResolver = styleResolver,
       onPages = { laidOut -> pages = laidOut },
       onPageCount = onPageCount,
+      onLayoutDiagnostics = onLayoutDiagnostics,
       onLayoutFailed = onLayoutFailed,
     )
 
@@ -175,6 +178,7 @@ private fun LaunchedReaderLayout(
   styleResolver: BlockStyleResolver,
   onPages: (List<ReaderPage>?) -> Unit,
   onPageCount: (Int) -> Unit,
+  onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit,
   onLayoutFailed: () -> Unit,
 ) {
   var layoutGeneration by remember { mutableIntStateOf(0) }
@@ -195,7 +199,7 @@ private fun LaunchedReaderLayout(
       "layout start gen=$generation viewport=${viewport.widthPx}x${viewport.heightPx}px blocks=${document.blocks.size}",
     )
 
-    val laidOut =
+    val layoutResult =
       layoutPages(
         document = document,
         viewport = viewport,
@@ -207,6 +211,7 @@ private fun LaunchedReaderLayout(
           onLayoutFailed()
         },
       ) ?: return@LaunchedEffect
+    val laidOut = layoutResult.pages
 
     if (generation != layoutGeneration) {
       Log.d(TAG, "layout stale gen=$generation current=$layoutGeneration")
@@ -227,6 +232,13 @@ private fun LaunchedReaderLayout(
     )
     onPages(laidOut)
     onPageCount(laidOut.size)
+    onLayoutDiagnostics(
+      ReaderLayoutDiagnostics(
+        blockCount = document.blocks.size,
+        pageCount = laidOut.size,
+        paginationMillis = layoutResult.paginationMillis,
+      )
+    )
   }
 }
 
@@ -237,20 +249,23 @@ private suspend fun layoutPages(
   generation: Int,
   currentGeneration: () -> Int,
   onLayoutFailed: () -> Unit,
-): List<ReaderPage>? =
+): LayoutResult? =
   try {
-    withContext(Dispatchers.Default) {
-      ReaderLayoutEngine()
-        .layout(
-          document = document,
-          viewport = viewport,
-          horizontalMarginPx = styleResolver.horizontalMarginPx(),
-          verticalMarginPx = styleResolver.verticalMarginPx(),
-          justify = styleResolver.justifyText(),
-          styleResolver = styleResolver::resolve,
-          shouldContinue = { generation == currentGeneration() },
-        )
-    }
+    val startedAt = SystemClock.elapsedRealtime()
+    val pages =
+      withContext(Dispatchers.Default) {
+        ReaderLayoutEngine()
+          .layout(
+            document = document,
+            viewport = viewport,
+            horizontalMarginPx = styleResolver.horizontalMarginPx(),
+            verticalMarginPx = styleResolver.verticalMarginPx(),
+            justify = styleResolver.justifyText(),
+            styleResolver = styleResolver::resolve,
+            shouldContinue = { generation == currentGeneration() },
+          )
+      }
+    LayoutResult(pages = pages, paginationMillis = SystemClock.elapsedRealtime() - startedAt)
   } catch (e: CancellationException) {
     throw e
   } catch (e: Exception) {
@@ -260,6 +275,8 @@ private suspend fun layoutPages(
     }
     null
   }
+
+private data class LayoutResult(val pages: List<ReaderPage>, val paginationMillis: Long)
 
 internal fun List<ReaderPage>.hasRenderablePage(): Boolean = isNotEmpty()
 

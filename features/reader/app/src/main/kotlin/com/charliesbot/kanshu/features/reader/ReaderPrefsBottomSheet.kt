@@ -42,6 +42,8 @@ import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuSlider
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
+import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.strings.R
 import java.io.File
 import kotlin.math.roundToInt
@@ -62,6 +64,8 @@ data class ReaderPrefsCallbacks(
 fun ReaderPrefsBottomSheet(
   prefs: ReaderPreferences,
   callbacks: ReaderPrefsCallbacks,
+  parseDiagnostics: ParseDiagnostics = ParseDiagnostics(),
+  layoutDiagnostics: ReaderLayoutDiagnostics? = null,
   modifier: Modifier = Modifier,
 ) {
   var activeTab by remember { mutableStateOf(PrefsTab.Font) }
@@ -91,8 +95,12 @@ fun ReaderPrefsBottomSheet(
           onLetterSpacingChange = callbacks.onLetterSpacingChange,
           onResetSpacing = callbacks.onResetSpacing,
         )
-      PrefsTab.Themes,
-      PrefsTab.More -> Box(Modifier.fillMaxWidth().height(96.dp))
+      PrefsTab.Themes -> Box(Modifier.fillMaxWidth().height(96.dp))
+      PrefsTab.More ->
+        ReaderDiagnosticsTab(
+          parseDiagnostics = parseDiagnostics,
+          layoutDiagnostics = layoutDiagnostics,
+        )
     }
   }
 }

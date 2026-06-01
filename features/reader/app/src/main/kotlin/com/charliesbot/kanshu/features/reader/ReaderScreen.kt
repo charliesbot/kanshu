@@ -21,6 +21,7 @@ import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.ReaderPageViewer
 import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
@@ -36,6 +37,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   var previewPreferences by remember { mutableStateOf(preferences) }
   var overlayVisible by remember { mutableStateOf(false) }
   var readerPrefsVisible by remember { mutableStateOf(false) }
+  var layoutDiagnostics by remember { mutableStateOf<ReaderLayoutDiagnostics?>(null) }
   var selectedText by remember { mutableStateOf<ReaderSelectedText?>(null) }
 
   when (val state = uiState) {
@@ -47,6 +49,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
       ReaderStatusMessage(message = stringResource(R.string.reader_error_parse_failed))
 
     is ReaderUiState.Reading -> {
+      LaunchedEffect(state.spineIndex) { layoutDiagnostics = null }
       Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         key(state.spineIndex) {
           ReaderPageViewer(
@@ -54,6 +57,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             preferences = preferences,
             currentPage = currentPage,
             onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
+            onLayoutDiagnostics = { diagnostics -> layoutDiagnostics = diagnostics },
             onLayoutFailed = viewModel::onLayoutFailed,
             onPreviousPage = {
               overlayVisible = false
@@ -157,6 +161,8 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
                     )
                 },
               ),
+            parseDiagnostics = state.diagnostics,
+            layoutDiagnostics = layoutDiagnostics,
           )
         }
       }

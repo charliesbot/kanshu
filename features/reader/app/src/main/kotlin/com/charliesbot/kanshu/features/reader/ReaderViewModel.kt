@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,11 @@ private const val TAG = "ReaderViewModel"
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
-  data class Reading(val spineIndex: Int, val document: ReaderDocument) : ReaderUiState
+  data class Reading(
+    val spineIndex: Int,
+    val document: ReaderDocument,
+    val diagnostics: ParseDiagnostics,
+  ) : ReaderUiState
 
   sealed interface Error : ReaderUiState {
     data object NotFound : Error
@@ -91,6 +96,7 @@ class ReaderViewModel(
               ReaderUiState.Reading(
                 spineIndex = spineItem.spineIndex,
                 document = spineItem.document,
+                diagnostics = spineItem.diagnostics,
               )
           }
           ReaderResult.Error.NotFound -> {
@@ -167,7 +173,11 @@ class ReaderViewModel(
           _pageCount.value = 0
           Log.d(TAG, "nextPage: opened spine[${nextItem.spineIndex}]")
           _uiState.value =
-            ReaderUiState.Reading(spineIndex = nextItem.spineIndex, document = nextItem.document)
+            ReaderUiState.Reading(
+              spineIndex = nextItem.spineIndex,
+              document = nextItem.document,
+              diagnostics = nextItem.diagnostics,
+            )
         } finally {
           val runningJob = currentCoroutineContext()[Job]
           if (nextSpineJob === runningJob) {

@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.features.reader
 import android.util.Log
 import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.StyledGroup
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -12,7 +13,11 @@ import org.readium.r2.shared.publication.Publication
 
 private const val TAG = "ReaderSpine"
 
-internal data class SpineItem(val spineIndex: Int, val document: ReaderDocument)
+internal data class SpineItem(
+  val spineIndex: Int,
+  val document: ReaderDocument,
+  val diagnostics: ParseDiagnostics,
+)
 
 internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
   val link = readingOrder.getOrNull(spineIndex)
@@ -47,7 +52,8 @@ internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineI
     return null
   }
   val xhtml = readSpineXhtml(index) ?: return null
-  val document = EpubParser.parse(xhtml).document
+  val parseResult = EpubParser.parse(xhtml)
+  val document = parseResult.document
   val flattened = document.flattenedText()
   val textLength = flattened.length
   Log.d(
@@ -58,7 +64,7 @@ internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineI
     TAG,
     "using spine[$index] href=${link.href} blocks=${document.blocks.size} chars=$textLength",
   )
-  return SpineItem(spineIndex = index, document = document)
+  return SpineItem(spineIndex = index, document = document, diagnostics = parseResult.diagnostics)
 }
 
 private fun ReaderDocument.flattenedText(): String =
