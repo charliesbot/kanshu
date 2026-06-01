@@ -41,6 +41,8 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
     when (tag) {
       "p" -> paragraphFromInline(element.childNodes())?.let(blocks::add)
 
+      in HtmlTagSets.TEXT_INLINE_TAGS -> paragraphFromInline(listOf(element))?.let(blocks::add)
+
       "h1",
       "h2",
       "h3",
@@ -50,11 +52,14 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
 
       "div" -> parseInlineOrChildren(element, blocks)
 
+      "nav" -> appendParsed(element.childNodes(), blocks)
+
       "blockquote" -> quoteFromChildren(element.childNodes())?.let(blocks::add)
 
       "section",
-      "article",
-      "li" -> appendParsed(element.childNodes(), blocks)
+      "article" -> appendParsed(element.childNodes(), blocks)
+
+      "li" -> parseInlineOrChildren(element, blocks)
 
       "ul",
       "ol" -> listFromChildren(ordered = tag == "ol", element = element)?.let(blocks::add)
@@ -110,7 +115,12 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
   private fun listFromChildren(ordered: Boolean, element: Element): ListBlock? {
     val items =
       element.select("> li").mapNotNull { listItem ->
-        val blocks = parse(listItem.childNodes())
+        val blocks =
+          if (listItem.hasBlockChild()) {
+            parse(listItem.childNodes())
+          } else {
+            paragraphFromInline(listItem.childNodes())?.let(::listOf).orEmpty()
+          }
         if (blocks.isEmpty()) null else ListItem(blocks)
       }
     return if (items.isEmpty()) null else ListBlock(ordered = ordered, items = items)
