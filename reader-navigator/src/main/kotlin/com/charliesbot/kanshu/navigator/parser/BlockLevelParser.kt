@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -39,7 +40,9 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
   private fun parseElement(element: Element, blocks: MutableList<ReaderBlock>) {
     val tag = element.tagName().lowercase()
     when (tag) {
-      "p" -> paragraphFromInline(element.childNodes())?.let(blocks::add)
+      "p" ->
+        imageOnlyBlock(element)?.let(blocks::add)
+          ?: paragraphFromInline(element.childNodes())?.let(blocks::add)
 
       in HtmlTagSets.TEXT_INLINE_TAGS -> paragraphFromInline(listOf(element))?.let(blocks::add)
 
@@ -64,10 +67,7 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
       "ul",
       "ol" -> listFromChildren(ordered = tag == "ol", element = element)?.let(blocks::add)
 
-      "img" -> {
-        diagnostics.recordUnsupportedBlock("img")
-        altParagraph(element)?.let(blocks::add)
-      }
+      "img" -> imageBlock(element)?.let(blocks::add)
 
       "hr" -> blocks.add(HorizontalRule)
 
@@ -84,6 +84,10 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
   }
 
   private fun parseInlineOrChildren(element: Element, blocks: MutableList<ReaderBlock>) {
+    imageOnlyBlock(element)?.let {
+      blocks.add(it)
+      return
+    }
     if (element.hasBlockChild()) {
       appendParsed(element.childNodes(), blocks)
     } else {
@@ -126,8 +130,20 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
     return if (items.isEmpty()) null else ListBlock(ordered = ordered, items = items)
   }
 
-  private fun altParagraph(element: Element): ParagraphBlock? =
-    altTextLeaf(element)?.let { ParagraphBlock(listOf(it)) }
+  private fun imageBlock(element: Element): ImageBlock? {
+    val src = element.attr("src").trim()
+    return ImageBlock(resourceHref = src, alt = element.attr("alt").trim().ifEmpty { null })
+  }
+
+  private fun imageOnlyBlock(element: Element): ImageBlock? {
+    val image =
+      element.children().singleOrNull { it.tagName().equals("img", ignoreCase = true) }
+        ?: return null
+    val textWithoutImage =
+      element.childNodes().filterNot { it == image }.joinToString("") { it.toString() }
+    if (textWithoutImage.isNotBlank()) return null
+    return imageBlock(image)
+  }
 
   private fun textParagraph(text: String): ParagraphBlock? {
     val trimmed = text.trim()

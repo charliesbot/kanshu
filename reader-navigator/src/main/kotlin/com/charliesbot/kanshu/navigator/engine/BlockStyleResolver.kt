@@ -8,6 +8,7 @@ import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
@@ -24,11 +25,13 @@ internal class BlockStyleResolver(
     when (block) {
       is HeadingBlock -> headingStyle(block.level)
       is HorizontalRule -> ruleStyle()
+      is ImageBlock -> imageStyle()
       is ListBlock -> listStyle()
       is ParagraphBlock -> paragraphStyle()
       is QuoteBlock -> quoteStyle()
-      else -> null
     }
+
+  private fun imageStyle(): BlockStyle = paragraphStyle()
 
   private fun paragraphStyle(): BlockStyle {
     val paint =

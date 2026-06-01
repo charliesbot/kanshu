@@ -269,6 +269,7 @@ internal object ReaderSelector {
         is PageEntry.FullBlock -> yPx - verticalMarginPx - entry.yOffsetPx
         is PageEntry.SplitBlock -> yPx - verticalMarginPx - entry.yOffsetPx + entry.firstLineTopPx
         is PageEntry.HorizontalRule -> return null
+        is PageEntry.Image -> return null
       }
     if (localY < 0f || localY > layout.height) return null
 
@@ -293,6 +294,7 @@ internal object ReaderSelector {
       is PageEntry.FullBlock -> layout
       is PageEntry.SplitBlock -> layout
       is PageEntry.HorizontalRule -> null
+      is PageEntry.Image -> null
     }
 
   private fun TextHit.wordRangeAt(locale: Locale): IntRange? {

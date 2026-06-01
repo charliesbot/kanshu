@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -167,7 +168,10 @@ class ReaderViewModelTest {
       viewModel.open(1)
       advanceUntilIdle()
 
-      assertEquals(listOf("Cover"), viewModel.currentDocument().paragraphText())
+      assertEquals(
+        listOf(ImageBlock(resourceHref = "cover.jpg", alt = "Cover")),
+        viewModel.currentDocument().blocks,
+      )
     }
 
   @Test
@@ -286,14 +290,20 @@ class ReaderViewModelTest {
       viewModel.open(1)
       advanceUntilIdle()
       assertEquals(0, viewModel.currentSpineIndex())
-      assertEquals(listOf("image"), viewModel.currentDocument().paragraphText())
+      assertEquals(
+        listOf(ImageBlock(resourceHref = "cover.jpg", alt = "image")),
+        viewModel.currentDocument().blocks,
+      )
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
       advanceUntilIdle()
 
       assertEquals(1, viewModel.currentSpineIndex())
-      assertEquals(listOf("image"), viewModel.currentDocument().paragraphText())
+      assertEquals(
+        listOf(ImageBlock(resourceHref = "cover.jpg", alt = "image")),
+        viewModel.currentDocument().blocks,
+      )
       assertEquals(0, viewModel.currentPage.value)
       assertEquals(0, viewModel.pageCount.value)
     }

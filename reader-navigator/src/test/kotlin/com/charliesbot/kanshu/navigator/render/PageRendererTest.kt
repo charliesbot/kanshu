@@ -11,6 +11,7 @@ import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -134,6 +135,43 @@ class PageRendererTest {
     )
 
     assertTrue(hasNonBackgroundPixel(bitmap))
+  }
+
+  @Test
+  fun draw_imagePlaceholder_rendersVisibleBox() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(
+              blocks = listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map"))
+            ),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.Image
+
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+    )
+
+    val leftBorderX = (horizontalMarginPx + entry.drawOffsetXPx + 2f).toInt()
+    val topBorderY = (verticalMarginPx + entry.yOffsetPx + 2f).toInt()
+    assertTrue(hasNonBackgroundPixelNearX(bitmap, leftBorderX))
+    assertTrue(hasNonBackgroundPixelNearY(bitmap, topBorderY))
   }
 
   @Test
@@ -336,6 +374,17 @@ class PageRendererTest {
     for (scanX in fromX..toX) {
       for (y in 0 until bitmap.height step 4) {
         if (bitmap.getPixel(scanX, y) != Color.WHITE) return true
+      }
+    }
+    return false
+  }
+
+  private fun hasNonBackgroundPixelNearY(bitmap: Bitmap, y: Int): Boolean {
+    val fromY = (y - 2).coerceAtLeast(0)
+    val toY = (y + 2).coerceAtMost(bitmap.height - 1)
+    for (scanY in fromY..toY) {
+      for (x in 0 until bitmap.width step 4) {
+        if (bitmap.getPixel(x, scanY) != Color.WHITE) return true
       }
     }
     return false

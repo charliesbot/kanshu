@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator.engine
 
 import android.text.StaticLayout
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
@@ -34,6 +35,19 @@ class ReaderLayoutEngine {
             blockIndex = index,
             style = style,
             heightPx = viewport.density.coerceAtLeast(1f),
+          )
+        )
+        return@forEachIndexed
+      }
+      if (block is ImageBlock) {
+        measuredBlocks.add(
+          MeasuredBlock.Image(
+            blockIndex = index,
+            style = style,
+            resourceHref = block.resourceHref,
+            alt = block.alt,
+            widthPx = contentWidthPx.toFloat(),
+            heightPx = placeholderImageHeightPx(style),
           )
         )
         return@forEachIndexed
@@ -153,6 +167,22 @@ class ReaderLayoutEngine {
       previousMarginBottom = measured.style.marginBottomPx
     }
 
+    fun addImage(measured: MeasuredBlock.Image, yOffset: Float) {
+      currentEntries.add(
+        PageEntry.Image(
+          blockIndex = measured.blockIndex,
+          yOffsetPx = yOffset,
+          visibleHeightPx = measured.heightPx,
+          drawOffsetXPx = drawOffsetX(measured.style),
+          resourceHref = measured.resourceHref,
+          alt = measured.alt,
+          widthPx = measured.widthPx,
+        )
+      )
+      yCursor = yOffset + measured.heightPx
+      previousMarginBottom = measured.style.marginBottomPx
+    }
+
     fun firstLineHeight(layout: StaticLayout, lineStart: Int): Float =
       layout.getLineBottom(lineStart).toFloat() - layout.getLineTop(lineStart).toFloat()
 
@@ -220,6 +250,7 @@ class ReaderLayoutEngine {
       val style = measured.style
       val blockHeight =
         when (measured) {
+          is MeasuredBlock.Image -> measured.heightPx
           is MeasuredBlock.Text -> measured.layout.height.toFloat()
           is MeasuredBlock.Rule -> measured.heightPx
         }
@@ -229,6 +260,14 @@ class ReaderLayoutEngine {
       val remainingHeight = contentHeightPx - blockY
 
       when (measured) {
+        is MeasuredBlock.Image -> {
+          if (blockHeight > remainingHeight && currentEntries.isNotEmpty()) {
+            flushPage()
+            addImage(measured, 0f)
+          } else {
+            addImage(measured, blockY)
+          }
+        }
         is MeasuredBlock.Rule -> {
           if (blockHeight > remainingHeight && currentEntries.isNotEmpty()) {
             flushPage()
@@ -337,6 +376,20 @@ private sealed interface MeasuredBlock {
     override val style: BlockStyle,
     val heightPx: Float,
   ) : MeasuredBlock
+
+  data class Image(
+    override val blockIndex: Int,
+    override val style: BlockStyle,
+    val resourceHref: String,
+    val alt: String?,
+    val widthPx: Float,
+    val heightPx: Float,
+  ) : MeasuredBlock
 }
+
+private fun placeholderImageHeightPx(style: BlockStyle): Float =
+  (style.paint.fontMetrics.bottom - style.paint.fontMetrics.top)
+    .coerceAtLeast(style.paint.textSize)
+    .coerceAtLeast(1f)
 
 private const val BULLET_MARKER = "\u2022"
