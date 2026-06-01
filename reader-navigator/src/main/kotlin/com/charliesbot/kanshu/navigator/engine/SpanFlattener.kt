@@ -7,6 +7,7 @@ import android.text.style.StyleSpan
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -82,7 +83,18 @@ internal object SpanFlattener {
         applyStyle(builder, start, builder.length, span.style)
       }
 
-      else -> Unit
+      is LinkSpan -> {
+        val start = builder.length
+        span.children.forEach { appendSpan(builder, it) }
+        if (start < builder.length) {
+          builder.setSpan(
+            EpubLinkSpan(span.href),
+            start,
+            builder.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+          )
+        }
+      }
     }
   }
 
@@ -110,3 +122,5 @@ internal object SpanFlattener {
     }
   }
 }
+
+internal data class EpubLinkSpan(val href: String)

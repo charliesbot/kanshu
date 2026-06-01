@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.parser
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
@@ -22,8 +23,8 @@ internal fun ReaderDocument.paragraphText(): List<String> =
 internal fun spanText(span: TextSpan): String =
   when (span) {
     is TextLeaf -> span.text
+    is LinkSpan -> span.children.joinToString("") { spanText(it) }
     is StyledGroup -> span.children.joinToString("") { spanText(it) }
-    else -> ""
   }
 
 class EpubParserTest {
@@ -245,7 +246,7 @@ class EpubParserTest {
   }
 
   @Test
-  fun parse_link_preservesLinkTextWithoutLinkSpan() {
+  fun parse_link_preservesHrefAsLinkSpan() {
     val block =
       EpubParser.parse(
           "<html><body><p>See <a href=\"note.xhtml\">the note</a> here.</p></body></html>"
@@ -254,7 +255,14 @@ class EpubParserTest {
         .blocks
         .single() as ParagraphBlock
 
-    assertEquals(listOf(TextLeaf("See "), TextLeaf("the note"), TextLeaf(" here.")), block.spans)
+    assertEquals(
+      listOf(
+        TextLeaf("See "),
+        LinkSpan("note.xhtml", listOf(TextLeaf("the note"))),
+        TextLeaf(" here."),
+      ),
+      block.spans,
+    )
   }
 
   @Test

@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import com.charliesbot.kanshu.navigator.model.TextSpan
 import org.jsoup.nodes.Element
@@ -29,8 +30,9 @@ internal class InlineSpanExtractor(private val diagnostics: ParseDiagnosticsColl
             "em",
             "i" -> extractInternal(node.childNodes(), mergeItalic(inheritedStyle))
 
-            "span",
-            "a" -> extractInternal(node.childNodes(), inheritedStyle)
+            "span" -> extractInternal(node.childNodes(), inheritedStyle)
+
+            "a" -> extractLink(node, inheritedStyle)
 
             "img" -> {
               diagnostics.recordUnsupportedInline("img")
@@ -70,5 +72,17 @@ internal class InlineSpanExtractor(private val diagnostics: ParseDiagnosticsColl
   private fun trimEdgeBlankSpans(spans: List<TextSpan>): List<TextSpan> =
     spans.dropWhile { spanText(it).isBlank() }.dropLastWhile { spanText(it).isBlank() }
 
-  private fun spanText(span: TextSpan): String = (span as? TextLeaf)?.text.orEmpty()
+  private fun extractLink(node: Element, inheritedStyle: InlineStyle): List<TextSpan> {
+    val children = extractInternal(node.childNodes(), inheritedStyle)
+    if (children.isEmpty()) return emptyList()
+    val href = node.attr("href")
+    return if (href.isBlank()) children else listOf(LinkSpan(href = href, children = children))
+  }
+
+  private fun spanText(span: TextSpan): String =
+    when (span) {
+      is TextLeaf -> span.text
+      is LinkSpan -> span.children.joinToString("") { spanText(it) }
+      else -> ""
+    }
 }
