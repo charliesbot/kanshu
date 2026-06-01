@@ -65,6 +65,21 @@ internal object PageRenderer {
         rulePaint.strokeWidth = entry.visibleHeightPx.coerceAtLeast(1f)
         canvas.drawLine(x, ruleY, rightX, ruleY, rulePaint)
       }
+
+      is PageEntry.Image -> {
+        val borderInset = IMAGE_BORDER_STROKE_PX / 2f
+        val rect =
+          RectF(
+            x + borderInset,
+            y + borderInset,
+            x + entry.widthPx - borderInset,
+            y + entry.visibleHeightPx - borderInset,
+          )
+        canvas.drawRect(rect, imageBorderPaint)
+        val label = entry.alt?.takeIf { it.isNotBlank() } ?: IMAGE_PLACEHOLDER_LABEL
+        val baseline = rect.centerY() - (imageLabelPaint.ascent() + imageLabelPaint.descent()) / 2f
+        canvas.drawText(label, rect.left + IMAGE_LABEL_PADDING_PX, baseline, imageLabelPaint)
+      }
     }
   }
 
@@ -79,6 +94,7 @@ internal object PageRenderer {
         is PageEntry.FullBlock -> entry.leadingRuleStrokeWidthPx
         is PageEntry.SplitBlock -> entry.leadingRuleStrokeWidthPx
         is PageEntry.HorizontalRule -> 0f
+        is PageEntry.Image -> 0f
       }
     if (strokeWidth <= 0f) return
 
@@ -87,6 +103,7 @@ internal object PageRenderer {
         is PageEntry.FullBlock -> entry.leadingRuleOffsetXPx
         is PageEntry.SplitBlock -> entry.leadingRuleOffsetXPx
         is PageEntry.HorizontalRule -> 0f
+        is PageEntry.Image -> 0f
       }
     val ruleX = horizontalMarginPx + ruleOffsetX
     rulePaint.strokeWidth = strokeWidth.coerceAtLeast(1f)
@@ -107,12 +124,14 @@ internal object PageRenderer {
         is PageEntry.SplitBlock ->
           y + entry.layout.getLineBaseline(entry.lineRange.first) - entry.firstLineTopPx
         is PageEntry.HorizontalRule -> return
+        is PageEntry.Image -> return
       }
     val paint =
       when (entry) {
         is PageEntry.FullBlock -> entry.layout.paint
         is PageEntry.SplitBlock -> entry.layout.paint
         is PageEntry.HorizontalRule -> return
+        is PageEntry.Image -> return
       }
     canvas.drawText(markerText, x, baseline, paint)
   }
@@ -128,4 +147,23 @@ internal object PageRenderer {
       color = Color.LTGRAY
       isAntiAlias = false
     }
+
+  private val imageBorderPaint =
+    Paint().apply {
+      color = Color.BLACK
+      style = Paint.Style.STROKE
+      strokeWidth = IMAGE_BORDER_STROKE_PX
+      isAntiAlias = false
+    }
+
+  private val imageLabelPaint =
+    Paint().apply {
+      color = Color.BLACK
+      textSize = 16f
+      isAntiAlias = false
+    }
+
+  private const val IMAGE_LABEL_PADDING_PX = 8f
+  private const val IMAGE_BORDER_STROKE_PX = 3f
+  private const val IMAGE_PLACEHOLDER_LABEL = "[image]"
 }

@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -126,6 +127,33 @@ class ReaderLayoutEngineTest {
     assertTrue(entries[0] is PageEntry.FullBlock)
     assertTrue(entries[1] is PageEntry.HorizontalRule)
     assertTrue(entries[2] is PageEntry.FullBlock)
+  }
+
+  @Test
+  fun layout_imageBlock_producesFixedPlaceholderEntry() {
+    val document =
+      ReaderDocument(blocks = listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map")))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.Image
+    assertEquals(0, entry.blockIndex)
+    assertEquals("images/map.png", entry.resourceHref)
+    assertEquals("Map", entry.alt)
+    assertEquals(viewport.widthPx - horizontalMarginPx * 2, entry.widthPx, 0.01f)
+    assertTrue(entry.visibleHeightPx > 0f)
   }
 
   @Test

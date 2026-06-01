@@ -49,6 +49,16 @@ sealed interface PageEntry {
     override val visibleHeightPx: Float,
     override val drawOffsetXPx: Float,
   ) : PageEntry
+
+  data class Image(
+    override val blockIndex: Int,
+    override val yOffsetPx: Float,
+    override val visibleHeightPx: Float,
+    override val drawOffsetXPx: Float,
+    val resourceHref: String,
+    val alt: String?,
+    val widthPx: Float,
+  ) : PageEntry
 }
 
 data class ReaderPage(val entries: List<PageEntry>)

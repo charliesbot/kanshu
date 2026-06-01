@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ListBlock
@@ -314,6 +315,69 @@ class EpubParserTest {
 
     assertEquals(listOf("Before ornament after."), result.document.paragraphText())
     assertEquals(1, result.diagnostics.unsupportedInlineTags["img"])
+  }
+
+  @Test
+  fun parse_blockImage_preservesImageBlockWithoutDiagnostics() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map of the route\" src=\"images/map.png\"/></body></html>"
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map of the route")),
+      result.document.blocks,
+    )
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_imageOnlyParagraph_preservesImageBlockWithoutInlineFallback() {
+    val result =
+      EpubParser.parse(
+        "<html><body><p><img alt=\"Cover image\" src=\"images/cover.jpg\"/></p></body></html>"
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/cover.jpg", alt = "Cover image")),
+      result.document.blocks,
+    )
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_imageOnlyDiv_preservesImageBlockWithoutInlineFallback() {
+    val result =
+      EpubParser.parse(
+        "<html><body><div><img alt=\"Cover image\" src=\"images/cover.jpg\"/></div></body></html>"
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/cover.jpg", alt = "Cover image")),
+      result.document.blocks,
+    )
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_imageOnlyParagraphWithoutSrc_preservesImageBlockWithoutInlineFallback() {
+    val result = EpubParser.parse("<html><body><p><img alt=\"Cover image\"/></p></body></html>")
+
+    assertEquals(listOf(ImageBlock(resourceHref = "", alt = "Cover image")), result.document.blocks)
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_imageOnlyDivWithoutSrc_preservesImageBlockWithoutInlineFallback() {
+    val result = EpubParser.parse("<html><body><div><img/></div></body></html>")
+
+    assertEquals(listOf(ImageBlock(resourceHref = "", alt = null)), result.document.blocks)
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
   }
 
   @Test

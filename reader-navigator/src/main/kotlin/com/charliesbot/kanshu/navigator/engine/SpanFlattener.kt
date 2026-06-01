@@ -6,6 +6,7 @@ import android.text.Spanned
 import android.text.style.StyleSpan
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ListBlock
@@ -21,10 +22,11 @@ internal object SpanFlattener {
   fun flatten(block: ReaderBlock): CharSequence? =
     when (block) {
       is HeadingBlock -> flattenSpans(block.spans)
+      is HorizontalRule -> null
+      is ImageBlock -> null
       is ListBlock -> flattenList(block)
       is ParagraphBlock -> flattenSpans(block.spans)
       is QuoteBlock -> flattenQuote(block)
-      else -> null
     }
 
   fun flatten(item: ListItem): CharSequence? = flattenBlocks(item.blocks)
@@ -50,11 +52,11 @@ internal object SpanFlattener {
       val childText =
         when (child) {
           is HeadingBlock -> flattenSpans(child.spans)
+          is ImageBlock -> null
           is ListBlock -> flattenList(child)
           is ParagraphBlock -> flattenSpans(child.spans)
           is QuoteBlock -> flattenQuote(child)
           is HorizontalRule -> null
-          else -> null
         }
       if (childText.isNullOrBlank()) return@forEach
       if (builder.isNotEmpty()) builder.append("\n\n")
