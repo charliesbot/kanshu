@@ -266,6 +266,34 @@ class EpubParserTest {
   }
 
   @Test
+  fun parse_navListWithInlineTags_preservesListItemSemanticsWithoutDiagnostics() {
+    val result =
+      EpubParser.parse(
+        """
+        <html>
+          <body>
+            <nav>
+              <ol>
+                <li><a href="chapter.xhtml"><span><em>Chapter One</em></span></a></li>
+              </ol>
+            </nav>
+          </body>
+        </html>
+        """
+          .trimIndent()
+      )
+
+    val list = result.document.blocks.single() as ListBlock
+    val item = list.items.single().blocks.single() as ParagraphBlock
+    assertEquals(
+      listOf(LinkSpan("chapter.xhtml", listOf(TextLeaf("Chapter One", InlineStyle.Italic)))),
+      item.spans,
+    )
+    assertTrue(result.diagnostics.unsupportedBlockTags.isEmpty())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
   fun parse_asideInDiv_preservesParagraphBoundaries() {
     val result = EpubParser.parse(loadFixture("aside-in-div.xhtml"))
 

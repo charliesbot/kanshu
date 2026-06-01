@@ -15,6 +15,8 @@ import org.jsoup.nodes.Element
 internal object HtmlTagSets {
   val LAYOUT_INLINE_TAGS =
     setOf("span", "a", "em", "i", "strong", "b", "br", "sub", "sup", "ruby", "img")
+
+  val TEXT_INLINE_TAGS = setOf("span", "a", "em", "i", "strong", "b", "br", "sub", "sup", "ruby")
 }
 
 internal fun altTextLeaf(element: Element, style: InlineStyle = InlineStyle.Plain): TextLeaf? {
