@@ -5,6 +5,7 @@ import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
+import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import io.mockk.coEvery
@@ -216,6 +217,33 @@ class ReaderViewModelTest {
       advanceUntilIdle()
 
       assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
+    }
+
+  @Test
+  fun `successful open exposes parser diagnostics`() =
+    runTest(testDispatcher) {
+      val publication =
+        testPublication(
+          """
+          <html>
+            <body>
+              <p>Before</p>
+              <table><tr><td>Cell</td></tr></table>
+              <aside>Note</aside>
+            </body>
+          </html>
+          """
+            .trimIndent()
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(
+        ParseDiagnostics(unsupportedBlockTags = mapOf("table" to 1, "aside" to 1)),
+        viewModel.currentDiagnostics(),
+      )
     }
 
   @Test
@@ -496,6 +524,12 @@ class ReaderViewModelTest {
     val state = uiState.value
     assertTrue(state is ReaderUiState.Reading)
     return (state as ReaderUiState.Reading).spineIndex
+  }
+
+  private fun ReaderViewModel.currentDiagnostics(): ParseDiagnostics {
+    val state = uiState.value
+    assertTrue(state is ReaderUiState.Reading)
+    return (state as ReaderUiState.Reading).diagnostics
   }
 }
 
