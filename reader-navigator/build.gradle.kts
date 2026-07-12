@@ -26,6 +26,7 @@ dependencies {
   implementation(libs.androidx.compose.foundation)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.jsoup)
+  implementation(libs.ph.css)
 
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)

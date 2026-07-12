@@ -5,6 +5,12 @@ plugins {
 }
 
 android {
+  packaging {
+    resources {
+      // ph-css and ph-commons each ship build metadata under the same path.
+      excludes += "META-INF/buildinfo.xml"
+    }
+  }
   namespace = "com.charliesbot.kanshu"
   compileSdk { version = release(libs.versions.compileSdk.get().toInt()) { minorApiLevel = 0 } }
 

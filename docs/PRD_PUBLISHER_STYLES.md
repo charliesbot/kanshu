@@ -114,7 +114,9 @@ Everything downstream of `ParseResult` is untouched. Pagination, page turns, hit
 
 ### CSS Parser Scope
 
-Hand-rolled, minimal, zero dependencies: tokenizer → rule list → declarations. It parses the whole sheet structurally (so unknown rules are skipped correctly, including brace matching) but retains only declarations for allowlisted properties and selectors within the supported grammar. Everything skipped is counted.
+Tokenization and grammar are outsourced to **ph-css** (`com.helger:ph-css`, Apache 2.0) in browser-compliant fault-tolerant mode, behind an adapter that produces Kanshu's `CssStylesheet` model. The rationale (revisited from the original hand-rolled plan): parsing is the commodity layer over an **unbounded, uncontrolled input surface** — every stylesheet in every EPUB ever produced — which is exactly where home-grown scanners bleed indefinitely (silent misparse on strings-containing-braces, escapes, encodings). ph-css is a decade of other people's messy CSS encoded as code. The adapter keeps every Kanshu decision: which selector shapes the cascade honors, the property allowlist, and the census counts for everything skipped; unparseable input degrades to an empty stylesheet inside the same never-throw boundary.
+
+Alternatives surveyed and recorded: **KSS** (Kotlin, MIT, spec CSS Syntax L3, featherweight but single-maintainer-young) is the drop-in fallback behind the same adapter if ph-css's dex footprint ever proves unacceptable on the e-ink build; **jStyleParser** is disqualified (LGPL v3 vs. Android distribution, `org.w3c.dom` impedance vs. our Jsoup walk, stagnant mainline); **css4j** (BSD-2, active, computed-styles engine) is the graded escape hatch *before* embedding crengine if Kanshu ever wants publisher styles wholesale rather than an allowlist.
 
 Supported selector grammar (v1):
 
@@ -221,7 +223,7 @@ If a pathological book blows the stylesheet budget, the degradation policy appli
 
 **A — Styling census.** Diagnostics extension + panel display. No rendering change. Deliverable: numbers from real library books, v1 list confirmed or amended.
 
-**B — CSS parser + micro-cascade, pure JVM.** Tokenizer, rule model, selector matching, specificity, inheritance, `ResolvedStyle`. Tested against real stylesheet fixtures from the census books (Calibre and InDesign output), including specificity conflicts and descendant matching. No wiring.
+**B — CSS parser + micro-cascade, pure JVM.** ph-css adapter producing the rule model, selector matching, specificity, inheritance, `ResolvedStyle`. Tested against real stylesheet fixtures from the census books (Calibre and InDesign output), including specificity conflicts, descendant matching, and a malformed-input never-throws corpus at the adapter boundary. No wiring.
 
 **C — Wire-up.** Stylesheet discovery/caching through `ReaderResourceLoader`, resolution in the DOM walk, `InlineStyle` merge, block `alignment` field, `BlockStyleResolver` mapping. The slice where books visibly change. On-device Kindle side-by-side is the acceptance test.
 
