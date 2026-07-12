@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -23,11 +24,13 @@ import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.engine.BlockStyleResolver
 import com.charliesbot.kanshu.navigator.engine.ImageBounds
+import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
+import com.charliesbot.kanshu.navigator.render.ReaderImageDecoder
 import com.charliesbot.kanshu.navigator.render.ReaderPageCanvasView
 import com.charliesbot.kanshu.navigator.render.ReaderPageTapZone
 import com.charliesbot.kanshu.navigator.render.SelectionPageTurnDirection
@@ -37,9 +40,11 @@ import com.charliesbot.kanshu.navigator.selection.toSelectionTextPrefix
 import com.charliesbot.kanshu.navigator.selection.toSelectionTextSuffix
 import com.charliesbot.kanshu.navigator.selection.turnSelectionPage
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "ReaderPageViewer"
 
@@ -57,6 +62,7 @@ fun ReaderPageViewer(
   onNextPage: (() -> Unit)? = null,
   onTextSelected: ((String, RectF) -> Unit)? = null,
   onSelectionCleared: (() -> Unit)? = null,
+  imageCache: ReaderImageCache = rememberReaderImageCache(),
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -70,7 +76,6 @@ fun ReaderPageViewer(
       remember(preferences, viewport.density, typeface) {
         BlockStyleResolver(preferences, typeface, viewport.density)
       }
-
     LaunchedReaderLayout(
       document = document,
       preferences = preferences,
@@ -78,22 +83,56 @@ fun ReaderPageViewer(
       typeface = typeface,
       styleResolver = styleResolver,
       resourceLoader = resourceLoader,
+      imageBoundsCache = imageCache.bounds,
       onPages = { laidOut -> pages = laidOut },
       onPageCount = onPageCount,
       onLayoutDiagnostics = onLayoutDiagnostics,
       onLayoutFailed = onLayoutFailed,
     )
 
-    val page = pages?.getOrNull(currentPage.coerceAtLeast(0))
+    // A page is presented only once its images are decoded, failed, or timed out — images appear
+    // with the page (the decode hides inside the e-ink refresh) instead of repainting after it.
+    var presentedPageIndex by remember(document) { mutableStateOf<Int?>(null) }
+    val laidOut = pages
+    LaunchedEffect(laidOut, currentPage, resourceLoader, imageCache) {
+      val pagesNow = laidOut ?: return@LaunchedEffect
+      if (pagesNow.isEmpty()) return@LaunchedEffect
+      val targetIndex = currentPage.coerceIn(0, pagesNow.lastIndex)
+      val loader = resourceLoader
+      if (loader == null) {
+        presentedPageIndex = targetIndex
+        return@LaunchedEffect
+      }
+      val pending = pagesNow[targetIndex].pendingImageEntries(imageCache.bitmaps.keys)
+      if (pending.isNotEmpty()) {
+        withTimeoutOrNull(PRESENTATION_DECODE_TIMEOUT_MS) {
+          decodeImagesInto(imageCache, loader, pending)
+        }
+      }
+      presentedPageIndex = targetIndex
+      // Finish anything the timeout cut off, then decode one page ahead and behind so the
+      // next turn's gate finds its bitmaps already cached.
+      val followUp =
+        listOfNotNull(
+            pagesNow.getOrNull(targetIndex),
+            pagesNow.getOrNull(targetIndex - 1),
+            pagesNow.getOrNull(targetIndex + 1),
+          )
+          .flatMap { it.pendingImageEntries(imageCache.bitmaps.keys) }
+      decodeImagesInto(imageCache, loader, followUp)
+    }
+
+    val presentedIndex = presentedPageIndex
+    val page = presentedIndex?.let { laidOut?.getOrNull(it) }
     var selectionCarryState by remember(document) { mutableStateOf(SelectionCarryState()) }
     var pendingSelectionSeedPage by remember(document) { mutableStateOf<Int?>(null) }
     var pendingSelectionSeedAtPageEnd by remember(document) { mutableStateOf(false) }
     var pendingRestoredSelection by remember(document) { mutableStateOf<TextSelection?>(null) }
-    if (page != null) {
-      val shouldSeedSelection = pendingSelectionSeedPage == currentPage
+    if (page != null && presentedIndex != null) {
+      val shouldSeedSelection = pendingSelectionSeedPage == presentedIndex
       ReaderPageAndroidView(
         page = page,
-        currentPage = currentPage,
+        currentPage = presentedIndex,
         selectionTextPrefix = selectionCarryState.prefixPages.toSelectionTextPrefix(),
         selectionTextSuffix = selectionCarryState.suffixPages.toSelectionTextSuffix(),
         restoredSelection = if (shouldSeedSelection) pendingRestoredSelection else null,
@@ -103,6 +142,10 @@ fun ReaderPageViewer(
           shouldSeedSelection && pendingRestoredSelection == null && pendingSelectionSeedAtPageEnd,
         selectionLocale = selectionLocale,
         styleResolver = styleResolver,
+        imageBitmaps =
+          imageCache.bitmaps.entries
+            .mapNotNull { (href, bitmap) -> bitmap?.let { href to it } }
+            .toMap(),
         onTapZone = { zone ->
           when (zone) {
             ReaderPageTapZone.Previous -> onPreviousPage?.invoke()
@@ -125,7 +168,7 @@ fun ReaderPageViewer(
           val turn =
             selectionCarryState.turnSelectionPage(
               direction = direction,
-              currentPage = currentPage,
+              currentPage = presentedIndex,
               lastPageIndex = laidOutPages.lastIndex,
               pageSelectedText = pageSelectedText,
               currentSelection = currentSelection,
@@ -141,7 +184,7 @@ fun ReaderPageViewer(
           true
         },
         onSelectionSeeded = {
-          if (pendingSelectionSeedPage == currentPage) {
+          if (pendingSelectionSeedPage == presentedIndex) {
             pendingSelectionSeedPage = null
             pendingSelectionSeedAtPageEnd = false
             pendingRestoredSelection = null
@@ -182,6 +225,7 @@ private fun LaunchedReaderLayout(
   typeface: Typeface,
   styleResolver: BlockStyleResolver,
   resourceLoader: ReaderResourceLoader?,
+  imageBoundsCache: MutableMap<String, ImageBounds>,
   onPages: (List<ReaderPage>?) -> Unit,
   onPageCount: (Int) -> Unit,
   onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit,
@@ -205,7 +249,7 @@ private fun LaunchedReaderLayout(
       "layout start gen=$generation viewport=${viewport.widthPx}x${viewport.heightPx}px blocks=${document.blocks.size}",
     )
 
-    val imageBounds = resolveImageBounds(document, resourceLoader)
+    val imageBounds = resolveImageBounds(document, resourceLoader, imageBoundsCache)
 
     val layoutResult =
       layoutPages(
@@ -294,6 +338,7 @@ private suspend fun layoutPages(
 private suspend fun resolveImageBounds(
   document: ReaderDocument,
   loader: ReaderResourceLoader?,
+  cache: MutableMap<String, ImageBounds>,
 ): Map<String, ImageBounds> {
   if (loader == null) return emptyMap()
   val hrefs =
@@ -303,13 +348,43 @@ private suspend fun resolveImageBounds(
       .filter { it.isNotBlank() }
       .distinct()
   if (hrefs.isEmpty()) return emptyMap()
-  return withContext(Dispatchers.IO) {
-    buildMap {
-      hrefs.forEach { href ->
-        val bytes = loader.readOrNull(href) ?: return@forEach
-        decodeImageBounds(bytes)?.let { bounds -> put(href, bounds) }
+  val missing = hrefs.filterNot(cache::containsKey)
+  if (missing.isNotEmpty()) {
+    val fetched =
+      withContext(Dispatchers.IO) {
+        buildMap {
+          missing.forEach { href ->
+            val bytes = loader.readOrNull(href) ?: return@forEach
+            decodeImageBounds(bytes)?.let { bounds -> put(href, bounds) }
+          }
+        }
       }
-    }
+    // Merged on the caller's context so a cancelled layout coroutine never mutates the cache.
+    cache.putAll(fetched)
+  }
+  return hrefs.mapNotNull { href -> cache[href]?.let { bounds -> href to bounds } }.toMap()
+}
+
+// Bounds how long the gate holds a page turn for image decoding. Soft cap: an in-flight
+// read/decode is not interruptible, so a pathologically slow image can overshoot; on timeout the
+// page presents with the placeholder and the decode finishes in the follow-up pass.
+private const val PRESENTATION_DECODE_TIMEOUT_MS = 250L
+
+/** Decodes entries one at a time, merging each result on the caller's context. */
+private suspend fun decodeImagesInto(
+  cache: ReaderImageCache,
+  loader: ReaderResourceLoader,
+  entries: List<PageEntry.Image>,
+) {
+  entries.forEach { entry ->
+    if (cache.bitmaps.containsKey(entry.resourceHref)) return@forEach
+    val bitmap =
+      withContext(Dispatchers.IO) {
+        loader.readOrNull(entry.resourceHref)?.let {
+          ReaderImageDecoder.decode(it, entry.widthPx.roundToInt())
+        }
+      }
+    cache.bitmaps[entry.resourceHref] = bitmap
   }
 }
 
@@ -348,6 +423,7 @@ private fun ReaderPageAndroidView(
   seedSelectionAtPageEnd: Boolean,
   selectionLocale: Locale,
   styleResolver: BlockStyleResolver,
+  imageBitmaps: Map<String, Bitmap>,
   onTapZone: (ReaderPageTapZone) -> Unit,
   onTextSelected: (String, RectF) -> Unit,
   onSelectionCleared: () -> Unit,
@@ -366,6 +442,7 @@ private fun ReaderPageAndroidView(
         page = page,
         horizontalMarginPx = styleResolver.horizontalMarginPx(),
         verticalMarginPx = styleResolver.verticalMarginPx(),
+        imageBitmaps = imageBitmaps,
         onTapZone = onTapZone,
         onTextSelected = onTextSelected,
         onSelectionCleared = onSelectionCleared,

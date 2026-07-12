@@ -13,14 +13,17 @@ private val SCHEME_PREFIX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
 internal fun resolveHref(href: String, baseHref: String?): String {
   if (baseHref.isNullOrBlank() || href.isBlank()) return href
   if (SCHEME_PREFIX.containsMatchIn(href)) return href
-  if (href.startsWith("/")) return href.trimStart('/')
+  // Container lookups are by path; fragments and queries never identify a different resource.
+  val path = href.substringBefore('#').substringBefore('?')
+  if (path.isBlank()) return href
+  if (path.startsWith("/")) return path.trimStart('/')
 
   val segments = ArrayDeque<String>()
   val baseDir = baseHref.trimStart('/').substringBeforeLast('/', "")
   if (baseDir.isNotEmpty()) {
     baseDir.split('/').forEach(segments::addLast)
   }
-  href.split('/').forEach { segment ->
+  path.split('/').forEach { segment ->
     when (segment) {
       "",
       "." -> {}

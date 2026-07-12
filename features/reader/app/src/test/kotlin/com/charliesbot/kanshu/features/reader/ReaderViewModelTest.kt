@@ -534,11 +534,55 @@ class ReaderViewModelTest {
         listOf("First chapter ".repeat(6).trim()),
         viewModel.currentDocument().paragraphText(),
       )
-      coVerify(exactly = 2) { firstResource.read() }
+      // The initial open is the only read; reentry is served from the spine item cache.
+      coVerify(exactly = 1) { firstResource.read() }
     }
 
   @Test
-  fun `previousPage stays put when previous spine item becomes unreadable`() =
+  fun `chapter reentry reuses parsed spine item without rereading resources`() =
+    runTest(testDispatcher) {
+      val links = List(2) { mockk<Link>(relaxed = true) }
+      val firstResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(
+              "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>".encodeToByteArray()
+            )
+        }
+      val secondResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(
+              "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>".encodeToByteArray()
+            )
+        }
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) {
+          every { readingOrder } returns links
+          every { get(links[0]) } returns firstResource
+          every { get(links[1]) } returns secondResource
+        }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      viewModel.onPageCount(1, 1)
+      viewModel.previousPage()
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      assertEquals(1, viewModel.currentSpineIndex())
+      coVerify(exactly = 1) { firstResource.read() }
+      coVerify(exactly = 1) { secondResource.read() }
+    }
+
+  @Test
+  fun `previousPage returns to visited chapter even when its resource became unreadable`() =
     runTest(testDispatcher) {
       val links = List(2) { mockk<Link>(relaxed = true) }
       val firstResource =
@@ -579,13 +623,14 @@ class ReaderViewModelTest {
       viewModel.previousPage()
       advanceUntilIdle()
 
-      assertEquals(1, viewModel.currentSpineIndex())
+      // Backward targets are always previously visited, so the spine item cache serves them
+      // without touching the (now unreadable) resource.
+      assertEquals(0, viewModel.currentSpineIndex())
       assertEquals(
-        listOf("Second chapter ".repeat(6).trim()),
+        listOf("First chapter ".repeat(6).trim()),
         viewModel.currentDocument().paragraphText(),
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(1, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pageCount.value)
     }
 
   @Test
