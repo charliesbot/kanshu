@@ -56,6 +56,13 @@
     <string name="reader_diagnostics_unsupported_inline_tags">Etiquetas en línea no compatibles</string>
     <string name="reader_diagnostics_no_unsupported_tags">Ninguna</string>
     <string name="reader_diagnostics_tag_count">%1$s: %2$d</string>
+    <string name="reader_diagnostics_styling_title">Censo de estilos</string>
+    <string name="reader_diagnostics_class_attribute_count">Elementos con class: %1$d</string>
+    <string name="reader_diagnostics_style_attribute_count">Elementos con estilo en línea: %1$d</string>
+    <string name="reader_diagnostics_stylesheet_links">Hojas de estilo enlazadas</string>
+    <string name="reader_diagnostics_style_tag_count">Bloques de estilo en línea: %1$d</string>
+    <string name="reader_diagnostics_class_names">Nombres de clase</string>
+    <string name="reader_diagnostics_inline_properties">Propiedades de estilo en línea</string>
     <string name="reader_sync_already_at_furthest">Ya estás en el punto más avanzado</string>
     <string name="reader_sync_prompt_title">¿Continuar desde otro dispositivo?</string>
     <string name="reader_sync_prompt_body_with_device">%1$s ha leído hasta el %2$d %%. ¿Aplicar esta posición?</string>
