@@ -6,6 +6,7 @@ import android.text.Layout
 import android.text.TextPaint
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.navigator.model.BlockAlignment
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -23,17 +24,17 @@ internal class BlockStyleResolver(
 
   fun resolve(block: ReaderBlock): BlockStyle? =
     when (block) {
-      is HeadingBlock -> headingStyle(block.level)
+      is HeadingBlock -> headingStyle(block.level, block.alignment)
       is HorizontalRule -> ruleStyle()
       is ImageBlock -> imageStyle()
       is ListBlock -> listStyle()
-      is ParagraphBlock -> paragraphStyle()
+      is ParagraphBlock -> paragraphStyle(block.alignment)
       is QuoteBlock -> quoteStyle()
     }
 
-  private fun imageStyle(): BlockStyle = paragraphStyle()
+  private fun imageStyle(): BlockStyle = paragraphStyle(publisherAlignment = null)
 
-  private fun paragraphStyle(): BlockStyle {
+  private fun paragraphStyle(publisherAlignment: BlockAlignment?): BlockStyle {
     val paint =
       TextPaint().apply {
         this.typeface = typeface
@@ -48,16 +49,17 @@ internal class BlockStyleResolver(
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,
-      alignment = Layout.Alignment.ALIGN_NORMAL,
+      alignment = publisherAlignment.toLayoutAlignment(),
       breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
       indentPx = 0f,
       prefixWidthPx = 0f,
       marginTopPx = 0f,
       marginBottomPx = preferences.paragraphSpacing * fontSizePx,
+      justifiable = publisherAlignment == null,
     )
   }
 
-  private fun headingStyle(level: Int): BlockStyle {
+  private fun headingStyle(level: Int, publisherAlignment: BlockAlignment?): BlockStyle {
     val headingScale =
       when (level.coerceIn(1, 6)) {
         1 -> 1.65f
@@ -80,14 +82,23 @@ internal class BlockStyleResolver(
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE,
-      alignment = Layout.Alignment.ALIGN_NORMAL,
+      alignment = publisherAlignment.toLayoutAlignment(),
       breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
       indentPx = 0f,
       prefixWidthPx = 0f,
       marginTopPx = headingSizePx * if (level <= 3) 1.2f else 0.8f,
       marginBottomPx = headingSizePx * if (level <= 3) 0.6f else 0.4f,
+      justifiable = publisherAlignment == null,
     )
   }
+
+  private fun BlockAlignment?.toLayoutAlignment(): Layout.Alignment =
+    when (this) {
+      BlockAlignment.Center -> Layout.Alignment.ALIGN_CENTER
+      BlockAlignment.End -> Layout.Alignment.ALIGN_OPPOSITE
+      BlockAlignment.Start,
+      null -> Layout.Alignment.ALIGN_NORMAL
+    }
 
   private fun ruleStyle(): BlockStyle {
     val paint =

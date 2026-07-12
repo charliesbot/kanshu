@@ -70,6 +70,7 @@ class ReaderViewModel(
   private var currentSpineIndex = -1
   // Chapter reentry (e.g. paging back across a boundary) must not re-parse the spine item.
   private val spineItemCache = mutableMapOf<Int, SpineItem>()
+  private var stylesheets: PublicationStylesheets? = null
 
   private fun lastPageIndex(): Int = (_pageCount.value - 1).coerceAtLeast(0)
 
@@ -87,6 +88,7 @@ class ReaderViewModel(
     _resourceLoader.value = null
     currentSpineIndex = -1
     spineItemCache.clear()
+    stylesheets = null
 
     openJob = viewModelScope.launch {
       Log.d(TAG, "open($seriesId): loading")
@@ -95,13 +97,14 @@ class ReaderViewModel(
         is ReaderResult.Success -> {
           publication = result.publication
           _resourceLoader.value = PublicationResourceLoader(result.publication)
+          stylesheets = PublicationStylesheets(result.publication)
           Log.d(
             TAG,
             "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
           )
           val spineItem =
             withContext(ioDispatcher) {
-              result.publication.readNextSpineItem(afterSpineIndex = -1)
+              result.publication.readNextSpineItem(afterSpineIndex = -1, stylesheets)
             }
           if (spineItem == null) {
             failOpen("open($seriesId): no spine item → OpenFailed")
@@ -195,7 +198,9 @@ class ReaderViewModel(
       try {
         val item =
           spineItemCache[targetSpineIndex]
-            ?: withContext(ioDispatcher) { currentPublication.readSpineItemAt(targetSpineIndex) }
+            ?: withContext(ioDispatcher) {
+              currentPublication.readSpineItemAt(targetSpineIndex, stylesheets)
+            }
         if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
           Log.d(TAG, "openSpineItem: ignored stale open of spine[$targetSpineIndex]")
           return@launch

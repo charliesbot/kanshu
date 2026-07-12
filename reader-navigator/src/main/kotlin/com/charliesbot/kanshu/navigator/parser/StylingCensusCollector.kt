@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.StylingCensus
+import com.charliesbot.kanshu.navigator.parser.css.CssStylesheet
 import org.jsoup.nodes.Document
 
 /**
@@ -8,7 +9,11 @@ import org.jsoup.nodes.Document
  * (classes, inline styles, stylesheets), regardless of whether Kanshu honors any of it yet.
  */
 internal object StylingCensusCollector {
-  fun collect(document: Document, baseHref: String?): StylingCensus {
+  fun collect(
+    document: Document,
+    baseHref: String?,
+    stylesheets: List<CssStylesheet> = emptyList(),
+  ): StylingCensus {
     var classAttributeCount = 0
     var styleAttributeCount = 0
     val classNameCounts = linkedMapOf<String, Int>()
@@ -36,6 +41,17 @@ internal object StylingCensusCollector {
         link.attr("href").trim().takeIf { it.isNotEmpty() }?.let { resolveHref(it, baseHref) }
       }
 
+    val stylesheetPropertyCounts = linkedMapOf<String, Int>()
+    val atRuleCounts = linkedMapOf<String, Int>()
+    stylesheets.forEach { sheet ->
+      sheet.stats.declarationCounts.forEach { (property, count) ->
+        stylesheetPropertyCounts.merge(property, count, Int::plus)
+      }
+      sheet.stats.atRuleCounts.forEach { (atRule, count) ->
+        atRuleCounts.merge(atRule, count, Int::plus)
+      }
+    }
+
     return StylingCensus(
       classAttributeCount = classAttributeCount,
       styleAttributeCount = styleAttributeCount,
@@ -43,6 +59,10 @@ internal object StylingCensusCollector {
       inlinePropertyCounts = inlinePropertyCounts,
       stylesheetHrefs = stylesheetHrefs,
       styleTagCount = document.select("style").size,
+      stylesheetPropertyCounts = stylesheetPropertyCounts,
+      unsupportedSelectorCount = stylesheets.sumOf { it.stats.unsupportedSelectorCount },
+      atRuleCounts = atRuleCounts,
+      importantCount = stylesheets.sumOf { it.stats.importantCount },
     )
   }
 

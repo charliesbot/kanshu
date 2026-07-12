@@ -83,6 +83,38 @@ internal class CssStyleResolver(stylesheets: List<CssStylesheet>) {
     if (trim().endsWith(suffix, ignoreCase = true)) trim().dropLast(suffix.length) else this
 }
 
+/**
+ * Memoizing wrapper that folds inheritance down the ancestor chain: an element's resolved style
+ * starts from its parent's resolved style. The DOM walk visits parents before children, so each
+ * element resolves exactly once.
+ */
+internal class InheritedStyleResolver(private val resolver: CssStyleResolver) {
+  private val cache = HashMap<Element, ResolvedStyle>()
+
+  fun resolve(element: Element): ResolvedStyle {
+    cache[element]?.let {
+      return it
+    }
+    val parent = element.parent()
+    val inherited =
+      if (parent == null || parent.tagName() in NON_INHERITING_ROOTS) ResolvedStyle.None
+      else resolve(parent)
+    return resolver.resolve(element, inherited).also { cache[element] = it }
+  }
+
+  /**
+   * Only the values declared by rules matching this element (or its inline style) — no inherited
+   * values. Semantic tag emphasis may be reset by a declaration on the element itself, never by a
+   * value merely inherited from an ancestor (mirrors how a UA `em` rule outranks inheritance).
+   */
+  fun resolveDeclared(element: Element): ResolvedStyle =
+    resolver.resolve(element, ResolvedStyle.None)
+
+  private companion object {
+    val NON_INHERITING_ROOTS = setOf("#root", "html")
+  }
+}
+
 private fun CssSelector.matches(element: Element): Boolean {
   if (!compounds.last().matches(element)) return false
   var compoundIndex = compounds.size - 2

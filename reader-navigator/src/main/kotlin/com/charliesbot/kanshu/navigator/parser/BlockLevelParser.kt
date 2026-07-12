@@ -1,14 +1,17 @@
 package com.charliesbot.kanshu.navigator.parser
 
+import com.charliesbot.kanshu.navigator.model.BlockAlignment
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
+import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.TextLeaf
+import com.charliesbot.kanshu.navigator.parser.css.InheritedStyleResolver
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
@@ -22,8 +25,9 @@ import org.jsoup.nodes.TextNode
 internal class BlockLevelParser(
   private val diagnostics: ParseDiagnosticsCollector,
   private val baseHref: String? = null,
+  private val styles: InheritedStyleResolver? = null,
 ) {
-  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics)
+  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles)
 
   fun parse(nodes: List<Node>): List<ReaderBlock> {
     val blocks = mutableListOf<ReaderBlock>()
@@ -45,16 +49,17 @@ internal class BlockLevelParser(
     when (tag) {
       "p" ->
         imageOnlyBlock(element)?.let(blocks::add)
-          ?: paragraphFromInline(element.childNodes())?.let(blocks::add)
+          ?: paragraphFromInline(element.childNodes(), element)?.let(blocks::add)
 
-      in HtmlTagSets.TEXT_INLINE_TAGS -> paragraphFromInline(listOf(element))?.let(blocks::add)
+      in HtmlTagSets.TEXT_INLINE_TAGS ->
+        paragraphFromInline(listOf(element), element)?.let(blocks::add)
 
       "h1",
       "h2",
       "h3",
       "h4",
       "h5",
-      "h6" -> headingFromInline(tag, element.childNodes())?.let(blocks::add)
+      "h6" -> headingFromInline(tag, element)?.let(blocks::add)
 
       "div" -> parseInlineOrChildren(element, blocks)
 
@@ -76,7 +81,7 @@ internal class BlockLevelParser(
 
       "table" -> {
         diagnostics.recordUnsupportedBlock("table")
-        textParagraph(element.text())?.let(blocks::add)
+        textParagraph(element.text(), element)?.let(blocks::add)
       }
 
       else -> {
@@ -94,7 +99,7 @@ internal class BlockLevelParser(
     if (element.hasBlockChild()) {
       appendParsed(element.childNodes(), blocks)
     } else {
-      paragraphFromInline(element.childNodes())?.let(blocks::add)
+      paragraphFromInline(element.childNodes(), element)?.let(blocks::add)
     }
   }
 
@@ -102,16 +107,24 @@ internal class BlockLevelParser(
     blocks.addAll(parse(nodes))
   }
 
-  private fun paragraphFromInline(nodes: List<Node>): ParagraphBlock? {
-    val spans = inlineSpanExtractor.extract(nodes)
-    return if (spans.isEmpty()) null else ParagraphBlock(spans)
+  private fun paragraphFromInline(nodes: List<Node>, owner: Element? = null): ParagraphBlock? {
+    val spans = inlineSpanExtractor.extract(nodes, baseStyleFor(owner))
+    return if (spans.isEmpty()) null
+    else ParagraphBlock(spans, alignment = publisherAlignment(owner))
   }
 
-  private fun headingFromInline(tag: String, nodes: List<Node>): HeadingBlock? {
-    val spans = inlineSpanExtractor.extract(nodes)
+  private fun headingFromInline(tag: String, element: Element): HeadingBlock? {
+    val spans = inlineSpanExtractor.extract(element.childNodes(), baseStyleFor(element))
     if (spans.isEmpty()) return null
     val level = tag.removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
-    return HeadingBlock(level = level, spans = spans)
+    return HeadingBlock(level = level, spans = spans, alignment = publisherAlignment(element))
+  }
+
+  private fun baseStyleFor(owner: Element?): InlineStyle =
+    if (owner == null) InlineStyle.Plain else inlineSpanExtractor.effectiveCssEmphasis(owner)
+
+  private fun publisherAlignment(owner: Element?): BlockAlignment? = owner?.let {
+    styles?.resolve(it)?.blockAlignment()
   }
 
   private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
@@ -126,7 +139,7 @@ internal class BlockLevelParser(
           if (listItem.hasBlockChild()) {
             parse(listItem.childNodes())
           } else {
-            paragraphFromInline(listItem.childNodes())?.let(::listOf).orEmpty()
+            paragraphFromInline(listItem.childNodes(), listItem)?.let(::listOf).orEmpty()
           }
         if (blocks.isEmpty()) null else ListItem(blocks)
       }
@@ -151,9 +164,10 @@ internal class BlockLevelParser(
     return imageBlock(image)
   }
 
-  private fun textParagraph(text: String): ParagraphBlock? {
+  private fun textParagraph(text: String, owner: Element? = null): ParagraphBlock? {
     val trimmed = text.trim()
-    return if (trimmed.isEmpty()) null else ParagraphBlock(listOf(TextLeaf(trimmed)))
+    return if (trimmed.isEmpty()) null
+    else ParagraphBlock(listOf(TextLeaf(trimmed)), alignment = publisherAlignment(owner))
   }
 
   private fun Element.hasBlockChild(): Boolean =

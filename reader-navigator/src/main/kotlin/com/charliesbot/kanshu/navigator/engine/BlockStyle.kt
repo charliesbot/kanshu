@@ -16,4 +16,6 @@ data class BlockStyle(
   val marginBottomPx: Float,
   val leadingRuleOffsetXPx: Float = 0f,
   val leadingRuleStrokeWidthPx: Float = 0f,
+  /** False when the publisher declared an explicit alignment — such blocks never justify. */
+  val justifiable: Boolean = true,
 )

@@ -1,7 +1,9 @@
 package com.charliesbot.kanshu.navigator.engine
 
 import android.graphics.Typeface
+import android.text.Layout
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.navigator.model.BlockAlignment
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -154,6 +156,37 @@ class ReaderLayoutEngineTest {
     assertEquals("Map", entry.alt)
     assertEquals(viewport.widthPx - horizontalMarginPx * 2, entry.widthPx, 0.01f)
     assertTrue(entry.visibleHeightPx > 0f)
+  }
+
+  @Test
+  fun layout_publisherCenteredParagraph_alignsCenterAndSkipsJustification() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ParagraphBlock(listOf(TextLeaf("* * *")), alignment = BlockAlignment.Center),
+            ParagraphBlock(listOf(TextLeaf("Plain justified paragraph with enough words."))),
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = true,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entries = pages.single().entries.filterIsInstance<PageEntry.FullBlock>()
+    assertEquals(Layout.Alignment.ALIGN_CENTER, entries[0].layout.alignment)
+    assertEquals(false, entries[0].textJustified)
+    assertEquals(Layout.Alignment.ALIGN_NORMAL, entries[1].layout.alignment)
+    assertEquals(true, entries[1].textJustified)
   }
 
   @Test

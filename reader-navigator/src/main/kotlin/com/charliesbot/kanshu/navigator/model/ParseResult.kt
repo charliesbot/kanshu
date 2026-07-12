@@ -17,6 +17,11 @@ data class StylingCensus(
   val inlinePropertyCounts: Map<String, Int> = emptyMap(),
   val stylesheetHrefs: List<String> = emptyList(),
   val styleTagCount: Int = 0,
+  /** Declarations seen per property across the spine item's parsed stylesheets. */
+  val stylesheetPropertyCounts: Map<String, Int> = emptyMap(),
+  val unsupportedSelectorCount: Int = 0,
+  val atRuleCounts: Map<String, Int> = emptyMap(),
+  val importantCount: Int = 0,
 )
 
 data class ParseResult(val document: ReaderDocument, val diagnostics: ParseDiagnostics)

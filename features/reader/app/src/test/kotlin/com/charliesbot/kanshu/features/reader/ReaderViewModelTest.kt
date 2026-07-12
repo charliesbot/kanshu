@@ -5,6 +5,7 @@ import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.navigator.model.ImageBlock
+import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
@@ -35,6 +36,7 @@ import org.readium.r2.shared.publication.Href
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.Try
+import org.readium.r2.shared.util.Url
 import org.readium.r2.shared.util.resource.Resource
 import org.robolectric.RobolectricTestRunner
 
@@ -536,6 +538,54 @@ class ReaderViewModelTest {
       )
       // The initial open is the only read; reentry is served from the spine item cache.
       coVerify(exactly = 1) { firstResource.read() }
+    }
+
+  @Test
+  fun `publisher stylesheet applies emphasis and is fetched once across chapters`() =
+    runTest(testDispatcher) {
+      val chapter =
+        """
+        <html>
+          <head><link rel="stylesheet" href="../styles/main.css"/></head>
+          <body><p>It was <span class="calibre7">not</span> a good idea. ${"Filler ".repeat(5)}</p></body>
+        </html>
+        """
+          .trimIndent()
+      val links =
+        listOf("OEBPS/xhtml/ch01.xhtml", "OEBPS/xhtml/ch02.xhtml").map { path ->
+          mockk<Link>(relaxed = true) { every { href } returns Href(path)!! }
+        }
+      val chapterResource =
+        mockk<Resource> { coEvery { read() } returns Try.success(chapter.encodeToByteArray()) }
+      val cssResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(".calibre7 { font-style: italic }".encodeToByteArray())
+        }
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) {
+          every { readingOrder } returns links
+          links.forEach { link -> every { get(link) } returns chapterResource }
+          every { get(any<Url>()) } answers
+            {
+              val url = firstArg<Url>()
+              if (url.toString().endsWith("main.css")) cssResource else null
+            }
+        }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      val spans = (viewModel.currentDocument().blocks.first() as ParagraphBlock).spans
+      assertTrue(spans.any { it is TextLeaf && it.text == "not" && it.style == InlineStyle.Italic })
+
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+
+      coVerify(exactly = 1) { cssResource.read() }
     }
 
   @Test
