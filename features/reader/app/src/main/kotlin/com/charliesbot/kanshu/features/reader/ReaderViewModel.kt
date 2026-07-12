@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.navigator.ReaderResourceLoader
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlinx.coroutines.CoroutineDispatcher
@@ -54,6 +55,9 @@ class ReaderViewModel(
   private val _pageCount = MutableStateFlow(0)
   val pageCount: StateFlow<Int> = _pageCount.asStateFlow()
 
+  private val _resourceLoader = MutableStateFlow<ReaderResourceLoader?>(null)
+  val resourceLoader: StateFlow<ReaderResourceLoader?> = _resourceLoader.asStateFlow()
+
   private enum class LandingPage {
     Start,
     End,
@@ -78,6 +82,7 @@ class ReaderViewModel(
     spineJob = null
     publication?.close()
     publication = null
+    _resourceLoader.value = null
     currentSpineIndex = -1
 
     openJob = viewModelScope.launch {
@@ -86,6 +91,7 @@ class ReaderViewModel(
       when (result) {
         is ReaderResult.Success -> {
           publication = result.publication
+          _resourceLoader.value = PublicationResourceLoader(result.publication)
           Log.d(
             TAG,
             "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",

@@ -19,7 +19,10 @@ import org.jsoup.nodes.TextNode
  * Unsupported structures still unwrap to text with diagnostics. Lists, quotes, and images are kept
  * lossy until their renderer slices land.
  */
-internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollector) {
+internal class BlockLevelParser(
+  private val diagnostics: ParseDiagnosticsCollector,
+  private val baseHref: String? = null,
+) {
   private val inlineSpanExtractor = InlineSpanExtractor(diagnostics)
 
   fun parse(nodes: List<Node>): List<ReaderBlock> {
@@ -132,7 +135,10 @@ internal class BlockLevelParser(private val diagnostics: ParseDiagnosticsCollect
 
   private fun imageBlock(element: Element): ImageBlock? {
     val src = element.attr("src").trim()
-    return ImageBlock(resourceHref = src, alt = element.attr("alt").trim().ifEmpty { null })
+    return ImageBlock(
+      resourceHref = resolveHref(src, baseHref),
+      alt = element.attr("alt").trim().ifEmpty { null },
+    )
   }
 
   private fun imageOnlyBlock(element: Element): ImageBlock? {

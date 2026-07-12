@@ -54,7 +54,7 @@ internal suspend fun Publication.readSpineItemAt(index: Int): SpineItem? {
     return null
   }
   val xhtml = readSpineXhtml(index) ?: return null
-  val parseResult = EpubParser.parse(xhtml)
+  val parseResult = EpubParser.parse(xhtml, baseHref = link.url().path?.trimStart('/'))
   val document = parseResult.document
   val flattened = document.flattenedText()
   val textLength = flattened.length

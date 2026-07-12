@@ -33,6 +33,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
   val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
+  val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
   val preferences = remember { ReaderPreferences() }
   var previewPreferences by remember { mutableStateOf(preferences) }
   var overlayVisible by remember { mutableStateOf(false) }
@@ -57,6 +58,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             preferences = preferences,
             currentPage = currentPage,
             onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
+            resourceLoader = resourceLoader,
             onLayoutDiagnostics = { diagnostics -> layoutDiagnostics = diagnostics },
             onLayoutFailed = viewModel::onLayoutFailed,
             onPreviousPage = {

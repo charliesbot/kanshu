@@ -17,6 +17,7 @@ class ReaderLayoutEngine {
     verticalMarginPx: Float,
     justify: Boolean,
     styleResolver: (ReaderBlock) -> BlockStyle?,
+    imageBounds: (String) -> ImageBounds? = { null },
     shouldContinue: () -> Boolean = { true },
   ): List<ReaderPage> {
     val contentWidthPx = (viewport.widthPx - horizontalMarginPx * 2).toInt().coerceAtLeast(1)
@@ -41,13 +42,13 @@ class ReaderLayoutEngine {
       }
       if (block is ImageBlock) {
         measuredBlocks.add(
-          MeasuredBlock.Image(
+          measureImageBlock(
             blockIndex = index,
+            block = block,
             style = style,
-            resourceHref = block.resourceHref,
-            alt = block.alt,
-            widthPx = contentWidthPx.toFloat(),
-            heightPx = placeholderImageHeightPx(style),
+            contentWidthPx = contentWidthPx,
+            contentHeightPx = contentHeightPx,
+            bounds = imageBounds(block.resourceHref),
           )
         )
         return@forEachIndexed
@@ -168,12 +169,13 @@ class ReaderLayoutEngine {
     }
 
     fun addImage(measured: MeasuredBlock.Image, yOffset: Float) {
+      val centerOffsetPx = ((contentWidthPx - measured.widthPx) / 2f).coerceAtLeast(0f)
       currentEntries.add(
         PageEntry.Image(
           blockIndex = measured.blockIndex,
           yOffsetPx = yOffset,
           visibleHeightPx = measured.heightPx,
-          drawOffsetXPx = drawOffsetX(measured.style),
+          drawOffsetXPx = drawOffsetX(measured.style) + centerOffsetPx,
           resourceHref = measured.resourceHref,
           alt = measured.alt,
           widthPx = measured.widthPx,
@@ -385,6 +387,37 @@ private sealed interface MeasuredBlock {
     val widthPx: Float,
     val heightPx: Float,
   ) : MeasuredBlock
+}
+
+private fun measureImageBlock(
+  blockIndex: Int,
+  block: ImageBlock,
+  style: BlockStyle,
+  contentWidthPx: Int,
+  contentHeightPx: Float,
+  bounds: ImageBounds?,
+): MeasuredBlock.Image {
+  val (widthPx, heightPx) =
+    if (bounds != null && bounds.intrinsicWidthPx > 0 && bounds.intrinsicHeightPx > 0) {
+      val widthScale = (contentWidthPx / bounds.intrinsicWidthPx.toFloat()).coerceAtMost(1f)
+      var widthPx = bounds.intrinsicWidthPx * widthScale
+      var heightPx = bounds.intrinsicHeightPx * widthScale
+      if (heightPx > contentHeightPx) {
+        widthPx *= contentHeightPx / heightPx
+        heightPx = contentHeightPx
+      }
+      widthPx to heightPx
+    } else {
+      contentWidthPx.toFloat() to placeholderImageHeightPx(style)
+    }
+  return MeasuredBlock.Image(
+    blockIndex = blockIndex,
+    style = style,
+    resourceHref = block.resourceHref,
+    alt = block.alt,
+    widthPx = widthPx,
+    heightPx = heightPx,
+  )
 }
 
 private fun placeholderImageHeightPx(style: BlockStyle): Float =
