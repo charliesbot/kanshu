@@ -21,6 +21,10 @@ import org.readium.r2.shared.publication.Publication
 
 private const val TAG = "ReaderViewModel"
 
+// Placeholder page index meaning "last page of the chapter". Set when navigating backward into a
+// chapter whose page count is not known yet; onPageCount clamps it to the real last page.
+private const val LAST_PAGE_SENTINEL = Int.MAX_VALUE
+
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
@@ -50,8 +54,13 @@ class ReaderViewModel(
   private val _pageCount = MutableStateFlow(0)
   val pageCount: StateFlow<Int> = _pageCount.asStateFlow()
 
+  private enum class LandingPage {
+    Start,
+    End,
+  }
+
   private var openJob: Job? = null
-  private var nextSpineJob: Job? = null
+  private var spineJob: Job? = null
   private var currentSeriesId: Int? = null
   private var publication: Publication? = null
   private var currentSpineIndex = -1
@@ -65,52 +74,51 @@ class ReaderViewModel(
     _currentPage.value = 0
     _pageCount.value = 0
     openJob?.cancel()
-    nextSpineJob?.cancel()
-    nextSpineJob = null
+    spineJob?.cancel()
+    spineJob = null
     publication?.close()
     publication = null
     currentSpineIndex = -1
 
-    openJob =
-      viewModelScope.launch {
-        Log.d(TAG, "open($seriesId): loading")
-        val result = withContext(ioDispatcher) { openBook(seriesId) }
-        when (result) {
-          is ReaderResult.Success -> {
-            publication = result.publication
-            Log.d(
-              TAG,
-              "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
-            )
-            val spineItem =
-              withContext(ioDispatcher) {
-                result.publication.readNextSpineItem(afterSpineIndex = -1)
-              }
-            if (spineItem == null) {
-              failOpen("open($seriesId): no spine item → OpenFailed")
-              return@launch
+    openJob = viewModelScope.launch {
+      Log.d(TAG, "open($seriesId): loading")
+      val result = withContext(ioDispatcher) { openBook(seriesId) }
+      when (result) {
+        is ReaderResult.Success -> {
+          publication = result.publication
+          Log.d(
+            TAG,
+            "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
+          )
+          val spineItem =
+            withContext(ioDispatcher) {
+              result.publication.readNextSpineItem(afterSpineIndex = -1)
             }
-            currentSpineIndex = spineItem.spineIndex
-            Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
-            _uiState.value =
-              ReaderUiState.Reading(
-                spineIndex = spineItem.spineIndex,
-                document = spineItem.document,
-                diagnostics = spineItem.diagnostics,
-              )
+          if (spineItem == null) {
+            failOpen("open($seriesId): no spine item → OpenFailed")
+            return@launch
           }
-          ReaderResult.Error.NotFound -> {
-            Log.d(TAG, "open($seriesId): NotFound")
-            _uiState.value = ReaderUiState.Error.NotFound
-          }
-          ReaderResult.Error.ParseFailed -> {
-            failOpen("open($seriesId): ParseFailed → OpenFailed")
-          }
-          ReaderResult.Error.ReadFailed -> {
-            failOpen("open($seriesId): ReadFailed → OpenFailed")
-          }
+          currentSpineIndex = spineItem.spineIndex
+          Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
+          _uiState.value =
+            ReaderUiState.Reading(
+              spineIndex = spineItem.spineIndex,
+              document = spineItem.document,
+              diagnostics = spineItem.diagnostics,
+            )
+        }
+        ReaderResult.Error.NotFound -> {
+          Log.d(TAG, "open($seriesId): NotFound")
+          _uiState.value = ReaderUiState.Error.NotFound
+        }
+        ReaderResult.Error.ParseFailed -> {
+          failOpen("open($seriesId): ParseFailed → OpenFailed")
+        }
+        ReaderResult.Error.ReadFailed -> {
+          failOpen("open($seriesId): ReadFailed → OpenFailed")
         }
       }
+    }
   }
 
   fun onPageCount(spineIndex: Int, count: Int) {
@@ -139,7 +147,7 @@ class ReaderViewModel(
       return
     }
     if (_currentPage.value >= lastPageIndex()) {
-      openNextSpineItem()
+      openSpineItem(currentSpineIndex + 1, LandingPage.Start)
       return
     }
     _currentPage.update { page ->
@@ -149,55 +157,64 @@ class ReaderViewModel(
     }
   }
 
-  private fun openNextSpineItem() {
-    if (nextSpineJob?.isActive == true) return
-    val currentPublication = publication ?: return
-    val startingSpineIndex = currentSpineIndex
-    nextSpineJob =
-      viewModelScope.launch {
-        try {
-          val nextItem =
-            withContext(ioDispatcher) {
-              currentPublication.readNextSpineItem(afterSpineIndex = startingSpineIndex)
-            }
-          if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
-            Log.d(TAG, "nextPage: ignored stale spine open after spine[$startingSpineIndex]")
-            return@launch
-          }
-          if (nextItem == null) {
-            Log.d(TAG, "nextPage: no spine item after spine[$currentSpineIndex]")
-            return@launch
-          }
-          currentSpineIndex = nextItem.spineIndex
-          _currentPage.value = 0
-          _pageCount.value = 0
-          Log.d(TAG, "nextPage: opened spine[${nextItem.spineIndex}]")
-          _uiState.value =
-            ReaderUiState.Reading(
-              spineIndex = nextItem.spineIndex,
-              document = nextItem.document,
-              diagnostics = nextItem.diagnostics,
-            )
-        } finally {
-          val runningJob = currentCoroutineContext()[Job]
-          if (nextSpineJob === runningJob) {
-            nextSpineJob = null
-          }
-        }
-      }
-  }
-
   fun previousPage() {
+    if (_pageCount.value == 0) {
+      Log.d(TAG, "previousPage ignored while page count is unknown")
+      return
+    }
+    if (_currentPage.value <= 0) {
+      if (currentSpineIndex > 0) {
+        openSpineItem(currentSpineIndex - 1, LandingPage.End)
+      } else {
+        Log.d(TAG, "previousPage: already at first spine item")
+      }
+      return
+    }
     _currentPage.update { page ->
-      val previous = (page - 1).coerceAtLeast(0)
+      val previous = page - 1
       Log.d(TAG, "previousPage: $page → $previous (of ${_pageCount.value})")
       previous
     }
   }
 
+  private fun openSpineItem(targetSpineIndex: Int, landing: LandingPage) {
+    if (spineJob?.isActive == true) return
+    val currentPublication = publication ?: return
+    val startingSpineIndex = currentSpineIndex
+    spineJob = viewModelScope.launch {
+      try {
+        val item =
+          withContext(ioDispatcher) { currentPublication.readSpineItemAt(targetSpineIndex) }
+        if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
+          Log.d(TAG, "openSpineItem: ignored stale open of spine[$targetSpineIndex]")
+          return@launch
+        }
+        if (item == null) {
+          Log.d(TAG, "openSpineItem: spine[$targetSpineIndex] unavailable")
+          return@launch
+        }
+        currentSpineIndex = item.spineIndex
+        _pageCount.value = 0
+        _currentPage.value = if (landing == LandingPage.End) LAST_PAGE_SENTINEL else 0
+        Log.d(TAG, "openSpineItem: opened spine[${item.spineIndex}] landing=$landing")
+        _uiState.value =
+          ReaderUiState.Reading(
+            spineIndex = item.spineIndex,
+            document = item.document,
+            diagnostics = item.diagnostics,
+          )
+      } finally {
+        val runningJob = currentCoroutineContext()[Job]
+        if (spineJob === runningJob) {
+          spineJob = null
+        }
+      }
+    }
+  }
+
   override fun onCleared() {
     openJob?.cancel()
-    nextSpineJob?.cancel()
+    spineJob?.cancel()
     publication?.close()
   }
 }

@@ -43,12 +43,14 @@ internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
 internal suspend fun Publication.readFirstSpineItem(): ReaderDocument? =
   readNextSpineItem(afterSpineIndex = -1)?.document
 
-internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineItem? {
-  val index = afterSpineIndex + 1
-  Log.d(TAG, "reading spine[$index] after spine[$afterSpineIndex] of ${readingOrder.size}")
+internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineItem? =
+  readSpineItemAt(afterSpineIndex + 1)
+
+internal suspend fun Publication.readSpineItemAt(index: Int): SpineItem? {
+  Log.d(TAG, "reading spine[$index] of ${readingOrder.size}")
   val link = readingOrder.getOrNull(index)
   if (link == null) {
-    Log.d(TAG, "spine[$index]: no next link in readingOrder")
+    Log.d(TAG, "spine[$index]: no link in readingOrder")
     return null
   }
   val xhtml = readSpineXhtml(index) ?: return null

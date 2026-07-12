@@ -10,6 +10,7 @@ import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -363,6 +364,203 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `previousPage moves back within chapter`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 3)
+      viewModel.nextPage()
+
+      viewModel.previousPage()
+
+      assertEquals(0, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `previousPage on first page opens previous spine item at its last page`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+      assertEquals(
+        listOf("First chapter ".repeat(6).trim()),
+        viewModel.currentDocument().paragraphText(),
+      )
+      assertEquals(0, viewModel.pageCount.value)
+
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 4)
+
+      assertEquals(3, viewModel.currentPage.value)
+      assertEquals(4, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `previousPage on first page of first spine item stays put`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `previousPage while page count is unknown is ignored`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      assertEquals(1, viewModel.currentSpineIndex())
+      assertEquals(0, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `previousPage on first page ignores duplicate previous spine open while loading`() =
+    runTest(testDispatcher) {
+      val firstChapter = "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>"
+      val links = List(2) { mockk<Link>(relaxed = true) }
+      val firstResource =
+        mockk<Resource> {
+          coEvery { read() } coAnswers
+            {
+              delay(1_000)
+              Try.success(firstChapter.encodeToByteArray())
+            }
+        }
+      val secondResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(
+              "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>".encodeToByteArray()
+            )
+        }
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) {
+          every { readingOrder } returns links
+          every { get(links[0]) } returns firstResource
+          every { get(links[1]) } returns secondResource
+        }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.previousPage()
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+      assertEquals(
+        listOf("First chapter ".repeat(6).trim()),
+        viewModel.currentDocument().paragraphText(),
+      )
+      coVerify(exactly = 2) { firstResource.read() }
+    }
+
+  @Test
+  fun `previousPage stays put when previous spine item becomes unreadable`() =
+    runTest(testDispatcher) {
+      val links = List(2) { mockk<Link>(relaxed = true) }
+      val firstResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(
+              "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>".encodeToByteArray()
+            )
+        }
+      val secondResource =
+        mockk<Resource> {
+          coEvery { read() } returns
+            Try.success(
+              "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>".encodeToByteArray()
+            )
+        }
+      var firstResourceGets = 0
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) {
+          every { readingOrder } returns links
+          every { get(links[0]) } answers
+            {
+              firstResourceGets += 1
+              firstResource.takeIf { firstResourceGets == 1 }
+            }
+          every { get(links[1]) } returns secondResource
+        }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      assertEquals(1, viewModel.currentSpineIndex())
+      assertEquals(
+        listOf("Second chapter ".repeat(6).trim()),
+        viewModel.currentDocument().paragraphText(),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pageCount.value)
+    }
+
+  @Test
   fun `stale page count callback after chapter change is ignored`() =
     runTest(testDispatcher) {
       val viewModel =
@@ -472,10 +670,9 @@ class ReaderViewModelTest {
       xhtml.takeIf { items -> items.isNotEmpty() }
         ?: arrayOf("<html><body><p>${"Hello ".repeat(10)}</p></body></html>")
     val links = spine.indices.map { index -> mockk<Link>(relaxed = true) }
-    val resources =
-      spine.map { content ->
-        mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
-      }
+    val resources = spine.map { content ->
+      mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
+    }
     return mockk(relaxUnitFun = true) {
       every { readingOrder } returns links
       links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
@@ -484,16 +681,15 @@ class ReaderViewModelTest {
 
   private fun testPublicationWithReadDelays(vararg spine: Pair<String, Long>): Publication {
     val links = spine.indices.map { index -> mockk<Link>(relaxed = true) }
-    val resources =
-      spine.map { (content, readDelayMillis) ->
-        mockk<Resource> {
-          coEvery { read() } coAnswers
-            {
-              delay(readDelayMillis)
-              Try.success(content.encodeToByteArray())
-            }
-        }
+    val resources = spine.map { (content, readDelayMillis) ->
+      mockk<Resource> {
+        coEvery { read() } coAnswers
+          {
+            delay(readDelayMillis)
+            Try.success(content.encodeToByteArray())
+          }
       }
+    }
     return mockk(relaxUnitFun = true) {
       every { readingOrder } returns links
       links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
@@ -505,10 +701,9 @@ class ReaderViewModelTest {
     vararg xhtml: String,
   ): Publication {
     val links = xhtml.indices.map { mockk<Link>(relaxed = true) }
-    val resources =
-      xhtml.map { content ->
-        mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
-      }
+    val resources = xhtml.map { content ->
+      mockk<Resource> { coEvery { read() } returns Try.success(content.encodeToByteArray()) }
+    }
     return mockk(relaxUnitFun = true) {
       every { readingOrder } returns links
       links.forEachIndexed { index, link ->
