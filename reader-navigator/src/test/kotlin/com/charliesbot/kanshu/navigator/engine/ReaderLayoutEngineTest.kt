@@ -157,6 +157,113 @@ class ReaderLayoutEngineTest {
   }
 
   @Test
+  fun layout_imageWithBounds_scalesDownToFitContentWidth() {
+    val document =
+      ReaderDocument(blocks = listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map")))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val contentWidthPx = viewport.widthPx - horizontalMarginPx * 2
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+          imageBounds = { ImageBounds(intrinsicWidthPx = 2000, intrinsicHeightPx = 1000) },
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.Image
+    assertEquals(contentWidthPx, entry.widthPx, 0.01f)
+    assertEquals(contentWidthPx / 2f, entry.visibleHeightPx, 0.01f)
+  }
+
+  @Test
+  fun layout_smallImageWithBounds_keepsIntrinsicSizeCentered() {
+    val document =
+      ReaderDocument(blocks = listOf(ImageBlock(resourceHref = "images/dot.png", alt = null)))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val contentWidthPx = viewport.widthPx - horizontalMarginPx * 2
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+          imageBounds = { ImageBounds(intrinsicWidthPx = 100, intrinsicHeightPx = 40) },
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.Image
+    assertEquals(100f, entry.widthPx, 0.01f)
+    assertEquals(40f, entry.visibleHeightPx, 0.01f)
+    assertEquals((contentWidthPx - 100f) / 2f, entry.drawOffsetXPx, 0.01f)
+  }
+
+  @Test
+  fun layout_tallImageWithBounds_capsHeightToContentHeight() {
+    val document =
+      ReaderDocument(blocks = listOf(ImageBlock(resourceHref = "images/tall.png", alt = null)))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+    val contentHeightPx = viewport.heightPx - verticalMarginPx * 2
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+          imageBounds = { ImageBounds(intrinsicWidthPx = 500, intrinsicHeightPx = 5000) },
+        )
+
+    val entry = pages.single().entries.single() as PageEntry.Image
+    assertEquals(contentHeightPx, entry.visibleHeightPx, 0.01f)
+    assertEquals(contentHeightPx * (500f / 5000f), entry.widthPx, 0.01f)
+  }
+
+  @Test
+  fun layout_invalidImageBounds_fallsBackToPlaceholderEntry() {
+    val document =
+      ReaderDocument(blocks = listOf(ImageBlock(resourceHref = "images/broken.png", alt = null)))
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    fun layoutWith(bounds: (String) -> ImageBounds?): PageEntry.Image =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+          imageBounds = bounds,
+        )
+        .single()
+        .entries
+        .single() as PageEntry.Image
+
+    val placeholder = layoutWith { null }
+    val zeroWidth = layoutWith { ImageBounds(intrinsicWidthPx = 0, intrinsicHeightPx = 100) }
+
+    assertEquals(placeholder, zeroWidth)
+  }
+
+  @Test
   fun layout_blockQuote_indentsTextAndCarriesLeadingRule() {
     val document =
       ReaderDocument(

@@ -381,6 +381,110 @@ class EpubParserTest {
   }
 
   @Test
+  fun parse_imageWithBaseHref_resolvesSiblingRelativeSrc() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map\" src=\"images/map.png\"/></body></html>",
+        baseHref = "OEBPS/xhtml/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "OEBPS/xhtml/images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithBaseHref_resolvesParentRelativeSrc() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map\" src=\"../images/map.png\"/></body></html>",
+        baseHref = "OEBPS/xhtml/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "OEBPS/images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithBaseHref_treatsRootRelativeSrcAsPublicationRoot() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map\" src=\"/images/map.png\"/></body></html>",
+        baseHref = "OEBPS/xhtml/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithBaseHref_keepsAbsoluteAndDataSrcUntouched() {
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <img alt="Remote" src="https://example.com/map.png"/>
+          <img alt="Inline" src="data:image/png;base64,AAAA"/>
+        </body></html>
+        """
+          .trimIndent(),
+        baseHref = "OEBPS/xhtml/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(
+        ImageBlock(resourceHref = "https://example.com/map.png", alt = "Remote"),
+        ImageBlock(resourceHref = "data:image/png;base64,AAAA", alt = "Inline"),
+      ),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithBaseHref_clampsParentTraversalAboveRoot() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map\" src=\"../../../images/map.png\"/></body></html>",
+        baseHref = "OEBPS/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithoutBaseHref_keepsSrcUnchanged() {
+    val result =
+      EpubParser.parse("<html><body><img alt=\"Map\" src=\"../images/map.png\"/></body></html>")
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "../images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_imageWithBaseHrefAtRoot_resolvesAgainstRoot() {
+    val result =
+      EpubParser.parse(
+        "<html><body><img alt=\"Map\" src=\"images/map.png\"/></body></html>",
+        baseHref = "chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map")),
+      result.document.blocks,
+    )
+  }
+
+  @Test
   fun parse_subAndSup_preservesTextWithInlineDiagnostics() {
     val result =
       EpubParser.parse("<html><body><p>H<sub>2</sub>O and x<sup>2</sup>.</p></body></html>")

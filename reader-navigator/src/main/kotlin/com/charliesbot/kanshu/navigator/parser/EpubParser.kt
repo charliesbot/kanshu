@@ -12,14 +12,18 @@ import org.jsoup.nodes.Document
  * text; tag counts live in [ParseResult.diagnostics], not on the reading surface.
  */
 object EpubParser {
-  fun parse(xhtml: String): ParseResult {
+  /**
+   * @param baseHref publication-root-relative path of the spine item the XHTML came from; used to
+   *   resolve relative resource hrefs (images) to publication-root-relative hrefs.
+   */
+  fun parse(xhtml: String, baseHref: String? = null): ParseResult {
     val diagnostics = ParseDiagnosticsCollector()
     if (xhtml.isBlank()) {
       return ParseResult(ReaderDocument(blocks = emptyList()), diagnostics.build())
     }
 
     val document = Jsoup.parse(xhtml)
-    val blocks = BlockLevelParser(diagnostics).parse(document.body().childNodes())
+    val blocks = BlockLevelParser(diagnostics, baseHref).parse(document.body().childNodes())
 
     return ParseResult(
       document = ReaderDocument(blocks = blocks, language = extractLanguage(document)),

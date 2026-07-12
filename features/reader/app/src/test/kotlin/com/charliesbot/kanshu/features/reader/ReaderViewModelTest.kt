@@ -25,6 +25,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -60,6 +62,32 @@ class ReaderViewModelTest {
         listOf("Hello ".repeat(10).trim()),
         (state as ReaderUiState.Reading).document.paragraphText(),
       )
+    }
+
+  @Test
+  fun `successful open exposes resource loader`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertNotNull(viewModel.resourceLoader.value)
+    }
+
+  @Test
+  fun `failed open leaves resource loader null`() =
+    runTest(testDispatcher) {
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.NotFound
+        }
+      val viewModel = viewModel(source)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertNull(viewModel.resourceLoader.value)
     }
 
   @Test

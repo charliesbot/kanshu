@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator
 
+import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.SystemClock
@@ -21,9 +22,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.engine.BlockStyleResolver
+import com.charliesbot.kanshu.navigator.engine.ImageBounds
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
+import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.render.ReaderPageCanvasView
 import com.charliesbot.kanshu.navigator.render.ReaderPageTapZone
@@ -46,6 +49,7 @@ fun ReaderPageViewer(
   preferences: ReaderPreferences,
   currentPage: Int,
   onPageCount: (Int) -> Unit,
+  resourceLoader: ReaderResourceLoader? = null,
   onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit = {},
   onLayoutFailed: () -> Unit = {},
   onPreviousPage: (() -> Unit)? = null,
@@ -73,6 +77,7 @@ fun ReaderPageViewer(
       viewport = viewport,
       typeface = typeface,
       styleResolver = styleResolver,
+      resourceLoader = resourceLoader,
       onPages = { laidOut -> pages = laidOut },
       onPageCount = onPageCount,
       onLayoutDiagnostics = onLayoutDiagnostics,
@@ -176,6 +181,7 @@ private fun LaunchedReaderLayout(
   viewport: ReaderViewport,
   typeface: Typeface,
   styleResolver: BlockStyleResolver,
+  resourceLoader: ReaderResourceLoader?,
   onPages: (List<ReaderPage>?) -> Unit,
   onPageCount: (Int) -> Unit,
   onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit,
@@ -183,7 +189,7 @@ private fun LaunchedReaderLayout(
 ) {
   var layoutGeneration by remember { mutableIntStateOf(0) }
 
-  LaunchedEffect(document, preferences, viewport, typeface, styleResolver) {
+  LaunchedEffect(document, preferences, viewport, typeface, styleResolver, resourceLoader) {
     if (viewport.widthPx <= 0 || viewport.heightPx <= 0) {
       Log.d(
         TAG,
@@ -199,11 +205,14 @@ private fun LaunchedReaderLayout(
       "layout start gen=$generation viewport=${viewport.widthPx}x${viewport.heightPx}px blocks=${document.blocks.size}",
     )
 
+    val imageBounds = resolveImageBounds(document, resourceLoader)
+
     val layoutResult =
       layoutPages(
         document = document,
         viewport = viewport,
         styleResolver = styleResolver,
+        imageBounds = imageBounds,
         generation = generation,
         currentGeneration = { layoutGeneration },
         onLayoutFailed = {
@@ -246,6 +255,7 @@ private suspend fun layoutPages(
   document: ReaderDocument,
   viewport: ReaderViewport,
   styleResolver: BlockStyleResolver,
+  imageBounds: Map<String, ImageBounds>,
   generation: Int,
   currentGeneration: () -> Int,
   onLayoutFailed: () -> Unit,
@@ -262,6 +272,7 @@ private suspend fun layoutPages(
             verticalMarginPx = styleResolver.verticalMarginPx(),
             justify = styleResolver.justifyText(),
             styleResolver = styleResolver::resolve,
+            imageBounds = imageBounds::get,
             shouldContinue = { generation == currentGeneration() },
           )
       }
@@ -275,6 +286,52 @@ private suspend fun layoutPages(
     }
     null
   }
+
+/**
+ * Header-only decode of every distinct image resource in the document. Runs before pagination so
+ * the engine can reserve true image heights; failures fall back to the placeholder height.
+ */
+private suspend fun resolveImageBounds(
+  document: ReaderDocument,
+  loader: ReaderResourceLoader?,
+): Map<String, ImageBounds> {
+  if (loader == null) return emptyMap()
+  val hrefs =
+    document.blocks
+      .filterIsInstance<ImageBlock>()
+      .map { it.resourceHref }
+      .filter { it.isNotBlank() }
+      .distinct()
+  if (hrefs.isEmpty()) return emptyMap()
+  return withContext(Dispatchers.IO) {
+    buildMap {
+      hrefs.forEach { href ->
+        val bytes = loader.readOrNull(href) ?: return@forEach
+        decodeImageBounds(bytes)?.let { bounds -> put(href, bounds) }
+      }
+    }
+  }
+}
+
+private suspend fun ReaderResourceLoader.readOrNull(href: String): ByteArray? =
+  try {
+    read(href)
+  } catch (e: CancellationException) {
+    throw e
+  } catch (e: Exception) {
+    Log.d(TAG, "resource read failed href=$href", e)
+    null
+  }
+
+private fun decodeImageBounds(bytes: ByteArray): ImageBounds? {
+  val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+  BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+  return if (options.outWidth > 0 && options.outHeight > 0) {
+    ImageBounds(intrinsicWidthPx = options.outWidth, intrinsicHeightPx = options.outHeight)
+  } else {
+    null
+  }
+}
 
 private data class LayoutResult(val pages: List<ReaderPage>, val paginationMillis: Long)
 
