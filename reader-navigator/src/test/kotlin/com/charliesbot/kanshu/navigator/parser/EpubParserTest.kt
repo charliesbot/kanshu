@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator.parser
 
+import com.charliesbot.kanshu.navigator.model.BlockAlignment
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -13,7 +14,9 @@ import com.charliesbot.kanshu.navigator.model.StyledGroup
 import com.charliesbot.kanshu.navigator.model.StylingCensus
 import com.charliesbot.kanshu.navigator.model.TextLeaf
 import com.charliesbot.kanshu.navigator.model.TextSpan
+import com.charliesbot.kanshu.navigator.parser.css.CssParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -491,6 +494,183 @@ class EpubParserTest {
         ImageBlock(resourceHref = "OEBPS/xhtml/images/chart.png", alt = "Query"),
       ),
       result.document.blocks,
+    )
+  }
+
+  @Test
+  fun parse_withStylesheet_appliesClassEmphasisLikeSemanticTags() {
+    val sheet = CssParser.parse(".calibre7 { font-style: italic } .b7 { font-weight: 700 }")
+    val result =
+      EpubParser.parse(
+        "<html><body><p>It was <span class=\"calibre7\">not</span> a " +
+          "<span class=\"b7\">good</span> idea.</p></body></html>",
+        stylesheets = listOf(sheet),
+      )
+
+    val block = result.document.blocks.single() as ParagraphBlock
+    assertEquals(
+      listOf(
+        TextLeaf("It was "),
+        TextLeaf("not", InlineStyle.Italic),
+        TextLeaf(" a "),
+        TextLeaf("good", InlineStyle.Bold),
+        TextLeaf(" idea."),
+      ),
+      block.spans,
+    )
+  }
+
+  @Test
+  fun parse_withStylesheet_appliesBlockAlignment() {
+    val sheet = CssParser.parse("p.center { text-align: center } h1 { text-align: center }")
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <h1>Chapter One</h1>
+          <p class="center">* * *</p>
+          <p>Plain paragraph.</p>
+        </body></html>
+        """
+          .trimIndent(),
+        stylesheets = listOf(sheet),
+      )
+
+    assertEquals(
+      BlockAlignment.Center,
+      (result.document.blocks[0] as HeadingBlock).alignment,
+    )
+    assertEquals(
+      BlockAlignment.Center,
+      (result.document.blocks[1] as ParagraphBlock).alignment,
+    )
+    assertNull((result.document.blocks[2] as ParagraphBlock).alignment)
+  }
+
+  @Test
+  fun parse_inlineStyleAttribute_appliesWithoutStylesheets() {
+    val result =
+      EpubParser.parse(
+        "<html><body><p style=\"text-align: center\">A <span style=\"font-style: italic\">b</span></p></body></html>"
+      )
+
+    val block = result.document.blocks.single() as ParagraphBlock
+    assertEquals(BlockAlignment.Center, block.alignment)
+    assertEquals(listOf(TextLeaf("A "), TextLeaf("b", InlineStyle.Italic)), block.spans)
+  }
+
+  @Test
+  fun parse_withStylesheet_emphasisInheritsFromContainerToParagraphText() {
+    val sheet = CssParser.parse("div.foreword { font-style: italic }")
+    val result =
+      EpubParser.parse(
+        "<html><body><div class=\"foreword\"><p>Inherited text.</p></div></body></html>",
+        stylesheets = listOf(sheet),
+      )
+
+    val block = result.document.blocks.single() as ParagraphBlock
+    assertEquals(listOf(TextLeaf("Inherited text.", InlineStyle.Italic)), block.spans)
+  }
+
+  @Test
+  fun parse_withStylesheet_semanticEmphasisSurvivesInheritedNormal() {
+    // InDesign-style body classes reset font-style/weight on every paragraph; a nested semantic
+    // <em>/<strong> must still win — only a rule matched on the element itself may reset it.
+    val sheet = CssParser.parse("p.body { font-style: normal; font-weight: normal }")
+    val result =
+      EpubParser.parse(
+        "<html><body><p class=\"body\">a <em>x</em> and <strong>y</strong></p></body></html>",
+        stylesheets = listOf(sheet),
+      )
+
+    val block = result.document.blocks.single() as ParagraphBlock
+    assertEquals(
+      listOf(
+        TextLeaf("a "),
+        TextLeaf("x", InlineStyle.Italic),
+        TextLeaf(" and "),
+        TextLeaf("y", InlineStyle.Bold),
+      ),
+      block.spans,
+    )
+  }
+
+  @Test
+  fun parse_withStylesheet_semanticTagInsideMatchingCssContextStaysUnchanged() {
+    // <em> inside an already-italic context must stay Italic, not gain spurious bold; same for
+    // <strong> inside a bold context.
+    val sheet = CssParser.parse(".foreword { font-style: italic } .heavy { font-weight: bold }")
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <div class="foreword"><p>a <em>x</em></p></div>
+          <div class="heavy"><p>b <strong>y</strong></p></div>
+        </body></html>
+        """
+          .trimIndent(),
+        stylesheets = listOf(sheet),
+      )
+
+    assertEquals(
+      listOf(TextLeaf("a ", InlineStyle.Italic), TextLeaf("x", InlineStyle.Italic)),
+      (result.document.blocks[0] as ParagraphBlock).spans,
+    )
+    assertEquals(
+      listOf(TextLeaf("b ", InlineStyle.Bold), TextLeaf("y", InlineStyle.Bold)),
+      (result.document.blocks[1] as ParagraphBlock).spans,
+    )
+  }
+
+  @Test
+  fun parse_withStylesheet_cssNormalResetsInheritedEmphasis() {
+    val sheet = CssParser.parse(".it { font-style: italic } .plain { font-style: normal }")
+    val result =
+      EpubParser.parse(
+        "<html><body><p class=\"it\">a <span class=\"plain\">b</span></p></body></html>",
+        stylesheets = listOf(sheet),
+      )
+
+    val block = result.document.blocks.single() as ParagraphBlock
+    assertEquals(listOf(TextLeaf("a ", InlineStyle.Italic), TextLeaf("b")), block.spans)
+  }
+
+  @Test
+  fun parse_withStylesheet_censusAggregatesStylesheetStats() {
+    val sheet =
+      CssParser.parse(
+        """
+        @import url("other.css");
+        .a { font-style: italic; margin: 0 }
+        p > span { font-weight: bold }
+        .b { text-align: center !important }
+        """
+          .trimIndent()
+      )
+    val result =
+      EpubParser.parse(
+        "<html><body><p class=\"a\">x</p></body></html>",
+        stylesheets = listOf(sheet),
+      )
+
+    val census = result.diagnostics.stylingCensus
+    assertEquals(
+      mapOf("font-style" to 1, "margin" to 1, "font-weight" to 1, "text-align" to 1),
+      census.stylesheetPropertyCounts,
+    )
+    assertEquals(1, census.unsupportedSelectorCount)
+    assertEquals(mapOf("@import" to 1), census.atRuleCounts)
+    assertEquals(1, census.importantCount)
+  }
+
+  @Test
+  fun stylesheetHrefs_resolvesAgainstBaseHref() {
+    assertEquals(
+      listOf("OEBPS/styles/main.css"),
+      EpubParser.stylesheetHrefs(
+        "<html><head><link rel=\"stylesheet\" href=\"../styles/main.css\"/></head><body/></html>",
+        baseHref = "OEBPS/xhtml/ch01.xhtml",
+      ),
     )
   }
 

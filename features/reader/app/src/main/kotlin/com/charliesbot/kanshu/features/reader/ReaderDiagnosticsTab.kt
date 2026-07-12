@@ -102,6 +102,26 @@ private fun ReaderStylingCensusSection(census: StylingCensus) {
     title = stringResource(R.string.reader_diagnostics_inline_properties),
     counts = census.inlinePropertyCounts,
   )
+  ReaderDiagnosticTagSection(
+    title = stringResource(R.string.reader_diagnostics_stylesheet_properties),
+    counts = census.stylesheetPropertyCounts,
+  )
+  ReaderDiagnosticTagSection(
+    title = stringResource(R.string.reader_diagnostics_at_rules),
+    counts = census.atRuleCounts,
+  )
+  KanshuText(
+    text =
+      stringResource(
+        R.string.reader_diagnostics_unsupported_selectors,
+        census.unsupportedSelectorCount,
+      ),
+    style = KanshuTheme.typography.bodyLarge,
+  )
+  KanshuText(
+    text = stringResource(R.string.reader_diagnostics_important_count, census.importantCount),
+    style = KanshuTheme.typography.bodyLarge,
+  )
 }
 
 @Composable

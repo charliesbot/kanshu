@@ -43,10 +43,15 @@ internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
 internal suspend fun Publication.readFirstSpineItem(): ReaderDocument? =
   readNextSpineItem(afterSpineIndex = -1)?.document
 
-internal suspend fun Publication.readNextSpineItem(afterSpineIndex: Int): SpineItem? =
-  readSpineItemAt(afterSpineIndex + 1)
+internal suspend fun Publication.readNextSpineItem(
+  afterSpineIndex: Int,
+  stylesheets: PublicationStylesheets? = null,
+): SpineItem? = readSpineItemAt(afterSpineIndex + 1, stylesheets)
 
-internal suspend fun Publication.readSpineItemAt(index: Int): SpineItem? {
+internal suspend fun Publication.readSpineItemAt(
+  index: Int,
+  stylesheets: PublicationStylesheets? = null,
+): SpineItem? {
   Log.d(TAG, "reading spine[$index] of ${readingOrder.size}")
   val link = readingOrder.getOrNull(index)
   if (link == null) {
@@ -54,7 +59,9 @@ internal suspend fun Publication.readSpineItemAt(index: Int): SpineItem? {
     return null
   }
   val xhtml = readSpineXhtml(index) ?: return null
-  val parseResult = EpubParser.parse(xhtml, baseHref = link.url().path?.trimStart('/'))
+  val baseHref = link.url().path?.trimStart('/')
+  val sheets = stylesheets?.forHrefs(EpubParser.stylesheetHrefs(xhtml, baseHref)) ?: emptyList()
+  val parseResult = EpubParser.parse(xhtml, baseHref = baseHref, stylesheets = sheets)
   val document = parseResult.document
   val flattened = document.flattenedText()
   val textLength = flattened.length

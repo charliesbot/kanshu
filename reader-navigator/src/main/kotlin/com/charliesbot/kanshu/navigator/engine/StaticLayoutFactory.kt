@@ -19,7 +19,7 @@ internal object StaticLayoutFactory {
         .setHyphenationFrequency(style.hyphenationFrequency)
         .setBreakStrategy(style.breakStrategy)
 
-    if (justify) {
+    if (justify && style.justifiable) {
       builder.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_INTER_WORD)
     }
 

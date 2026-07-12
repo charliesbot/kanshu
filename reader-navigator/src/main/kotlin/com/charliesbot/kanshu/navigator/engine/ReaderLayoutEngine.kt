@@ -75,7 +75,7 @@ class ReaderLayoutEngine {
           selectionId = index,
           style = style,
           layout = layout,
-          textJustified = justify,
+          textJustified = justify && style.justifiable,
         )
       )
     }

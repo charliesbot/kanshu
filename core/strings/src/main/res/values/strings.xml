@@ -63,6 +63,10 @@
     <string name="reader_diagnostics_style_tag_count">Inline style blocks: %1$d</string>
     <string name="reader_diagnostics_class_names">Class names</string>
     <string name="reader_diagnostics_inline_properties">Inline style properties</string>
+    <string name="reader_diagnostics_stylesheet_properties">Stylesheet properties</string>
+    <string name="reader_diagnostics_unsupported_selectors">Unsupported selectors: %1$d</string>
+    <string name="reader_diagnostics_at_rules">At-rules</string>
+    <string name="reader_diagnostics_important_count">!important declarations: %1$d</string>
     <string name="reader_sync_already_at_furthest">Already at furthest position</string>
     <string name="reader_sync_prompt_title">Continue from another device?</string>
     <string name="reader_sync_prompt_body_with_device">%1$s read up to %2$d%%. Apply this position?</string>
