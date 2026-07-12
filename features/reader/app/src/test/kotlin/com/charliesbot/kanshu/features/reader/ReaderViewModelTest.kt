@@ -1,6 +1,11 @@
 package com.charliesbot.kanshu.features.reader
 
 import androidx.lifecycle.ViewModelStore
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -19,6 +24,9 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -64,6 +72,42 @@ class ReaderViewModelTest {
         listOf("Hello ".repeat(10).trim()),
         (state as ReaderUiState.Reading).document.paragraphText(),
       )
+    }
+
+  @Test
+  fun `preferences reflect the repository not hardcoded defaults`() =
+    runTest(testDispatcher) {
+      val stored = ReaderPreferences(fontScale = 1.4f, alignment = ReaderAlignment.Left)
+      val repository = FakeReaderPreferencesRepository(stored)
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), repository)
+
+      advanceUntilIdle()
+
+      assertEquals(stored, viewModel.preferences.value)
+    }
+
+  @Test
+  fun `preferences start from defaults before the repository emits`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      assertEquals(ReaderPreferences(), viewModel.preferences.value)
+    }
+
+  @Test
+  fun `preference setters delegate to the repository`() =
+    runTest(testDispatcher) {
+      val repository = FakeReaderPreferencesRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), repository)
+
+      viewModel.setFontScale(1.2f)
+      viewModel.setAlignment(ReaderAlignment.Left)
+      viewModel.resetSpacing()
+      advanceUntilIdle()
+
+      assertEquals(1.2f, repository.current.fontScale)
+      assertEquals(ReaderAlignment.Left, repository.current.alignment)
+      assertTrue(repository.spacingReset)
     }
 
   @Test
@@ -785,8 +829,11 @@ class ReaderViewModelTest {
       assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
     }
 
-  private fun viewModel(source: ReaderSource): ReaderViewModel =
-    ReaderViewModel(OpenBookUseCase(source), ioDispatcher = testDispatcher)
+  private fun viewModel(
+    source: ReaderSource,
+    preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
+  ): ReaderViewModel =
+    ReaderViewModel(OpenBookUseCase(source), preferencesRepository, ioDispatcher = testDispatcher)
 
   private fun testPublication(vararg xhtml: String): Publication {
     val spine =
@@ -858,6 +905,46 @@ class ReaderViewModelTest {
     val state = uiState.value
     assertTrue(state is ReaderUiState.Reading)
     return (state as ReaderUiState.Reading).diagnostics
+  }
+}
+
+private class FakeReaderPreferencesRepository(initial: ReaderPreferences = ReaderPreferences()) :
+  ReaderPreferencesRepository {
+  private val state = MutableStateFlow(initial)
+  val current: ReaderPreferences
+    get() = state.value
+
+  var spacingReset = false
+    private set
+
+  override val preferences: Flow<ReaderPreferences> = state
+
+  override suspend fun setFont(font: ReaderFont) = state.update { it.copy(font = font) }
+
+  override suspend fun setFontScale(scale: Float) = state.update { it.copy(fontScale = scale) }
+
+  override suspend fun setMargins(margins: ReaderMargins) = state.update {
+    it.copy(margins = margins)
+  }
+
+  override suspend fun setAlignment(alignment: ReaderAlignment) = state.update {
+    it.copy(alignment = alignment)
+  }
+
+  override suspend fun setLineSpacing(value: Float) = state.update { it.copy(lineSpacing = value) }
+
+  override suspend fun setParagraphSpacing(value: Float) = state.update {
+    it.copy(paragraphSpacing = value)
+  }
+
+  override suspend fun setWordSpacing(value: Float) = state.update { it.copy(wordSpacing = value) }
+
+  override suspend fun setLetterSpacing(value: Float) = state.update {
+    it.copy(letterSpacing = value)
+  }
+
+  override suspend fun resetSpacing() {
+    spacingReset = true
   }
 }
 

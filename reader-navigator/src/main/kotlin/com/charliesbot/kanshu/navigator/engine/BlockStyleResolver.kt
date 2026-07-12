@@ -17,7 +17,9 @@ import com.charliesbot.kanshu.navigator.model.ReaderBlock
 
 internal class BlockStyleResolver(
   private val preferences: ReaderPreferences,
-  private val typeface: Typeface,
+  // Named to avoid shadowing by TextPaint.typeface inside apply {} — assigning `typeface` there
+  // silently self-assigns the paint's own (null) property.
+  private val readerTypeface: Typeface,
   private val density: Float,
 ) {
   private val fontSizePx = BASE_TEXT_SP * preferences.fontScale * density
@@ -37,7 +39,7 @@ internal class BlockStyleResolver(
   private fun paragraphStyle(publisherAlignment: BlockAlignment?): BlockStyle {
     val paint =
       TextPaint().apply {
-        this.typeface = typeface
+        this.typeface = readerTypeface
         textSize = fontSizePx
         color = Color.BLACK
         isAntiAlias = true
@@ -70,7 +72,7 @@ internal class BlockStyleResolver(
     val headingSizePx = fontSizePx * headingScale
     val paint =
       TextPaint().apply {
-        this.typeface = Typeface.create(typeface, Typeface.BOLD)
+        this.typeface = Typeface.create(readerTypeface, Typeface.BOLD)
         textSize = headingSizePx
         color = Color.BLACK
         isAntiAlias = true
@@ -125,7 +127,7 @@ internal class BlockStyleResolver(
   private fun quoteStyle(): BlockStyle {
     val paint =
       TextPaint().apply {
-        this.typeface = typeface
+        this.typeface = readerTypeface
         textSize = fontSizePx
         color = Color.BLACK
         isAntiAlias = true
@@ -153,7 +155,7 @@ internal class BlockStyleResolver(
   private fun listStyle(): BlockStyle {
     val paint =
       TextPaint().apply {
-        this.typeface = typeface
+        this.typeface = readerTypeface
         textSize = fontSizePx
         color = Color.BLACK
         isAntiAlias = true

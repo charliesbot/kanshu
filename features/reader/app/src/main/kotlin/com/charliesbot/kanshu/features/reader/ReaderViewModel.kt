@@ -3,6 +3,11 @@ package com.charliesbot.kanshu.features.reader
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.charliesbot.kanshu.core.reader.ReaderAlignment
+import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderMargins
+import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.navigator.ReaderResourceLoader
@@ -13,8 +18,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,10 +51,59 @@ sealed interface ReaderUiState {
 
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
+  private val preferencesRepository: ReaderPreferencesRepository,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
   val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
+
+  /**
+   * Applied reader typography. Starts from [ReaderPreferences] defaults so the first frame renders
+   * well with no configuration; the repository emits the persisted values (which also default
+   * field-by-field for anything never set).
+   */
+  val preferences: StateFlow<ReaderPreferences> =
+    preferencesRepository.preferences.stateIn(
+      viewModelScope,
+      SharingStarted.Eagerly,
+      ReaderPreferences(),
+    )
+
+  fun setFont(font: ReaderFont) {
+    viewModelScope.launch { preferencesRepository.setFont(font) }
+  }
+
+  fun setFontScale(scale: Float) {
+    viewModelScope.launch { preferencesRepository.setFontScale(scale) }
+  }
+
+  fun setMargins(margins: ReaderMargins) {
+    viewModelScope.launch { preferencesRepository.setMargins(margins) }
+  }
+
+  fun setAlignment(alignment: ReaderAlignment) {
+    viewModelScope.launch { preferencesRepository.setAlignment(alignment) }
+  }
+
+  fun setLineSpacing(value: Float) {
+    viewModelScope.launch { preferencesRepository.setLineSpacing(value) }
+  }
+
+  fun setParagraphSpacing(value: Float) {
+    viewModelScope.launch { preferencesRepository.setParagraphSpacing(value) }
+  }
+
+  fun setWordSpacing(value: Float) {
+    viewModelScope.launch { preferencesRepository.setWordSpacing(value) }
+  }
+
+  fun setLetterSpacing(value: Float) {
+    viewModelScope.launch { preferencesRepository.setLetterSpacing(value) }
+  }
+
+  fun resetSpacing() {
+    viewModelScope.launch { preferencesRepository.resetSpacing() }
+  }
 
   private val _currentPage = MutableStateFlow(0)
   val currentPage: StateFlow<Int> = _currentPage.asStateFlow()
