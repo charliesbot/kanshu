@@ -66,16 +66,15 @@ class ConnectionViewModel(
     val state = _uiState.value
     if (!state.canTest) return
     _uiState.update { it.copy(status = TestStatus.Testing) }
-    inFlight =
-      viewModelScope.launch {
-        val baseUrl = state.baseUrl.trim()
-        val apiKey = state.apiKey.trim()
-        val result = repository.testConnection(baseUrl, apiKey)
-        if (result is ConnectionTestResult.Ok) {
-          credentialsRepository.save(KavitaCredentials(baseUrl, apiKey))
-        }
-        _uiState.update { it.copy(status = result.toStatus()) }
+    inFlight = viewModelScope.launch {
+      val baseUrl = state.baseUrl.trim()
+      val apiKey = state.apiKey.trim()
+      val result = repository.testConnection(baseUrl, apiKey)
+      if (result is ConnectionTestResult.Ok) {
+        credentialsRepository.save(KavitaCredentials(baseUrl, apiKey))
       }
+      _uiState.update { it.copy(status = result.toStatus()) }
+    }
   }
 
   private fun cancelInFlight() {

@@ -287,7 +287,9 @@ class ReaderLayoutEngineTest {
                       ),
                     )
                   ),
-                  ListItem(listOf(ParagraphBlock(listOf(TextLeaf("PART TWO: STRANGE ATTRACTORS"))))),
+                  ListItem(
+                    listOf(ParagraphBlock(listOf(TextLeaf("PART TWO: STRANGE ATTRACTORS"))))
+                  ),
                 ),
             )
           )

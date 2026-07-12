@@ -17,8 +17,9 @@ class FakeBookDao(initial: Map<String, BookEntity> = emptyMap()) : BookDao {
 
   override fun observeAll(): Flow<List<BookEntity>> = rows.map { it.values.toList() }
 
-  override fun observeDownloaded(): Flow<List<BookEntity>> =
-    rows.map { it.values.filter { row -> row.localPath != null } }
+  override fun observeDownloaded(): Flow<List<BookEntity>> = rows.map {
+    it.values.filter { row -> row.localPath != null }
+  }
 
   override suspend fun find(id: String): BookEntity? = rows.value[id]
 

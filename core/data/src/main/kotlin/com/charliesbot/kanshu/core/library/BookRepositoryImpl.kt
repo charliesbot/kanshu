@@ -79,21 +79,20 @@ class BookRepositoryImpl(
         )
       val fetchedIds = series.map { bookIdFor(it.id) }.toSet()
 
-      val remoteBooks =
-        series.map { s ->
-          val bookId = bookIdFor(s.id)
-          BookEntity(
-            id = bookId,
-            source = SOURCE_KAVITA,
-            sourceItemId = s.id.toString(),
-            title = s.name,
-            localPath = null,
-            byteSize = null,
-            downloadedAt = null,
-            lastOpenedAt = null,
-            coverToken = s.coverImage,
-          )
-        }
+      val remoteBooks = series.map { s ->
+        val bookId = bookIdFor(s.id)
+        BookEntity(
+          id = bookId,
+          source = SOURCE_KAVITA,
+          sourceItemId = s.id.toString(),
+          title = s.name,
+          localPath = null,
+          byteSize = null,
+          downloadedAt = null,
+          lastOpenedAt = null,
+          coverToken = s.coverImage,
+        )
+      }
 
       bookDao.syncBooks(SOURCE_KAVITA, remoteBooks, fetchedIds)
     } catch (e: CancellationException) {
