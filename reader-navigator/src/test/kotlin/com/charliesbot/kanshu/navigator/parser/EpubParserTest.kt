@@ -471,6 +471,29 @@ class EpubParserTest {
   }
 
   @Test
+  fun parse_imageWithBaseHref_stripsFragmentAndQueryFromSrc() {
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <img alt="Fragment" src="images/map.png#section"/>
+          <img alt="Query" src="images/chart.png?v=2"/>
+        </body></html>
+        """
+          .trimIndent(),
+        baseHref = "OEBPS/xhtml/chapter01.xhtml",
+      )
+
+    assertEquals(
+      listOf(
+        ImageBlock(resourceHref = "OEBPS/xhtml/images/map.png", alt = "Fragment"),
+        ImageBlock(resourceHref = "OEBPS/xhtml/images/chart.png", alt = "Query"),
+      ),
+      result.document.blocks,
+    )
+  }
+
+  @Test
   fun parse_imageWithBaseHrefAtRoot_resolvesAgainstRoot() {
     val result =
       EpubParser.parse(

@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.render
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.RectF
 import android.util.Log
@@ -17,6 +18,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
   private var page: ReaderPage? = null
   private var horizontalMarginPx = 0f
   private var verticalMarginPx = 0f
+  private var imageBitmaps: Map<String, Bitmap> = emptyMap()
   private var onTapZone: ((ReaderPageTapZone) -> Unit)? = null
   private var handledLongPress = false
   private var pendingClickZone = ReaderPageTapZone.Center
@@ -59,6 +61,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     page: ReaderPage,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
+    imageBitmaps: Map<String, Bitmap> = emptyMap(),
     onTapZone: ((ReaderPageTapZone) -> Unit)? = null,
     onTextSelected: ((String, RectF) -> Unit)? = null,
     onSelectionCleared: (() -> Unit)? = null,
@@ -74,6 +77,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     this.page = page
     this.horizontalMarginPx = horizontalMarginPx
     this.verticalMarginPx = verticalMarginPx
+    this.imageBitmaps = imageBitmaps
     this.onTapZone = onTapZone
     if (
       selectionController.setPage(
@@ -151,6 +155,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
       horizontalMarginPx = horizontalMarginPx,
       verticalMarginPx = verticalMarginPx,
       selectionRects = selectionController.selectionRects,
+      imageBitmaps = imageBitmaps,
     )
   }
 }

@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator.render
 
+import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -14,6 +15,7 @@ internal object PageRenderer {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     selectionRects: List<RectF> = emptyList(),
+    imageBitmaps: Map<String, Bitmap> = emptyMap(),
   ) {
     canvas.drawColor(Color.WHITE)
     canvas.save()
@@ -24,7 +26,9 @@ internal object PageRenderer {
       canvas.height - verticalMarginPx,
     )
     selectionRects.forEach { rect -> canvas.drawRect(rect, selectionPaint) }
-    page.entries.forEach { entry -> drawEntry(canvas, entry, horizontalMarginPx, verticalMarginPx) }
+    page.entries.forEach { entry ->
+      drawEntry(canvas, entry, horizontalMarginPx, verticalMarginPx, imageBitmaps)
+    }
     canvas.restore()
   }
 
@@ -33,6 +37,7 @@ internal object PageRenderer {
     entry: PageEntry,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
+    imageBitmaps: Map<String, Bitmap>,
   ) {
     val x = horizontalMarginPx + entry.drawOffsetXPx
     val y = verticalMarginPx + entry.yOffsetPx
@@ -67,20 +72,35 @@ internal object PageRenderer {
       }
 
       is PageEntry.Image -> {
-        val borderInset = IMAGE_BORDER_STROKE_PX / 2f
-        val rect =
-          RectF(
-            x + borderInset,
-            y + borderInset,
-            x + entry.widthPx - borderInset,
-            y + entry.visibleHeightPx - borderInset,
-          )
-        canvas.drawRect(rect, imageBorderPaint)
-        val label = entry.alt?.takeIf { it.isNotBlank() } ?: IMAGE_PLACEHOLDER_LABEL
-        val baseline = rect.centerY() - (imageLabelPaint.ascent() + imageLabelPaint.descent()) / 2f
-        canvas.drawText(label, rect.left + IMAGE_LABEL_PADDING_PX, baseline, imageLabelPaint)
+        val bitmap = imageBitmaps[entry.resourceHref]
+        if (bitmap != null) {
+          val rect = RectF(x, y, x + entry.widthPx, y + entry.visibleHeightPx)
+          canvas.drawBitmap(bitmap, null, rect, imageBitmapPaint)
+        } else {
+          drawImagePlaceholder(canvas, entry, x, y)
+        }
       }
     }
+  }
+
+  private fun drawImagePlaceholder(
+    canvas: AndroidCanvas,
+    entry: PageEntry.Image,
+    x: Float,
+    y: Float,
+  ) {
+    val borderInset = IMAGE_BORDER_STROKE_PX / 2f
+    val rect =
+      RectF(
+        x + borderInset,
+        y + borderInset,
+        x + entry.widthPx - borderInset,
+        y + entry.visibleHeightPx - borderInset,
+      )
+    canvas.drawRect(rect, imageBorderPaint)
+    val label = entry.alt?.takeIf { it.isNotBlank() } ?: IMAGE_PLACEHOLDER_LABEL
+    val baseline = rect.centerY() - (imageLabelPaint.ascent() + imageLabelPaint.descent()) / 2f
+    canvas.drawText(label, rect.left + IMAGE_LABEL_PADDING_PX, baseline, imageLabelPaint)
   }
 
   private fun drawLeadingRule(
@@ -145,6 +165,12 @@ internal object PageRenderer {
   private val selectionPaint =
     Paint().apply {
       color = Color.LTGRAY
+      isAntiAlias = false
+    }
+
+  private val imageBitmapPaint =
+    Paint().apply {
+      isFilterBitmap = true
       isAntiAlias = false
     }
 

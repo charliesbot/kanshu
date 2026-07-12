@@ -294,7 +294,7 @@ The pagination engine must know the exact height of every block — including im
 
 The engine scales the intrinsic dimensions to fit `contentWidthPx` (preserving aspect ratio) and uses the scaled height as the image block's physical height during page accumulation. If bounds resolution fails (corrupt image, missing resource), reserve a fixed placeholder height (one line of body text by default) and render `alt` text or a `[image]` label inside it. Pagination uses the placeholder height; no reflow when a late decode succeeds.
 
-The renderer decodes the actual bitmap lazily (scaled to the known dimensions), drawing the placeholder label until the bitmap is ready. Since the height is fixed at pagination time, no reflow is needed when the bitmap arrives.
+The renderer decodes the actual bitmap off the main thread, scaled to the known dimensions. A page is not presented while its images are still decoding: the page turn holds the current page until the target page's images are ready (bounded by a short cap, ~250ms), then presents the completed page in a single draw — the decode hides inside the e-ink refresh, so images appear with the page, Kindle-style. Images on adjacent pages (current ± 1) are decoded ahead during reading, so the presentation gate almost never waits in practice. The bordered placeholder is a failure fallback (corrupt image, timeout), not the normal loading state. Since the height is fixed at pagination time, no reflow occurs when a late decode lands. Decoded bitmaps and image bounds are cached per publication, keyed by resource href, and survive chapter changes.
 
 The layout engine builds one `StaticLayout` per block during pagination using the full `BlockStyle` — not just `TextPaint`, but also `StaticLayout.Builder`-level properties (line spacing, hyphenation). That same `StaticLayout` is both the measurement artifact (its height determines page splits) and the rendering artifact (the renderer draws it directly). There is no separate measurement-vs-rendering divergence — one object controls both.
 
@@ -465,7 +465,7 @@ Block-type-specific rendering:
 - **Paragraphs and headings** — drawn directly via `StaticLayout.draw()`. Heading `TextPaint` uses scaled font size per level.
 - **Block quotes** — `canvas.drawLine()` in the `prefixWidthPx` gutter, then `StaticLayout.draw()` after `indentPx + prefixWidthPx`.
 - **Lists** — bullet or number prefix drawn in `[0, prefixWidthPx)`; item text measured and drawn at `prefixWidthPx` offset.
-- **Images** — loaded from EPUB resources via `Publication.get(resourceHref).read()` → `BitmapFactory` → `Bitmap`. Intrinsic dimensions scaled to fit column width (`viewport.widthPx - horizontalMargins`), preserving aspect ratio. Drawn via `canvas.drawBitmap()`. Cached in ViewModel. Failed loads draw the fixed placeholder from pagination.
+- **Images** — loaded from EPUB resources via `Publication.get(resourceHref).read()` → `BitmapFactory` → `Bitmap`. Intrinsic dimensions scaled to fit column width (`viewport.widthPx - horizontalMargins`), preserving aspect ratio. Drawn via `canvas.drawBitmap()`. Cached per publication in a reader image cache hoisted above chapter recomposition, so chapter changes reuse decoded bitmaps. Failed loads draw the fixed placeholder from pagination.
 - **Horizontal rules** — `canvas.drawLine()` across the column width.
 
 Compose still owns everything around the page surface: tap zones, reader chrome overlay, settings UI, popups, and navigation controls. Only book text rendering goes through Canvas.

@@ -21,6 +21,7 @@ import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.navigator.ReaderImageCache
 import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.ReaderPageViewer
 import com.charliesbot.kanshu.strings.R
@@ -34,6 +35,8 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
   val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
   val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
+  // Hoisted above key(spineIndex) so decoded images survive chapter changes.
+  val imageCache = remember(seriesId) { ReaderImageCache() }
   val preferences = remember { ReaderPreferences() }
   var previewPreferences by remember { mutableStateOf(preferences) }
   var overlayVisible by remember { mutableStateOf(false) }
@@ -76,6 +79,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
               selectedText = ReaderSelectedText(text = text, anchor = anchor)
             },
             onSelectionCleared = { selectedText = null },
+            imageCache = imageCache,
             modifier = Modifier.fillMaxSize(),
           )
         }

@@ -7,6 +7,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.engine.BlockStyleResolver
+import com.charliesbot.kanshu.navigator.engine.ImageBounds
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
@@ -24,6 +25,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
@@ -172,6 +174,46 @@ class PageRendererTest {
     val topBorderY = (verticalMarginPx + entry.yOffsetPx + 2f).toInt()
     assertTrue(hasNonBackgroundPixelNearX(bitmap, leftBorderX))
     assertTrue(hasNonBackgroundPixelNearY(bitmap, topBorderY))
+  }
+
+  @Test
+  @GraphicsMode(GraphicsMode.Mode.NATIVE)
+  fun draw_imageWithBitmap_rendersBitmapInsteadOfPlaceholder() {
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 300, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document =
+            ReaderDocument(
+              blocks = listOf(ImageBlock(resourceHref = "images/map.png", alt = "Map"))
+            ),
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+          imageBounds = { ImageBounds(intrinsicWidthPx = 80, intrinsicHeightPx = 40) },
+        )
+    val entry = pages.single().entries.single() as PageEntry.Image
+
+    val imageBitmap =
+      Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLACK) }
+    val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
+    PageRenderer.draw(
+      canvas = Canvas(bitmap),
+      page = pages.single(),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      imageBitmaps = mapOf("images/map.png" to imageBitmap),
+    )
+
+    val centerX = (horizontalMarginPx + entry.drawOffsetXPx + entry.widthPx / 2f).toInt()
+    val centerY = (verticalMarginPx + entry.yOffsetPx + entry.visibleHeightPx / 2f).toInt()
+    assertEquals(Color.BLACK, bitmap.getPixel(centerX, centerY))
   }
 
   @Test
