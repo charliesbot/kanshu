@@ -433,12 +433,11 @@ internal object ReaderSelector {
   ): TextSelection? {
     val segments = selectionSegments(anchor, focus)
     if (segments.hasDuplicateTextSelectionId(this)) return null
-    val rects =
-      segments.flatMap { segment ->
-        val entry = entries[segment.entryIndex]
-        val layout = entry.textLayout() ?: return@flatMap emptyList()
-        selectionRects(layout, segment.range, entry, horizontalMarginPx, verticalMarginPx)
-      }
+    val rects = segments.flatMap { segment ->
+      val entry = entries[segment.entryIndex]
+      val layout = entry.textLayout() ?: return@flatMap emptyList()
+      selectionRects(layout, segment.range, entry, horizontalMarginPx, verticalMarginPx)
+    }
     if (rects.isEmpty()) return null
     val firstSegment = segments.first()
     val anchorEntry = entries[anchor.entryIndex]

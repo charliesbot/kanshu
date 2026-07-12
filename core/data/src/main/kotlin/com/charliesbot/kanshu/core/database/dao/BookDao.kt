@@ -37,20 +37,20 @@ interface BookDao {
     val localBooks = getAll()
     val localBooksMap = localBooks.associateBy { it.id }
 
-    val toUpsert =
-      remoteBooks.map { remote ->
-        val existing = localBooksMap[remote.id]
-        remote.copy(
-          localPath = existing?.localPath,
-          byteSize = existing?.byteSize,
-          downloadedAt = existing?.downloadedAt,
-          lastOpenedAt = existing?.lastOpenedAt,
-        )
-      }
+    val toUpsert = remoteBooks.map { remote ->
+      val existing = localBooksMap[remote.id]
+      remote.copy(
+        localPath = existing?.localPath,
+        byteSize = existing?.byteSize,
+        downloadedAt = existing?.downloadedAt,
+        lastOpenedAt = existing?.lastOpenedAt,
+      )
+    }
     toUpsert.forEach { upsert(it) }
 
-    val toDelete =
-      localBooks.filter { it.source == source && it.id !in fetchedIds && it.localPath == null }
+    val toDelete = localBooks.filter {
+      it.source == source && it.id !in fetchedIds && it.localPath == null
+    }
     toDelete.forEach { delete(it.id) }
   }
 }

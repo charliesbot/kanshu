@@ -123,11 +123,10 @@ class SyncRepositoryImpl(
       )
     }
     pendingPush?.cancel()
-    pendingPush =
-      scope.launch {
-        delay(PUSH_DEBOUNCE_MILLIS)
-        push(file, position, publication)
-      }
+    pendingPush = scope.launch {
+      delay(PUSH_DEBOUNCE_MILLIS)
+      push(file, position, publication)
+    }
   }
 
   override suspend fun flushProgress(

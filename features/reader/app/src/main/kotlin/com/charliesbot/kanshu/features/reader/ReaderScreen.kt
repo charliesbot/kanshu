@@ -84,7 +84,8 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             pageLabel =
               stringResource(
                 R.string.reader_overlay_page_label,
-                currentPage + 1,
+                // currentPage may hold the last-page sentinel until pagination reports a count.
+                currentPage.coerceIn(0, pageCount.coerceAtLeast(1) - 1) + 1,
                 pageCount.coerceAtLeast(1),
               ),
             onOpenReaderPrefs = {
