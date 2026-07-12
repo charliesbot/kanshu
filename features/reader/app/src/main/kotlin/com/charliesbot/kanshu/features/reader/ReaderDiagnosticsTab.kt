@@ -16,6 +16,7 @@ import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
+import com.charliesbot.kanshu.navigator.model.StylingCensus
 import com.charliesbot.kanshu.strings.R
 
 @Composable
@@ -46,7 +47,61 @@ fun ReaderDiagnosticsTab(
       title = stringResource(R.string.reader_diagnostics_unsupported_inline_tags),
       counts = parseDiagnostics.unsupportedInlineTags,
     )
+    KanshuDivider()
+    ReaderStylingCensusSection(parseDiagnostics.stylingCensus)
   }
+}
+
+@Composable
+private fun ReaderStylingCensusSection(census: StylingCensus) {
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    KanshuText(
+      text = stringResource(R.string.reader_diagnostics_styling_title),
+      style = KanshuTheme.typography.titleMedium,
+    )
+    KanshuText(
+      text =
+        stringResource(
+          R.string.reader_diagnostics_class_attribute_count,
+          census.classAttributeCount,
+        ),
+      style = KanshuTheme.typography.bodyLarge,
+    )
+    KanshuText(
+      text =
+        stringResource(
+          R.string.reader_diagnostics_style_attribute_count,
+          census.styleAttributeCount,
+        ),
+      style = KanshuTheme.typography.bodyLarge,
+    )
+    KanshuText(
+      text = stringResource(R.string.reader_diagnostics_style_tag_count, census.styleTagCount),
+      style = KanshuTheme.typography.bodyLarge,
+    )
+    KanshuText(
+      text = stringResource(R.string.reader_diagnostics_stylesheet_links),
+      style = KanshuTheme.typography.titleMedium,
+    )
+    if (census.stylesheetHrefs.isEmpty()) {
+      KanshuText(
+        text = stringResource(R.string.reader_diagnostics_no_unsupported_tags),
+        style = KanshuTheme.typography.bodyLarge,
+      )
+    } else {
+      census.stylesheetHrefs.forEach { href ->
+        KanshuText(text = href, style = KanshuTheme.typography.bodyLarge)
+      }
+    }
+  }
+  ReaderDiagnosticTagSection(
+    title = stringResource(R.string.reader_diagnostics_class_names),
+    counts = census.classNameCounts,
+  )
+  ReaderDiagnosticTagSection(
+    title = stringResource(R.string.reader_diagnostics_inline_properties),
+    counts = census.inlinePropertyCounts,
+  )
 }
 
 @Composable

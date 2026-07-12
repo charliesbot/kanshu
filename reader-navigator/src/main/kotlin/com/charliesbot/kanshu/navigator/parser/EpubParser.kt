@@ -27,7 +27,10 @@ object EpubParser {
 
     return ParseResult(
       document = ReaderDocument(blocks = blocks, language = extractLanguage(document)),
-      diagnostics = diagnostics.build(),
+      diagnostics =
+        diagnostics
+          .build()
+          .copy(stylingCensus = StylingCensusCollector.collect(document, baseHref)),
     )
   }
 

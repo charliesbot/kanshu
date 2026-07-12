@@ -56,6 +56,13 @@
     <string name="reader_diagnostics_unsupported_inline_tags">Unsupported inline tags</string>
     <string name="reader_diagnostics_no_unsupported_tags">None</string>
     <string name="reader_diagnostics_tag_count">%1$s: %2$d</string>
+    <string name="reader_diagnostics_styling_title">Styling census</string>
+    <string name="reader_diagnostics_class_attribute_count">Elements with class: %1$d</string>
+    <string name="reader_diagnostics_style_attribute_count">Elements with inline style: %1$d</string>
+    <string name="reader_diagnostics_stylesheet_links">Stylesheet links</string>
+    <string name="reader_diagnostics_style_tag_count">Inline style blocks: %1$d</string>
+    <string name="reader_diagnostics_class_names">Class names</string>
+    <string name="reader_diagnostics_inline_properties">Inline style properties</string>
     <string name="reader_sync_already_at_furthest">Already at furthest position</string>
     <string name="reader_sync_prompt_title">Continue from another device?</string>
     <string name="reader_sync_prompt_body_with_device">%1$s read up to %2$d%%. Apply this position?</string>
