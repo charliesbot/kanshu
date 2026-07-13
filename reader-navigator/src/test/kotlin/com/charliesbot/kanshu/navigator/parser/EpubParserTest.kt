@@ -311,6 +311,89 @@ class EpubParserTest {
   }
 
   @Test
+  fun parse_linkHrefs_resolveAgainstBasePreservingFragments() {
+    val result =
+      EpubParser.parse(
+        """
+        <html><body><p>
+          <a href="../text/ch02.xhtml#s3">next</a>
+          <a href="#note1">note</a>
+          <a href="https://example.com/x">web</a>
+        </p></body></html>
+        """
+          .trimIndent(),
+        baseHref = "OEBPS/xhtml/ch01.xhtml",
+      )
+
+    val hrefs =
+      (result.document.blocks.single() as ParagraphBlock).spans.filterIsInstance<LinkSpan>().map {
+        it.href
+      }
+    assertEquals(
+      listOf(
+        "OEBPS/text/ch02.xhtml#s3",
+        "OEBPS/xhtml/ch01.xhtml#note1",
+        "https://example.com/x",
+      ),
+      hrefs,
+    )
+  }
+
+  @Test
+  fun parse_anchorWrappingParagraphs_promotesBlocksWithoutInlineDiagnostics() {
+    // TOC/nav pages commonly wrap paragraphs in anchors; those must stay separate paragraphs
+    // instead of flattening into one line with a bogus unsupported-inline `p` count.
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <a href="ch01.xhtml"><p>Chapter One</p></a>
+          <a href="ch02.xhtml"><p>Chapter Two</p></a>
+        </body></html>
+        """
+          .trimIndent()
+      )
+
+    assertEquals(listOf("Chapter One", "Chapter Two"), result.document.paragraphText())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_blockNestedUnderInlineWrapper_promotesBlocks() {
+    val result =
+      EpubParser.parse(
+        "<html><body><div><span><p>First.</p><p>Second.</p></span></div></body></html>"
+      )
+
+    assertEquals(listOf("First.", "Second."), result.document.paragraphText())
+    assertTrue(result.diagnostics.unsupportedInlineTags.isEmpty())
+  }
+
+  @Test
+  fun parse_unknownInlineTagAtDepth_staysInlineWithoutFragmenting() {
+    // <q>/<cite>/<code>-style unknown inline tags must not trigger block promotion — that would
+    // fragment a sentence into separate paragraphs.
+    val result =
+      EpubParser.parse("<html><body><div><span>Some <q>quoted</q> text</span></div></body></html>")
+
+    assertEquals(listOf("Some quoted text"), result.document.paragraphText())
+    assertEquals(mapOf("q" to 1), result.diagnostics.unsupportedInlineTags)
+  }
+
+  @Test
+  fun parse_anchorWithMixedInlineAndBlockContent_preservesAllText() {
+    val result =
+      EpubParser.parse(
+        "<html><body><a href=\"ch01.xhtml\">Part One <p>Chapter One</p></a></body></html>"
+      )
+
+    assertEquals(
+      listOf("Part One", "Chapter One"),
+      result.document.paragraphText().map { it.trim() },
+    )
+  }
+
+  @Test
   fun parse_inlineImage_preservesAltText() {
     val result =
       EpubParser.parse(

@@ -9,6 +9,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
+import com.charliesbot.kanshu.navigator.selection.ReaderSelector
 import com.charliesbot.kanshu.navigator.selection.TextSelection
 import java.util.Locale
 
@@ -20,6 +21,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
   private var verticalMarginPx = 0f
   private var imageBitmaps: Map<String, Bitmap> = emptyMap()
   private var onTapZone: ((ReaderPageTapZone) -> Unit)? = null
+  private var onLinkTapped: ((String) -> Unit)? = null
   private var handledLongPress = false
   private var pendingClickZone = ReaderPageTapZone.Center
   private val selectionController =
@@ -46,6 +48,9 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
           if (selectionController.clearSelection()) {
             return true
           }
+          if (dispatchLinkTap(event.x, event.y)) {
+            return true
+          }
           pendingClickZone = event.tapZone(width)
           performClick()
           return true
@@ -63,6 +68,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     verticalMarginPx: Float,
     imageBitmaps: Map<String, Bitmap> = emptyMap(),
     onTapZone: ((ReaderPageTapZone) -> Unit)? = null,
+    onLinkTapped: ((String) -> Unit)? = null,
     onTextSelected: ((String, RectF) -> Unit)? = null,
     onSelectionCleared: (() -> Unit)? = null,
     onSelectionPageTurn: ((SelectionPageTurnDirection, String, String, TextSelection) -> Boolean)? =
@@ -79,6 +85,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     this.verticalMarginPx = verticalMarginPx
     this.imageBitmaps = imageBitmaps
     this.onTapZone = onTapZone
+    this.onLinkTapped = onLinkTapped
     if (
       selectionController.setPage(
         page = page,
@@ -131,6 +138,18 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
   fun release() {
     selectionController.release()
     onTapZone = null
+    onLinkTapped = null
+  }
+
+  /** A tap on link text consumes the gesture; a miss falls through to the tap zones. */
+  private fun dispatchLinkTap(xPx: Float, yPx: Float): Boolean {
+    val currentPage = page ?: return false
+    val callback = onLinkTapped ?: return false
+    val href =
+      ReaderSelector.linkHrefAt(currentPage, xPx, yPx, horizontalMarginPx, verticalMarginPx)
+        ?: return false
+    callback(href)
+    return true
   }
 
   override fun performClick(): Boolean {

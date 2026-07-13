@@ -5,18 +5,50 @@ import com.charliesbot.kanshu.navigator.model.TextLeaf
 import org.jsoup.nodes.Element
 
 /**
- * Shared XHTML tag sets for the Phase 0 parser.
+ * Shared XHTML tag sets for the parser.
  *
- * [LAYOUT_INLINE_TAGS] controls `<div>` block-child detection. It includes deferred tags ([sub],
- * [sup], [ruby]) that still unwrap as inline layout but record unsupported-inline diagnostics
- * during span extraction. Keep this set in sync with [InlineSpanExtractor] when adding inline tag
- * support.
+ * [TEXT_INLINE_TAGS] includes deferred tags ([sub], [sup], [ruby]) that unwrap as inline text but
+ * record unsupported-inline diagnostics during span extraction. Keep in sync with
+ * [InlineSpanExtractor] when adding inline tag support.
  */
 internal object HtmlTagSets {
-  val LAYOUT_INLINE_TAGS =
-    setOf("span", "a", "em", "i", "strong", "b", "br", "sub", "sup", "ruby", "img")
-
   val TEXT_INLINE_TAGS = setOf("span", "a", "em", "i", "strong", "b", "br", "sub", "sup", "ruby")
+
+  /**
+   * Tags that produce block structure when found as descendants of an inline-classified container.
+   * Deliberately an allowlist: unknown tags (`<q>`, `<cite>`, `<code>`, `<font>`…) must keep
+   * flattening inline — treating them as blocks would fragment sentences.
+   */
+  val BLOCK_TAGS =
+    setOf(
+      "p",
+      "div",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "blockquote",
+      "ul",
+      "ol",
+      "li",
+      "hr",
+      "table",
+      "section",
+      "article",
+      "nav",
+      "aside",
+      "figure",
+      "figcaption",
+      "pre",
+      "dl",
+      "dt",
+      "dd",
+      "header",
+      "footer",
+      "main",
+    )
 }
 
 internal fun altTextLeaf(element: Element, style: InlineStyle = InlineStyle.Plain): TextLeaf? {

@@ -5,6 +5,7 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.MetricAffectingSpan
+import com.charliesbot.kanshu.navigator.engine.EpubLinkSpan
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import java.text.BreakIterator
@@ -46,6 +47,31 @@ internal object ReaderSelector {
     val line: Int,
     val localX: Float,
   )
+
+  /**
+   * The link href at a tap position, or null when the tap is not on link text. Same geometry
+   * pipeline as selection (docs/PRD_NATIVE_READER.md § Link and Footnote Taps): strict bounds, no
+   * clamping — a miss falls through to the tap zones.
+   */
+  fun linkHrefAt(
+    page: ReaderPage,
+    xPx: Float,
+    yPx: Float,
+    horizontalMarginPx: Float,
+    verticalMarginPx: Float,
+  ): String? {
+    val hit =
+      page.textHitAt(
+        xPx = xPx,
+        yPx = yPx,
+        horizontalMarginPx = horizontalMarginPx,
+        verticalMarginPx = verticalMarginPx,
+        clampXToLine = false,
+      ) ?: return null
+    val spanned = hit.layout.text as? Spanned ?: return null
+    val offset = hit.layout.getOffsetForHorizontal(hit.line, hit.localX)
+    return spanned.getSpans(offset, offset, EpubLinkSpan::class.java).firstOrNull()?.href
+  }
 
   fun startSelectionAt(
     page: ReaderPage,

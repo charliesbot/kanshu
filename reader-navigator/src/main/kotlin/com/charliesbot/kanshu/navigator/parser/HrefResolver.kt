@@ -10,6 +10,19 @@ private val SCHEME_PREFIX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
  * scheme (http:, data:) pass through untouched. Root-relative hrefs are treated as
  * publication-root-relative. Parent traversal above the root clamps at the root.
  */
+/**
+ * Resolves a link href to a publication-root-relative path, preserving the fragment — unlike
+ * [resolveHref], which strips it, because fragments identify anchors for link navigation.
+ */
+internal fun resolveLinkHref(href: String, baseHref: String?): String {
+  if (href.isBlank() || baseHref.isNullOrBlank()) return href
+  if (SCHEME_PREFIX.containsMatchIn(href)) return href
+  if (href.startsWith("#")) return "$baseHref$href"
+  val fragment = href.substringAfter('#', "")
+  val path = resolveHref(href.substringBefore('#'), baseHref)
+  return if (fragment.isEmpty()) path else "$path#$fragment"
+}
+
 internal fun resolveHref(href: String, baseHref: String?): String {
   if (baseHref.isNullOrBlank() || href.isBlank()) return href
   if (SCHEME_PREFIX.containsMatchIn(href)) return href

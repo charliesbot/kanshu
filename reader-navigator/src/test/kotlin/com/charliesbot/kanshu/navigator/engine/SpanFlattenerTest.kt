@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.navigator.engine
 import android.graphics.Typeface
 import android.text.Spanned
 import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -45,5 +46,20 @@ class SpanFlattenerTest {
     val spans = text.getSpans("See ".length, text.length, EpubLinkSpan::class.java)
     assertEquals(1, spans.size)
     assertEquals("note.xhtml", spans.single().href)
+  }
+
+  @Test
+  fun flatten_linkSpan_underlinesLinkText() {
+    val text =
+      SpanFlattener.flatten(
+        ParagraphBlock(
+          listOf(TextLeaf("See "), LinkSpan("note.xhtml", listOf(TextLeaf("the note"))))
+        )
+      ) as Spanned
+
+    val underlines = text.getSpans(0, text.length, UnderlineSpan::class.java)
+    assertEquals(1, underlines.size)
+    assertEquals("See ".length, text.getSpanStart(underlines.single()))
+    assertEquals(text.length, text.getSpanEnd(underlines.single()))
   }
 }

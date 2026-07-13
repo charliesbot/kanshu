@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.features.reader
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -13,8 +14,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
@@ -30,6 +33,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koinViewModel()) {
   LaunchedEffect(seriesId) { viewModel.open(seriesId) }
 
+  val context = LocalContext.current
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
   val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
@@ -77,6 +81,15 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
               selectedText = ReaderSelectedText(text = text, anchor = anchor)
             },
             onSelectionCleared = { selectedText = null },
+            onLinkTapped = { href ->
+              overlayVisible = false
+              if (href.startsWith("http://", true) || href.startsWith("https://", true)) {
+                // External link: hand off to the system browser; ignore if none exists.
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, href.toUri())) }
+              } else {
+                viewModel.openLink(href)
+              }
+            },
             imageCache = imageCache,
             modifier = Modifier.fillMaxSize(),
           )
