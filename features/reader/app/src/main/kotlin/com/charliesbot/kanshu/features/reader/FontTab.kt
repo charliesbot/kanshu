@@ -22,8 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -33,12 +31,11 @@ import androidx.compose.ui.unit.sp
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
-import com.charliesbot.kanshu.core.ui.components.KanshuSlider
+import com.charliesbot.kanshu.core.ui.components.KanshuStepperSlider
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.strings.R
 import java.io.File
-import kotlin.math.roundToInt
 
 @Composable
 fun FontTab(
@@ -58,33 +55,14 @@ fun FontTab(
       }
     }
     KanshuDivider()
-    val totalStops =
-      ((ReaderPreferences.SCALE_MAX - ReaderPreferences.SCALE_MIN) / ReaderPreferences.SCALE_STEP)
-        .roundToInt() + 1
-    KanshuSlider(
+    KanshuStepperSlider(
       value = prefs.fontScale,
       onValueChange = onFontScaleChange,
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
       valueRange = ReaderPreferences.SCALE_MIN..ReaderPreferences.SCALE_MAX,
-      steps = (totalStops - 2).coerceAtLeast(0),
-      leading = {
-        val description = stringResource(R.string.reader_prefs_font_size_smaller)
-        Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
-          KanshuText(
-            text = stringResource(R.string.reader_prefs_font_sample).take(1),
-            style = KanshuTheme.typography.bodyMedium,
-          )
-        }
-      },
-      trailing = {
-        val description = stringResource(R.string.reader_prefs_font_size_larger)
-        Box(Modifier.clearAndSetSemantics { contentDescription = description }) {
-          KanshuText(
-            text = stringResource(R.string.reader_prefs_font_sample).take(1),
-            style = KanshuTheme.typography.headlineMedium,
-          )
-        }
-      },
+      step = ReaderPreferences.SCALE_STEP,
+      decreaseContentDescription = stringResource(R.string.reader_prefs_font_size_smaller),
+      increaseContentDescription = stringResource(R.string.reader_prefs_font_size_larger),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
     )
   }
 }

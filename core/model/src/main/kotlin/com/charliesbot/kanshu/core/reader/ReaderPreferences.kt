@@ -15,8 +15,10 @@ data class ReaderPreferences(
   val letterSpacing: Float = LETTER_SPACING_DEFAULT,
 ) {
   companion object {
-    const val SCALE_MIN: Float = 0.5f
-    const val SCALE_MAX: Float = 2.0f
+    // Floor calibrated against Kindle: its smallest size matches ~0.8x of our 18sp base, and
+    // anything below is unreadable dead range. 0.8..2.1 in 0.1 steps = 14 stops, Kindle parity.
+    const val SCALE_MIN: Float = 0.8f
+    const val SCALE_MAX: Float = 2.1f
     const val SCALE_DEFAULT: Float = 1.0f
     const val SCALE_STEP: Float = 0.1f
 
