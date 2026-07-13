@@ -10,6 +10,18 @@ import org.junit.Test
 
 class ReaderPageViewerTest {
   @Test
+  fun readerFontWeight_mapsBoldnessOntoTheWghtAxis() {
+    assertEquals(400, readerFontWeight(0f))
+    assertEquals(600, readerFontWeight(0.1f))
+    assertEquals(700, readerFontWeight(0.2f))
+    assertEquals(900, readerFontWeight(0.5f))
+    // Short-axis fonts scale the same curve into their own range — no dead steps.
+    assertEquals(520, readerFontWeight(0.1f, maxFontWeight = 700))
+    assertEquals(670, readerFontWeight(0.4f, maxFontWeight = 700))
+    assertEquals(700, readerFontWeight(0.5f, maxFontWeight = 700))
+  }
+
+  @Test
   fun pendingImageEntries_returnsOnlyUndecidedImageEntries() {
     val undecided =
       PageEntry.Image(

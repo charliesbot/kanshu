@@ -82,6 +82,10 @@
     <string name="reader_prefs_font_sample">Aa</string>
     <string name="reader_prefs_font_size_smaller">Tamaño de fuente menor</string>
     <string name="reader_prefs_font_size_larger">Tamaño de fuente mayor</string>
+    <string name="reader_prefs_font_size">Tamaño</string>
+    <string name="reader_prefs_font_bold">Negrita</string>
+    <string name="reader_prefs_bold_lighter">Texto más fino</string>
+    <string name="reader_prefs_bold_bolder">Texto más grueso</string>
     <string name="reader_prefs_margins">Márgenes</string>
     <string name="reader_prefs_margins_compact">Márgenes compactos</string>
     <string name="reader_prefs_margins_medium">Márgenes medianos</string>

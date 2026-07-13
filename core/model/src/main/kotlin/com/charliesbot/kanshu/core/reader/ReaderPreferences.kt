@@ -7,6 +7,9 @@ package com.charliesbot.kanshu.core.reader
 data class ReaderPreferences(
   val font: ReaderFont = ReaderFont.Literata,
   val fontScale: Float = SCALE_DEFAULT,
+  // Weight boost on top of the font's natural weight, 0 = unchanged. Variable fonts ride the
+  // wght axis (400..700); static fonts flip to their bold file.
+  val boldness: Float = BOLDNESS_DEFAULT,
   val margins: ReaderMargins = ReaderMargins.Medium,
   val alignment: ReaderAlignment = ReaderAlignment.Justify,
   val lineSpacing: Float = LINE_SPACING_DEFAULT,
@@ -21,6 +24,10 @@ data class ReaderPreferences(
     const val SCALE_MAX: Float = 2.1f
     const val SCALE_DEFAULT: Float = 1.0f
     const val SCALE_STEP: Float = 0.1f
+    const val BOLDNESS_MIN: Float = 0f
+    const val BOLDNESS_MAX: Float = 0.5f
+    const val BOLDNESS_DEFAULT: Float = 0f
+    const val BOLDNESS_STEP: Float = 0.1f
 
     const val LINE_SPACING_MIN: Float = 1.0f
     const val LINE_SPACING_MAX: Float = 1.8f

@@ -39,6 +39,7 @@ import com.charliesbot.kanshu.strings.R
 data class ReaderPrefsCallbacks(
   val onFontChange: (ReaderFont) -> Unit,
   val onFontScaleChange: (Float) -> Unit,
+  val onBoldnessChange: (Float) -> Unit,
   val onMarginsChange: (ReaderMargins) -> Unit,
   val onAlignmentChange: (ReaderAlignment) -> Unit,
   val onLineSpacingChange: (Float) -> Unit,
@@ -66,6 +67,7 @@ fun ReaderPrefsBottomSheet(
           prefs = prefs,
           onFontChange = callbacks.onFontChange,
           onFontScaleChange = callbacks.onFontScaleChange,
+          onBoldnessChange = callbacks.onBoldnessChange,
         )
       PrefsTab.Layout ->
         LayoutTab(
@@ -138,6 +140,7 @@ private fun ReaderPrefsBottomSheetPreview() {
         ReaderPrefsCallbacks(
           onFontChange = {},
           onFontScaleChange = {},
+          onBoldnessChange = {},
           onMarginsChange = {},
           onAlignmentChange = {},
           onLineSpacingChange = {},
