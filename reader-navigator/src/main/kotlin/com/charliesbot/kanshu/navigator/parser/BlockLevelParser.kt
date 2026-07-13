@@ -27,7 +27,7 @@ internal class BlockLevelParser(
   private val baseHref: String? = null,
   private val styles: InheritedStyleResolver? = null,
 ) {
-  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles)
+  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles, baseHref)
 
   fun parse(nodes: List<Node>): List<ReaderBlock> {
     val blocks = mutableListOf<ReaderBlock>()
@@ -52,7 +52,13 @@ internal class BlockLevelParser(
           ?: paragraphFromInline(element.childNodes(), element)?.let(blocks::add)
 
       in HtmlTagSets.TEXT_INLINE_TAGS ->
-        paragraphFromInline(listOf(element), element)?.let(blocks::add)
+        // Anchors (TOC/nav pages) and other inline tags sometimes wrap whole paragraphs;
+        // promote the blocks instead of flattening them into one line.
+        if (element.hasBlockDescendant()) {
+          appendParsed(element.childNodes(), blocks)
+        } else {
+          paragraphFromInline(listOf(element), element)?.let(blocks::add)
+        }
 
       "h1",
       "h2",
@@ -96,7 +102,7 @@ internal class BlockLevelParser(
       blocks.add(it)
       return
     }
-    if (element.hasBlockChild()) {
+    if (element.hasBlockDescendant()) {
       appendParsed(element.childNodes(), blocks)
     } else {
       paragraphFromInline(element.childNodes(), element)?.let(blocks::add)
@@ -136,7 +142,7 @@ internal class BlockLevelParser(
     val items =
       element.select("> li").mapNotNull { listItem ->
         val blocks =
-          if (listItem.hasBlockChild()) {
+          if (listItem.hasBlockDescendant()) {
             parse(listItem.childNodes())
           } else {
             paragraphFromInline(listItem.childNodes(), listItem)?.let(::listOf).orEmpty()
@@ -170,6 +176,7 @@ internal class BlockLevelParser(
     else ParagraphBlock(listOf(TextLeaf(trimmed)), alignment = publisherAlignment(owner))
   }
 
-  private fun Element.hasBlockChild(): Boolean =
-    children().any { child -> child.tagName().lowercase() !in HtmlTagSets.LAYOUT_INLINE_TAGS }
+  private fun Element.hasBlockDescendant(): Boolean = allElements.any { descendant ->
+    descendant !== this && descendant.tagName().lowercase() in HtmlTagSets.BLOCK_TAGS
+  }
 }

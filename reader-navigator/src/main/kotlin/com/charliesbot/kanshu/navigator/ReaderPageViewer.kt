@@ -62,6 +62,7 @@ fun ReaderPageViewer(
   onNextPage: (() -> Unit)? = null,
   onTextSelected: ((String, RectF) -> Unit)? = null,
   onSelectionCleared: (() -> Unit)? = null,
+  onLinkTapped: ((String) -> Unit)? = null,
   imageCache: ReaderImageCache = rememberReaderImageCache(),
   modifier: Modifier = Modifier,
 ) {
@@ -153,6 +154,7 @@ fun ReaderPageViewer(
             ReaderPageTapZone.Next -> onNextPage?.invoke()
           }
         },
+        onLinkTapped = onLinkTapped,
         onTextSelected = { text, anchor -> onTextSelected?.invoke(text, anchor) },
         onSelectionCleared = {
           selectionCarryState = SelectionCarryState()
@@ -425,6 +427,7 @@ private fun ReaderPageAndroidView(
   styleResolver: BlockStyleResolver,
   imageBitmaps: Map<String, Bitmap>,
   onTapZone: (ReaderPageTapZone) -> Unit,
+  onLinkTapped: ((String) -> Unit)?,
   onTextSelected: (String, RectF) -> Unit,
   onSelectionCleared: () -> Unit,
   onSelectionPageTurn: (SelectionPageTurnDirection, String, String, TextSelection) -> Boolean,
@@ -444,6 +447,7 @@ private fun ReaderPageAndroidView(
         verticalMarginPx = styleResolver.verticalMarginPx(),
         imageBitmaps = imageBitmaps,
         onTapZone = onTapZone,
+        onLinkTapped = onLinkTapped,
         onTextSelected = onTextSelected,
         onSelectionCleared = onSelectionCleared,
         onSelectionPageTurn = onSelectionPageTurn,

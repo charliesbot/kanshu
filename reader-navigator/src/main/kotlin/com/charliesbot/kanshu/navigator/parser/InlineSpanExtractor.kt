@@ -13,6 +13,7 @@ import org.jsoup.nodes.TextNode
 internal class InlineSpanExtractor(
   private val diagnostics: ParseDiagnosticsCollector,
   private val styles: InheritedStyleResolver? = null,
+  private val baseHref: String? = null,
 ) {
   fun extract(nodes: List<Node>, inheritedStyle: InlineStyle = InlineStyle.Plain): List<TextSpan> =
     trimEdgeBlankSpans(extractInternal(nodes, inheritedStyle))
@@ -110,7 +111,8 @@ internal class InlineSpanExtractor(
     val children = extractInternal(node.childNodes(), inheritedStyle)
     if (children.isEmpty()) return emptyList()
     val href = node.attr("href")
-    return if (href.isBlank()) children else listOf(LinkSpan(href = href, children = children))
+    return if (href.isBlank()) children
+    else listOf(LinkSpan(href = resolveLinkHref(href, baseHref), children = children))
   }
 
   private fun spanText(span: TextSpan): String =

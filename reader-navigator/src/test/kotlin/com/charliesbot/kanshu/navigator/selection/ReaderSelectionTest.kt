@@ -10,6 +10,7 @@ import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderLayoutEngine
 import com.charliesbot.kanshu.navigator.engine.ReaderViewport
 import com.charliesbot.kanshu.navigator.model.InlineStyle
+import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.ListBlock
 import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -19,15 +20,72 @@ import com.charliesbot.kanshu.navigator.model.TextLeaf
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
 class ReaderSelectionTest {
+  @Test
+  @GraphicsMode(GraphicsMode.Mode.NATIVE)
+  fun linkHrefAt_returnsHrefOverLinkTextAndNullElsewhere() {
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ParagraphBlock(
+              listOf(TextLeaf("See "), LinkSpan("note.xhtml", listOf(TextLeaf("the note"))))
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+    val verticalMarginPx = styleResolver.verticalMarginPx()
+    val page =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = ReaderViewport(widthPx = 600, heightPx = 600, density = 2f),
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+        .single()
+    val entry = page.entries.single() as PageEntry.FullBlock
+    val layout = entry.layout
+    val lineCenterY =
+      verticalMarginPx + entry.yOffsetPx + (layout.getLineTop(0) + layout.getLineBottom(0)) / 2f
+    val insideLinkX =
+      horizontalMarginPx + entry.drawOffsetXPx + layout.getPrimaryHorizontal("See t".length) + 1f
+    val beforeLinkX = horizontalMarginPx + entry.drawOffsetXPx + layout.getPrimaryHorizontal(1) + 1f
+
+    assertEquals(
+      "note.xhtml",
+      ReaderSelector.linkHrefAt(
+        page,
+        insideLinkX,
+        lineCenterY,
+        horizontalMarginPx,
+        verticalMarginPx,
+      ),
+    )
+    assertNull(
+      ReaderSelector.linkHrefAt(
+        page,
+        beforeLinkX,
+        lineCenterY,
+        horizontalMarginPx,
+        verticalMarginPx,
+      )
+    )
+  }
+
   @Test
   fun selectWordAt_hitsExpectedWordInFullBlock() {
     val fixture = layoutDocument("Alpha beta gamma.")

@@ -246,6 +246,29 @@ class ReaderViewModel(
     }
   }
 
+  /**
+   * Navigates to the spine item a publication-internal link points at. Fragments resolve to the
+   * chapter start for now — anchor-to-page mapping is a later slice. Unresolvable hrefs and
+   * same-chapter links are ignored.
+   */
+  fun openLink(href: String) {
+    val path = href.substringBefore('#')
+    val currentPublication = publication ?: return
+    val target =
+      currentPublication.readingOrder.indexOfFirst { link ->
+        link.url().path?.trimStart('/') == path
+      }
+    if (target == -1) {
+      Log.d(TAG, "openLink: no spine item for $href")
+      return
+    }
+    if (target == currentSpineIndex) {
+      Log.d(TAG, "openLink: already on spine[$target], fragment navigation not yet supported")
+      return
+    }
+    openSpineItem(target, LandingPage.Start)
+  }
+
   private fun openSpineItem(targetSpineIndex: Int, landing: LandingPage) {
     if (spineJob?.isActive == true) return
     val currentPublication = publication ?: return

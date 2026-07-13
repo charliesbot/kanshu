@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -95,6 +96,8 @@ internal object SpanFlattener {
             builder.length,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
           )
+          // UA convention: links read as links. Underline is the whole affordance on a B&W panel.
+          builder.setSpan(UnderlineSpan(), start, builder.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
       }
     }

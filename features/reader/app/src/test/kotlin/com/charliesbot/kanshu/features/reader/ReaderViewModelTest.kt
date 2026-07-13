@@ -633,6 +633,55 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `openLink navigates to the spine item matching the href path`() =
+    runTest(testDispatcher) {
+      val links =
+        listOf("OEBPS/ch01.xhtml", "OEBPS/ch02.xhtml").map { path ->
+          mockk<Link>(relaxed = true) {
+            every { url(any(), any()) } returns checkNotNull(Url(path))
+          }
+        }
+      val resources =
+        listOf("First chapter ", "Second chapter ").map { text ->
+          mockk<Resource> {
+            coEvery { read() } returns
+              Try.success("<html><body><p>${text.repeat(6)}</p></body></html>".encodeToByteArray())
+          }
+        }
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) {
+          every { readingOrder } returns links
+          links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
+          every { get(any<Url>()) } returns null
+        }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.openLink("OEBPS/ch02.xhtml#section3")
+      advanceUntilIdle()
+
+      assertEquals(1, viewModel.currentSpineIndex())
+    }
+
+  @Test
+  fun `openLink with unresolvable href stays put`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+
+      viewModel.openLink("OEBPS/missing.xhtml")
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+    }
+
+  @Test
   fun `chapter reentry reuses parsed spine item without rereading resources`() =
     runTest(testDispatcher) {
       val links = List(2) { mockk<Link>(relaxed = true) }
