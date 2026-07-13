@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
@@ -37,8 +36,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
   // Hoisted above key(spineIndex) so decoded images survive chapter changes.
   val imageCache = remember(seriesId) { ReaderImageCache() }
-  val preferences = remember { ReaderPreferences() }
-  var previewPreferences by remember { mutableStateOf(preferences) }
+  val preferences by viewModel.preferences.collectAsStateWithLifecycle()
   var overlayVisible by remember { mutableStateOf(false) }
   var readerPrefsVisible by remember { mutableStateOf(false) }
   var layoutDiagnostics by remember { mutableStateOf<ReaderLayoutDiagnostics?>(null) }
@@ -103,70 +101,20 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
         }
         KanshuBottomSheet(isOpen = readerPrefsVisible, onDismiss = { readerPrefsVisible = false }) {
           ReaderPrefsBottomSheet(
-            prefs = previewPreferences,
+            prefs = preferences,
             callbacks =
+              // Changes apply live and persist; the repository clamps ranges and the viewer
+              // repaginates behind the sheet.
               ReaderPrefsCallbacks(
-                onFontChange = { previewPreferences = previewPreferences.copy(font = it) },
-                onFontScaleChange = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      fontScale =
-                        it.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
-                    )
-                },
-                onMarginsChange = { previewPreferences = previewPreferences.copy(margins = it) },
-                onAlignmentChange = {
-                  previewPreferences = previewPreferences.copy(alignment = it)
-                },
-                onLineSpacingChange = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      lineSpacing =
-                        it.coerceIn(
-                          ReaderPreferences.LINE_SPACING_MIN,
-                          ReaderPreferences.LINE_SPACING_MAX,
-                        )
-                    )
-                },
-                onParagraphSpacingChange = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      paragraphSpacing =
-                        it.coerceIn(
-                          ReaderPreferences.PARAGRAPH_SPACING_MIN,
-                          ReaderPreferences.PARAGRAPH_SPACING_MAX,
-                        )
-                    )
-                },
-                onWordSpacingChange = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      wordSpacing =
-                        it.coerceIn(
-                          ReaderPreferences.WORD_SPACING_MIN,
-                          ReaderPreferences.WORD_SPACING_MAX,
-                        )
-                    )
-                },
-                onLetterSpacingChange = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      letterSpacing =
-                        it.coerceIn(
-                          ReaderPreferences.LETTER_SPACING_MIN,
-                          ReaderPreferences.LETTER_SPACING_MAX,
-                        )
-                    )
-                },
-                onResetSpacing = {
-                  previewPreferences =
-                    previewPreferences.copy(
-                      lineSpacing = ReaderPreferences.LINE_SPACING_DEFAULT,
-                      paragraphSpacing = ReaderPreferences.PARAGRAPH_SPACING_DEFAULT,
-                      wordSpacing = ReaderPreferences.WORD_SPACING_DEFAULT,
-                      letterSpacing = ReaderPreferences.LETTER_SPACING_DEFAULT,
-                    )
-                },
+                onFontChange = viewModel::setFont,
+                onFontScaleChange = viewModel::setFontScale,
+                onMarginsChange = viewModel::setMargins,
+                onAlignmentChange = viewModel::setAlignment,
+                onLineSpacingChange = viewModel::setLineSpacing,
+                onParagraphSpacingChange = viewModel::setParagraphSpacing,
+                onWordSpacingChange = viewModel::setWordSpacing,
+                onLetterSpacingChange = viewModel::setLetterSpacing,
+                onResetSpacing = viewModel::resetSpacing,
               ),
             parseDiagnostics = state.diagnostics,
             layoutDiagnostics = layoutDiagnostics,

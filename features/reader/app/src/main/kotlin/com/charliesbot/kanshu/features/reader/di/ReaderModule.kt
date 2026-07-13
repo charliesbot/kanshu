@@ -4,4 +4,4 @@ import com.charliesbot.kanshu.features.reader.ReaderViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
-val readerModule = module { viewModel { ReaderViewModel(get()) } }
+val readerModule = module { viewModel { ReaderViewModel(get(), get()) } }
