@@ -36,18 +36,22 @@ internal class BlockStyleResolver(
 
   private fun imageStyle(): BlockStyle = paragraphStyle(publisherAlignment = null)
 
-  private fun paragraphStyle(publisherAlignment: BlockAlignment?): BlockStyle {
-    val paint =
-      TextPaint().apply {
-        this.typeface = readerTypeface
-        textSize = fontSizePx
-        color = Color.BLACK
-        isAntiAlias = true
-        letterSpacing = preferences.letterSpacing
-      }
+  /** The shared body-text paint; headings pass their own typeface and size. */
+  private fun textPaint(
+    paintTypeface: Typeface = readerTypeface,
+    textSizePx: Float = fontSizePx,
+  ): TextPaint =
+    TextPaint().apply {
+      typeface = paintTypeface
+      textSize = textSizePx
+      color = Color.BLACK
+      isAntiAlias = true
+      letterSpacing = preferences.letterSpacing
+    }
 
+  private fun paragraphStyle(publisherAlignment: BlockAlignment?): BlockStyle {
     return BlockStyle(
-      paint = paint,
+      paint = textPaint(),
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,
@@ -70,17 +74,9 @@ internal class BlockStyleResolver(
         else -> 1.12f
       }
     val headingSizePx = fontSizePx * headingScale
-    val paint =
-      TextPaint().apply {
-        this.typeface = Typeface.create(readerTypeface, Typeface.BOLD)
-        textSize = headingSizePx
-        color = Color.BLACK
-        isAntiAlias = true
-        letterSpacing = preferences.letterSpacing
-      }
 
     return BlockStyle(
-      paint = paint,
+      paint = textPaint(Typeface.create(readerTypeface, Typeface.BOLD), headingSizePx),
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE,
@@ -125,19 +121,11 @@ internal class BlockStyleResolver(
   }
 
   private fun quoteStyle(): BlockStyle {
-    val paint =
-      TextPaint().apply {
-        this.typeface = readerTypeface
-        textSize = fontSizePx
-        color = Color.BLACK
-        isAntiAlias = true
-        letterSpacing = preferences.letterSpacing
-      }
     val leadingRuleStrokeWidthPx = density.coerceAtLeast(1f)
     val leadingRuleGapPx = fontSizePx * 0.6f
 
     return BlockStyle(
-      paint = paint,
+      paint = textPaint(),
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,
@@ -153,17 +141,8 @@ internal class BlockStyleResolver(
   }
 
   private fun listStyle(): BlockStyle {
-    val paint =
-      TextPaint().apply {
-        this.typeface = readerTypeface
-        textSize = fontSizePx
-        color = Color.BLACK
-        isAntiAlias = true
-        letterSpacing = preferences.letterSpacing
-      }
-
     return BlockStyle(
-      paint = paint,
+      paint = textPaint(),
       lineSpacingMultiplier = preferences.lineSpacing,
       lineSpacingAdd = 0f,
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,

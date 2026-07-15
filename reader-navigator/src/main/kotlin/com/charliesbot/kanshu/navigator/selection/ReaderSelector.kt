@@ -131,82 +131,33 @@ internal object ReaderSelector {
     )
   }
 
-  fun selectWordAt(
-    page: ReaderPage,
-    xPx: Float,
-    yPx: Float,
-    horizontalMarginPx: Float,
-    verticalMarginPx: Float,
-    locale: Locale = Locale.getDefault(),
-  ): TextSelection? =
-    startSelectionAt(
-      page = page,
-      xPx = xPx,
-      yPx = yPx,
-      horizontalMarginPx = horizontalMarginPx,
-      verticalMarginPx = verticalMarginPx,
-      locale = locale,
-    )
-
   fun startSelectionAtPageStart(
     page: ReaderPage,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     locale: Locale = Locale.getDefault(),
-  ): TextSelection? {
-    page.entries.withIndex().forEach { indexedEntry ->
-      val entry = indexedEntry.value
-      val layout = entry.textLayout() ?: return@forEach
-      entry.visibleLineRange(layout).forEach { line ->
-        val hit =
-          TextHit(
-            entryIndex = indexedEntry.index,
-            entry = entry,
-            layout = layout,
-            line = line,
-            localX = layout.getLineLeft(line),
-          )
-        val range = hit.wordRangesOnLine(locale).firstOrNull()?.range ?: return@forEach
-        return page.selectionFrom(
-          anchor = SelectionEndpoint(indexedEntry.index, range),
-          focus = SelectionEndpoint(indexedEntry.index, range),
-          horizontalMarginPx = horizontalMarginPx,
-          verticalMarginPx = verticalMarginPx,
-        )
-      }
-    }
-    return null
-  }
+  ): TextSelection? =
+    page.pageEdgeSelection(
+      atEnd = false,
+      anchor = null,
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      locale = locale,
+    )
 
   fun startSelectionAtPageEnd(
     page: ReaderPage,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     locale: Locale = Locale.getDefault(),
-  ): TextSelection? {
-    page.entries.withIndex().reversed().forEach { indexedEntry ->
-      val entry = indexedEntry.value
-      val layout = entry.textLayout() ?: return@forEach
-      entry.visibleLineRange(layout).reversed().forEach { line ->
-        val hit =
-          TextHit(
-            entryIndex = indexedEntry.index,
-            entry = entry,
-            layout = layout,
-            line = line,
-            localX = layout.getLineRight(line),
-          )
-        val range = hit.wordRangesOnLine(locale).lastOrNull()?.range ?: return@forEach
-        return page.selectionFrom(
-          anchor = SelectionEndpoint(indexedEntry.index, range),
-          focus = SelectionEndpoint(indexedEntry.index, range),
-          horizontalMarginPx = horizontalMarginPx,
-          verticalMarginPx = verticalMarginPx,
-        )
-      }
-    }
-    return null
-  }
+  ): TextSelection? =
+    page.pageEdgeSelection(
+      atEnd = true,
+      anchor = null,
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      locale = locale,
+    )
 
   fun updateSelectionToPageStart(
     page: ReaderPage,
@@ -214,30 +165,14 @@ internal object ReaderSelector {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     locale: Locale = Locale.getDefault(),
-  ): TextSelection? {
-    page.entries.withIndex().forEach { indexedEntry ->
-      val entry = indexedEntry.value
-      val layout = entry.textLayout() ?: return@forEach
-      entry.visibleLineRange(layout).forEach { line ->
-        val hit =
-          TextHit(
-            entryIndex = indexedEntry.index,
-            entry = entry,
-            layout = layout,
-            line = line,
-            localX = layout.getLineLeft(line),
-          )
-        val range = hit.wordRangesOnLine(locale).firstOrNull()?.range ?: return@forEach
-        return page.selectionFrom(
-          anchor = SelectionEndpoint(selection.entryIndex, selection.anchorRange),
-          focus = SelectionEndpoint(indexedEntry.index, range),
-          horizontalMarginPx = horizontalMarginPx,
-          verticalMarginPx = verticalMarginPx,
-        )
-      }
-    }
-    return null
-  }
+  ): TextSelection? =
+    page.pageEdgeSelection(
+      atEnd = false,
+      anchor = SelectionEndpoint(selection.entryIndex, selection.anchorRange),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      locale = locale,
+    )
 
   fun updateSelectionToPageEnd(
     page: ReaderPage,
@@ -245,23 +180,46 @@ internal object ReaderSelector {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     locale: Locale = Locale.getDefault(),
+  ): TextSelection? =
+    page.pageEdgeSelection(
+      atEnd = true,
+      anchor = SelectionEndpoint(selection.entryIndex, selection.anchorRange),
+      horizontalMarginPx = horizontalMarginPx,
+      verticalMarginPx = verticalMarginPx,
+      locale = locale,
+    )
+
+  /**
+   * Selection whose focus is the first word on the page (`atEnd = false`) or the last (`atEnd =
+   * true`). A null [anchor] seeds a fresh selection at the found word; otherwise the found word
+   * extends the existing anchor.
+   */
+  private fun ReaderPage.pageEdgeSelection(
+    atEnd: Boolean,
+    anchor: SelectionEndpoint?,
+    horizontalMarginPx: Float,
+    verticalMarginPx: Float,
+    locale: Locale,
   ): TextSelection? {
-    page.entries.withIndex().reversed().forEach { indexedEntry ->
-      val entry = indexedEntry.value
-      val layout = entry.textLayout() ?: return@forEach
-      entry.visibleLineRange(layout).reversed().forEach { line ->
+    val indexedEntries = entries.withIndex().let { if (atEnd) it.reversed() else it.toList() }
+    for ((entryIndex, entry) in indexedEntries) {
+      val layout = entry.textLayout() ?: continue
+      val lines = entry.visibleLineRange(layout).let { if (atEnd) it.reversed() else it }
+      for (line in lines) {
         val hit =
           TextHit(
-            entryIndex = indexedEntry.index,
+            entryIndex = entryIndex,
             entry = entry,
             layout = layout,
             line = line,
-            localX = layout.getLineRight(line),
+            localX = if (atEnd) layout.getLineRight(line) else layout.getLineLeft(line),
           )
-        val range = hit.wordRangesOnLine(locale).lastOrNull()?.range ?: return@forEach
-        return page.selectionFrom(
-          anchor = SelectionEndpoint(selection.entryIndex, selection.anchorRange),
-          focus = SelectionEndpoint(indexedEntry.index, range),
+        val matches = hit.wordRangesOnLine(locale)
+        val range = (if (atEnd) matches.lastOrNull() else matches.firstOrNull())?.range ?: continue
+        val focus = SelectionEndpoint(entryIndex, range)
+        return selectionFrom(
+          anchor = anchor ?: focus,
+          focus = focus,
           horizontalMarginPx = horizontalMarginPx,
           verticalMarginPx = verticalMarginPx,
         )

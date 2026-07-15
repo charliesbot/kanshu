@@ -87,7 +87,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_hitsExpectedWordInFullBlock() {
+  fun startSelectionAt_hitsExpectedWordInFullBlock() {
     val fixture = layoutDocument("Alpha beta gamma.")
     val entry = fixture.page.entries.single() as PageEntry.FullBlock
     val alphaOffset = entry.layout.text.indexOf("Alpha")
@@ -101,7 +101,7 @@ class ReaderSelectionTest {
         (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,
@@ -132,7 +132,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_accountsForSplitBlockFirstLineOffset() {
+  fun startSelectionAt_accountsForSplitBlockFirstLineOffset() {
     val blocks =
       listOf(ParagraphBlock(listOf(TextLeaf(List(80) { "target line $it" }.joinToString("\n")))))
     val fixture =
@@ -160,7 +160,7 @@ class ReaderSelectionTest {
         splitEntry.firstLineTopPx + 1f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,
@@ -194,7 +194,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_ignoresTouchesBeforeTextColumn() {
+  fun startSelectionAt_ignoresTouchesBeforeTextColumn() {
     val fixture = layoutDocument("Alpha beta gamma.")
     val entry = fixture.page.entries.single() as PageEntry.FullBlock
     val touchX = fixture.horizontalMarginPx + entry.drawOffsetXPx - 4f
@@ -204,7 +204,7 @@ class ReaderSelectionTest {
         (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,
@@ -217,7 +217,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_ignoresTouchesBetweenWords() {
+  fun startSelectionAt_ignoresTouchesBetweenWords() {
     val fixture = layoutDocument("Alpha beta gamma.")
     val entry = fixture.page.entries.single() as PageEntry.FullBlock
     val alphaEndOffset = entry.layout.text.indexOf(" ")
@@ -231,7 +231,7 @@ class ReaderSelectionTest {
         (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,
@@ -244,7 +244,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_ignoresTouchesAfterLineText() {
+  fun startSelectionAt_ignoresTouchesAfterLineText() {
     val fixture = layoutDocument("Alpha")
     val entry = fixture.page.entries.single() as PageEntry.FullBlock
     val touchX =
@@ -258,7 +258,7 @@ class ReaderSelectionTest {
         (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,
@@ -271,7 +271,7 @@ class ReaderSelectionTest {
   }
 
   @Test
-  fun selectWordAt_hitsWordAtTrailingInsertionOffset() {
+  fun startSelectionAt_hitsWordAtTrailingInsertionOffset() {
     val fixture = layoutDocument("Alpha")
     val entry = fixture.page.entries.single() as PageEntry.FullBlock
     val touchX =
@@ -284,7 +284,7 @@ class ReaderSelectionTest {
         (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
 
     val selection =
-      ReaderSelector.selectWordAt(
+      ReaderSelector.startSelectionAt(
         page = fixture.page,
         xPx = touchX,
         yPx = touchY,

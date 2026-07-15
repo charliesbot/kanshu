@@ -52,9 +52,7 @@ object EpubParser {
    */
   fun stylesheetHrefs(xhtml: String, baseHref: String? = null): List<String> {
     if (xhtml.isBlank()) return emptyList()
-    return Jsoup.parse(xhtml).select("link[rel=stylesheet]").mapNotNull { link ->
-      link.attr("href").trim().takeIf { it.isNotEmpty() }?.let { resolveHref(it, baseHref) }
-    }
+    return Jsoup.parse(xhtml).stylesheetLinkHrefs(baseHref)
   }
 
   private fun extractLanguage(document: Document): String? =
@@ -66,3 +64,9 @@ object EpubParser {
       )
       .firstOrNull { !it.isNullOrBlank() }
 }
+
+/** Stylesheet hrefs linked by the document, resolved to publication-root-relative paths. */
+internal fun Document.stylesheetLinkHrefs(baseHref: String?): List<String> =
+  select("link[rel=stylesheet]").mapNotNull { link ->
+    link.attr("href").trim().takeIf { it.isNotEmpty() }?.let { resolveHref(it, baseHref) }
+  }

@@ -23,12 +23,47 @@ class ReaderLayoutEngine {
     val contentWidthPx = (viewport.widthPx - horizontalMarginPx * 2).toInt().coerceAtLeast(1)
     val contentHeightPx = (viewport.heightPx - verticalMarginPx * 2).coerceAtLeast(1f)
 
+    val measuredBlocks =
+      measureBlocks(
+        document = document,
+        viewport = viewport,
+        contentWidthPx = contentWidthPx,
+        contentHeightPx = contentHeightPx,
+        justify = justify,
+        styleResolver = styleResolver,
+        imageBounds = imageBounds,
+        shouldContinue = shouldContinue,
+      ) ?: return emptyList()
+
+    if (measuredBlocks.isEmpty()) {
+      return listOf(ReaderPage(emptyList()))
+    }
+
+    val paginator = Paginator(contentWidthPx, contentHeightPx)
+    measuredBlocks.forEach { measured ->
+      if (!shouldContinue()) return emptyList()
+      paginator.add(measured)
+    }
+    return paginator.build()
+  }
+
+  /** Measures every block into a page-agnostic [MeasuredBlock], or null when aborted. */
+  private fun measureBlocks(
+    document: ReaderDocument,
+    viewport: ReaderViewport,
+    contentWidthPx: Int,
+    contentHeightPx: Float,
+    justify: Boolean,
+    styleResolver: (ReaderBlock) -> BlockStyle?,
+    imageBounds: (String) -> ImageBounds?,
+    shouldContinue: () -> Boolean,
+  ): List<MeasuredBlock>? {
     val measuredBlocks = mutableListOf<MeasuredBlock>()
     var nextSyntheticSelectionId = document.blocks.size
     fun syntheticSelectionId(): Int = nextSyntheticSelectionId++
 
     document.blocks.forEachIndexed { index, block ->
-      if (!shouldContinue()) return emptyList()
+      if (!shouldContinue()) return null
       val style = styleResolver(block) ?: return@forEachIndexed
       if (block is HorizontalRule) {
         measuredBlocks.add(
@@ -79,222 +114,221 @@ class ReaderLayoutEngine {
         )
       )
     }
+    return measuredBlocks
+  }
+}
 
-    if (measuredBlocks.isEmpty()) {
-      return listOf(ReaderPage(emptyList()))
-    }
+/**
+ * Flows measured blocks into pages: tracks the y cursor and collapsed vertical margins on the
+ * current page, splits text blocks across page boundaries, and keeps rules and images atomic.
+ */
+private class Paginator(private val contentWidthPx: Int, private val contentHeightPx: Float) {
+  private val pages = mutableListOf<ReaderPage>()
+  private var currentEntries = mutableListOf<PageEntry>()
+  private var yCursor = 0f
+  private var previousMarginBottom = 0f
 
-    val pages = mutableListOf<ReaderPage>()
-    var currentEntries = mutableListOf<PageEntry>()
-    var yCursor = 0f
-    var previousMarginBottom = 0f
+  fun add(measured: MeasuredBlock) {
+    val topMargin =
+      if (currentEntries.isEmpty()) 0f else max(previousMarginBottom, measured.style.marginTopPx)
+    val blockY = yCursor + topMargin
+    val remainingHeight = contentHeightPx - blockY
 
-    fun flushPage() {
-      if (currentEntries.isNotEmpty()) {
-        pages.add(ReaderPage(currentEntries.toList()))
-        currentEntries = mutableListOf()
-      }
-      yCursor = 0f
-      previousMarginBottom = 0f
-    }
-
-    fun depthOffsetX(style: BlockStyle, depth: Int): Float = depth * style.prefixWidthPx
-
-    fun drawOffsetX(measured: MeasuredBlock.Text): Float =
-      measured.style.indentPx +
-        measured.style.prefixWidthPx +
-        depthOffsetX(measured.style, measured.depth)
-
-    fun drawOffsetX(style: BlockStyle): Float = style.indentPx + style.prefixWidthPx
-
-    fun addFullBlock(measured: MeasuredBlock.Text, yOffset: Float) {
-      currentEntries.add(
-        PageEntry.FullBlock(
-          blockIndex = measured.blockIndex,
-          selectionId = measured.selectionId,
-          yOffsetPx = yOffset,
-          visibleHeightPx = measured.layout.height.toFloat(),
-          drawOffsetXPx = drawOffsetX(measured),
-          textJustified = measured.textJustified,
-          leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
-          leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
-          markerText = measured.markerText,
-          markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
-          layout = measured.layout,
-        )
-      )
-      yCursor = yOffset + measured.layout.height
-      previousMarginBottom = measured.style.marginBottomPx
-    }
-
-    fun addSplitBlock(
-      measured: MeasuredBlock.Text,
-      yOffset: Float,
-      lineRange: IntRange,
-      visibleHeight: Float,
-      firstLineTop: Float,
-    ) {
-      currentEntries.add(
-        PageEntry.SplitBlock(
-          blockIndex = measured.blockIndex,
-          selectionId = measured.selectionId,
-          yOffsetPx = yOffset,
-          visibleHeightPx = visibleHeight,
-          drawOffsetXPx = drawOffsetX(measured),
-          textJustified = measured.textJustified,
-          leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
-          leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
-          markerText = if (lineRange.first == 0) measured.markerText else null,
-          markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
-          layout = measured.layout,
-          lineRange = lineRange,
-          firstLineTopPx = firstLineTop,
-        )
-      )
-      yCursor = yOffset + visibleHeight
-      previousMarginBottom = measured.style.marginBottomPx
-    }
-
-    fun addRule(measured: MeasuredBlock.Rule, yOffset: Float) {
-      currentEntries.add(
-        PageEntry.HorizontalRule(
-          blockIndex = measured.blockIndex,
-          yOffsetPx = yOffset,
-          visibleHeightPx = measured.heightPx,
-          drawOffsetXPx = drawOffsetX(measured.style),
-        )
-      )
-      yCursor = yOffset + measured.heightPx
-      previousMarginBottom = measured.style.marginBottomPx
-    }
-
-    fun addImage(measured: MeasuredBlock.Image, yOffset: Float) {
-      val centerOffsetPx = ((contentWidthPx - measured.widthPx) / 2f).coerceAtLeast(0f)
-      currentEntries.add(
-        PageEntry.Image(
-          blockIndex = measured.blockIndex,
-          yOffsetPx = yOffset,
-          visibleHeightPx = measured.heightPx,
-          drawOffsetXPx = drawOffsetX(measured.style) + centerOffsetPx,
-          resourceHref = measured.resourceHref,
-          alt = measured.alt,
-          widthPx = measured.widthPx,
-        )
-      )
-      yCursor = yOffset + measured.heightPx
-      previousMarginBottom = measured.style.marginBottomPx
-    }
-
-    fun firstLineHeight(layout: StaticLayout, lineStart: Int): Float =
-      layout.getLineBottom(lineStart).toFloat() - layout.getLineTop(lineStart).toFloat()
-
-    fun lastLineThatFits(layout: StaticLayout, lineStart: Int, availableHeight: Float): Int {
-      var lineEnd = lineStart
-      val firstLineTop = layout.getLineTop(lineStart).toFloat()
-      while (lineEnd < layout.lineCount - 1) {
-        val height = layout.getLineBottom(lineEnd + 1).toFloat() - firstLineTop
-        if (height > availableHeight) break
-        lineEnd++
-      }
-      return lineEnd
-    }
-
-    fun canFitAnyLine(layout: StaticLayout, lineStart: Int, availableHeight: Float): Boolean {
-      if (availableHeight <= 0f) return false
-      return firstLineHeight(layout, lineStart) <= availableHeight
-    }
-
-    fun addSplitBlockAcrossPages(measured: MeasuredBlock.Text, firstPageYOffset: Float = 0f) {
-      val layout = measured.layout
-      var lineStart = 0
-      var yOffset = firstPageYOffset
-      while (lineStart < layout.lineCount) {
-        val availableHeight = contentHeightPx - yOffset
-        if (!canFitAnyLine(layout, lineStart, availableHeight) && currentEntries.isNotEmpty()) {
+    when (measured) {
+      is MeasuredBlock.Image -> {
+        if (measured.heightPx > remainingHeight && currentEntries.isNotEmpty()) {
           flushPage()
-          yOffset = 0f
-          continue
+          addImage(measured, 0f)
+        } else {
+          addImage(measured, blockY)
         }
-
-        val lineEnd = lastLineThatFits(layout, lineStart, availableHeight)
-        val firstLineTop = layout.getLineTop(lineStart).toFloat()
-        val visibleHeight = layout.getLineBottom(lineEnd).toFloat() - firstLineTop
-        addSplitBlock(measured, yOffset, lineStart..lineEnd, visibleHeight, firstLineTop)
-        lineStart = lineEnd + 1
-        if (lineStart < layout.lineCount) {
+      }
+      is MeasuredBlock.Rule -> {
+        if (measured.heightPx > remainingHeight && currentEntries.isNotEmpty()) {
           flushPage()
-          yOffset = 0f
+          addRule(measured, 0f)
+        } else {
+          addRule(measured, blockY)
+        }
+      }
+      is MeasuredBlock.Text -> {
+        if (measured.heightPx <= remainingHeight) {
+          addFullBlock(measured, blockY)
+        } else {
+          addOverflowingBlock(measured, blockY, remainingHeight)
         }
       }
     }
+  }
 
-    fun addOverflowingBlock(measured: MeasuredBlock.Text, blockY: Float, remainingHeight: Float) {
-      if (
-        currentEntries.isNotEmpty() &&
-          canFitAnyLine(measured.layout, lineStart = 0, remainingHeight)
-      ) {
-        addSplitBlockAcrossPages(measured, blockY)
-        return
-      }
-
-      if (currentEntries.isNotEmpty()) {
-        flushPage()
-      }
-
-      if (measured.layout.height.toFloat() <= contentHeightPx) {
-        addFullBlock(measured, 0f)
-      } else {
-        addSplitBlockAcrossPages(measured)
-      }
-    }
-
-    fun addMeasuredBlock(measured: MeasuredBlock) {
-      val style = measured.style
-      val blockHeight =
-        when (measured) {
-          is MeasuredBlock.Image -> measured.heightPx
-          is MeasuredBlock.Text -> measured.layout.height.toFloat()
-          is MeasuredBlock.Rule -> measured.heightPx
-        }
-      val topMargin =
-        if (currentEntries.isEmpty()) 0f else max(previousMarginBottom, style.marginTopPx)
-      val blockY = yCursor + topMargin
-      val remainingHeight = contentHeightPx - blockY
-
-      when (measured) {
-        is MeasuredBlock.Image -> {
-          if (blockHeight > remainingHeight && currentEntries.isNotEmpty()) {
-            flushPage()
-            addImage(measured, 0f)
-          } else {
-            addImage(measured, blockY)
-          }
-        }
-        is MeasuredBlock.Rule -> {
-          if (blockHeight > remainingHeight && currentEntries.isNotEmpty()) {
-            flushPage()
-            addRule(measured, 0f)
-          } else {
-            addRule(measured, blockY)
-          }
-        }
-        is MeasuredBlock.Text -> {
-          if (blockHeight <= remainingHeight) {
-            addFullBlock(measured, blockY)
-          } else {
-            addOverflowingBlock(measured, blockY, remainingHeight)
-          }
-        }
-      }
-    }
-
-    measuredBlocks.forEach { measured ->
-      if (!shouldContinue()) return emptyList()
-      addMeasuredBlock(measured)
-    }
-
+  fun build(): List<ReaderPage> {
     flushPage()
     return pages.ifEmpty { listOf(ReaderPage(emptyList())) }
+  }
+
+  private fun flushPage() {
+    if (currentEntries.isNotEmpty()) {
+      pages.add(ReaderPage(currentEntries.toList()))
+      currentEntries = mutableListOf()
+    }
+    yCursor = 0f
+    previousMarginBottom = 0f
+  }
+
+  /** Appends the entry and advances the cursor past it, remembering its bottom margin. */
+  private fun append(entry: PageEntry, marginBottomPx: Float) {
+    currentEntries.add(entry)
+    yCursor = entry.yOffsetPx + entry.visibleHeightPx
+    previousMarginBottom = marginBottomPx
+  }
+
+  private fun depthOffsetX(style: BlockStyle, depth: Int): Float = depth * style.prefixWidthPx
+
+  private fun drawOffsetX(measured: MeasuredBlock.Text): Float =
+    measured.style.indentPx +
+      measured.style.prefixWidthPx +
+      depthOffsetX(measured.style, measured.depth)
+
+  private fun drawOffsetX(style: BlockStyle): Float = style.indentPx + style.prefixWidthPx
+
+  private fun addFullBlock(measured: MeasuredBlock.Text, yOffset: Float) {
+    append(
+      PageEntry.FullBlock(
+        blockIndex = measured.blockIndex,
+        selectionId = measured.selectionId,
+        yOffsetPx = yOffset,
+        visibleHeightPx = measured.layout.height.toFloat(),
+        drawOffsetXPx = drawOffsetX(measured),
+        textJustified = measured.textJustified,
+        leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
+        leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
+        markerText = measured.markerText,
+        markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
+        layout = measured.layout,
+      ),
+      marginBottomPx = measured.style.marginBottomPx,
+    )
+  }
+
+  private fun addSplitBlock(
+    measured: MeasuredBlock.Text,
+    yOffset: Float,
+    lineRange: IntRange,
+    visibleHeight: Float,
+    firstLineTop: Float,
+  ) {
+    append(
+      PageEntry.SplitBlock(
+        blockIndex = measured.blockIndex,
+        selectionId = measured.selectionId,
+        yOffsetPx = yOffset,
+        visibleHeightPx = visibleHeight,
+        drawOffsetXPx = drawOffsetX(measured),
+        textJustified = measured.textJustified,
+        leadingRuleOffsetXPx = measured.style.leadingRuleOffsetXPx,
+        leadingRuleStrokeWidthPx = measured.style.leadingRuleStrokeWidthPx,
+        markerText = if (lineRange.first == 0) measured.markerText else null,
+        markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
+        layout = measured.layout,
+        lineRange = lineRange,
+        firstLineTopPx = firstLineTop,
+      ),
+      marginBottomPx = measured.style.marginBottomPx,
+    )
+  }
+
+  private fun addRule(measured: MeasuredBlock.Rule, yOffset: Float) {
+    append(
+      PageEntry.HorizontalRule(
+        blockIndex = measured.blockIndex,
+        yOffsetPx = yOffset,
+        visibleHeightPx = measured.heightPx,
+        drawOffsetXPx = drawOffsetX(measured.style),
+      ),
+      marginBottomPx = measured.style.marginBottomPx,
+    )
+  }
+
+  private fun addImage(measured: MeasuredBlock.Image, yOffset: Float) {
+    val centerOffsetPx = ((contentWidthPx - measured.widthPx) / 2f).coerceAtLeast(0f)
+    append(
+      PageEntry.Image(
+        blockIndex = measured.blockIndex,
+        yOffsetPx = yOffset,
+        visibleHeightPx = measured.heightPx,
+        drawOffsetXPx = drawOffsetX(measured.style) + centerOffsetPx,
+        resourceHref = measured.resourceHref,
+        alt = measured.alt,
+        widthPx = measured.widthPx,
+      ),
+      marginBottomPx = measured.style.marginBottomPx,
+    )
+  }
+
+  private fun firstLineHeight(layout: StaticLayout, lineStart: Int): Float =
+    layout.getLineBottom(lineStart).toFloat() - layout.getLineTop(lineStart).toFloat()
+
+  private fun lastLineThatFits(layout: StaticLayout, lineStart: Int, availableHeight: Float): Int {
+    var lineEnd = lineStart
+    val firstLineTop = layout.getLineTop(lineStart).toFloat()
+    while (lineEnd < layout.lineCount - 1) {
+      val height = layout.getLineBottom(lineEnd + 1).toFloat() - firstLineTop
+      if (height > availableHeight) break
+      lineEnd++
+    }
+    return lineEnd
+  }
+
+  private fun canFitAnyLine(layout: StaticLayout, lineStart: Int, availableHeight: Float): Boolean {
+    if (availableHeight <= 0f) return false
+    return firstLineHeight(layout, lineStart) <= availableHeight
+  }
+
+  private fun addSplitBlockAcrossPages(measured: MeasuredBlock.Text, firstPageYOffset: Float = 0f) {
+    val layout = measured.layout
+    var lineStart = 0
+    var yOffset = firstPageYOffset
+    while (lineStart < layout.lineCount) {
+      val availableHeight = contentHeightPx - yOffset
+      if (!canFitAnyLine(layout, lineStart, availableHeight) && currentEntries.isNotEmpty()) {
+        flushPage()
+        yOffset = 0f
+        continue
+      }
+
+      val lineEnd = lastLineThatFits(layout, lineStart, availableHeight)
+      val firstLineTop = layout.getLineTop(lineStart).toFloat()
+      val visibleHeight = layout.getLineBottom(lineEnd).toFloat() - firstLineTop
+      addSplitBlock(measured, yOffset, lineStart..lineEnd, visibleHeight, firstLineTop)
+      lineStart = lineEnd + 1
+      if (lineStart < layout.lineCount) {
+        flushPage()
+        yOffset = 0f
+      }
+    }
+  }
+
+  private fun addOverflowingBlock(
+    measured: MeasuredBlock.Text,
+    blockY: Float,
+    remainingHeight: Float,
+  ) {
+    if (
+      currentEntries.isNotEmpty() && canFitAnyLine(measured.layout, lineStart = 0, remainingHeight)
+    ) {
+      addSplitBlockAcrossPages(measured, blockY)
+      return
+    }
+
+    if (currentEntries.isNotEmpty()) {
+      flushPage()
+    }
+
+    if (measured.heightPx <= contentHeightPx) {
+      addFullBlock(measured, 0f)
+    } else {
+      addSplitBlockAcrossPages(measured)
+    }
   }
 }
 
@@ -362,6 +396,7 @@ private fun BlockStyle.withListDepth(depth: Int): BlockStyle =
 private sealed interface MeasuredBlock {
   val blockIndex: Int
   val style: BlockStyle
+  val heightPx: Float
 
   data class Text(
     override val blockIndex: Int,
@@ -371,12 +406,15 @@ private sealed interface MeasuredBlock {
     val textJustified: Boolean,
     val markerText: String? = null,
     val depth: Int = 0,
-  ) : MeasuredBlock
+  ) : MeasuredBlock {
+    override val heightPx: Float
+      get() = layout.height.toFloat()
+  }
 
   data class Rule(
     override val blockIndex: Int,
     override val style: BlockStyle,
-    val heightPx: Float,
+    override val heightPx: Float,
   ) : MeasuredBlock
 
   data class Image(
@@ -385,7 +423,7 @@ private sealed interface MeasuredBlock {
     val resourceHref: String,
     val alt: String?,
     val widthPx: Float,
-    val heightPx: Float,
+    override val heightPx: Float,
   ) : MeasuredBlock
 }
 
