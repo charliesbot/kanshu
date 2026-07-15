@@ -9,6 +9,8 @@ interface ReaderPreferencesRepository {
 
   suspend fun setFontScale(scale: Float)
 
+  suspend fun setBoldness(value: Float)
+
   suspend fun setMargins(margins: ReaderMargins)
 
   suspend fun setAlignment(alignment: ReaderAlignment)

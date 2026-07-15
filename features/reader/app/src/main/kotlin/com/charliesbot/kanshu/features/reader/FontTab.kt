@@ -42,6 +42,7 @@ fun FontTab(
   prefs: ReaderPreferences,
   onFontChange: (ReaderFont) -> Unit,
   onFontScaleChange: (Float) -> Unit,
+  onBoldnessChange: (Float) -> Unit,
 ) {
   Column(Modifier.fillMaxWidth()) {
     Row(
@@ -56,12 +57,23 @@ fun FontTab(
     }
     KanshuDivider()
     KanshuStepperSlider(
+      label = stringResource(R.string.reader_prefs_font_size),
       value = prefs.fontScale,
       onValueChange = onFontScaleChange,
       valueRange = ReaderPreferences.SCALE_MIN..ReaderPreferences.SCALE_MAX,
       step = ReaderPreferences.SCALE_STEP,
       decreaseContentDescription = stringResource(R.string.reader_prefs_font_size_smaller),
       increaseContentDescription = stringResource(R.string.reader_prefs_font_size_larger),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+    )
+    KanshuStepperSlider(
+      label = stringResource(R.string.reader_prefs_font_bold),
+      value = prefs.boldness,
+      onValueChange = onBoldnessChange,
+      valueRange = ReaderPreferences.BOLDNESS_MIN..ReaderPreferences.BOLDNESS_MAX,
+      step = ReaderPreferences.BOLDNESS_STEP,
+      decreaseContentDescription = stringResource(R.string.reader_prefs_bold_lighter),
+      increaseContentDescription = stringResource(R.string.reader_prefs_bold_bolder),
       modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
     )
   }
@@ -125,6 +137,7 @@ private fun FontTabPreview() {
       prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
       onFontChange = {},
       onFontScaleChange = {},
+      onBoldnessChange = {},
     )
   }
 }

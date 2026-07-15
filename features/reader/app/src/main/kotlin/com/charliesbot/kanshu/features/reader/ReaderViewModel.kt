@@ -77,6 +77,10 @@ class ReaderViewModel(
     viewModelScope.launch { preferencesRepository.setFontScale(scale) }
   }
 
+  fun setBoldness(value: Float) {
+    viewModelScope.launch { preferencesRepository.setBoldness(value) }
+  }
+
   fun setMargins(margins: ReaderMargins) {
     viewModelScope.launch { preferencesRepository.setMargins(margins) }
   }

@@ -22,6 +22,11 @@ class ReaderPreferencesRepositoryImpl(private val dataStore: DataStore<Preferenc
       val storedScale =
         prefs[SCALE_KEY]?.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
           ?: ReaderPreferences().fontScale
+      val storedBoldness =
+        prefs[BOLDNESS_KEY]?.coerceIn(
+          ReaderPreferences.BOLDNESS_MIN,
+          ReaderPreferences.BOLDNESS_MAX,
+        ) ?: ReaderPreferences().boldness
       val storedMargins =
         prefs[MARGINS_KEY]?.let(::marginsFromStorage) ?: ReaderPreferences().margins
       val storedAlignment =
@@ -49,6 +54,7 @@ class ReaderPreferencesRepositoryImpl(private val dataStore: DataStore<Preferenc
       ReaderPreferences(
         font = storedFont,
         fontScale = storedScale,
+        boldness = storedBoldness,
         margins = storedMargins,
         alignment = storedAlignment,
         lineSpacing = storedLineSpacing,
@@ -65,6 +71,11 @@ class ReaderPreferencesRepositoryImpl(private val dataStore: DataStore<Preferenc
   override suspend fun setFontScale(scale: Float) {
     val clamped = scale.coerceIn(ReaderPreferences.SCALE_MIN, ReaderPreferences.SCALE_MAX)
     dataStore.edit { it[SCALE_KEY] = clamped }
+  }
+
+  override suspend fun setBoldness(value: Float) {
+    val clamped = value.coerceIn(ReaderPreferences.BOLDNESS_MIN, ReaderPreferences.BOLDNESS_MAX)
+    dataStore.edit { it[BOLDNESS_KEY] = clamped }
   }
 
   override suspend fun setMargins(margins: ReaderMargins) {
@@ -125,6 +136,7 @@ class ReaderPreferencesRepositoryImpl(private val dataStore: DataStore<Preferenc
   private companion object {
     val FONT_KEY = stringPreferencesKey("font")
     val SCALE_KEY = floatPreferencesKey("font_scale")
+    val BOLDNESS_KEY = floatPreferencesKey("boldness")
     val MARGINS_KEY = stringPreferencesKey("margins")
     val ALIGNMENT_KEY = stringPreferencesKey("alignment")
     val LINE_SPACING_KEY = floatPreferencesKey("line_spacing")

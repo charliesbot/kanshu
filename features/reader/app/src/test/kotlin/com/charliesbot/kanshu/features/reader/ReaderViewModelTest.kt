@@ -972,6 +972,8 @@ private class FakeReaderPreferencesRepository(initial: ReaderPreferences = Reade
 
   override suspend fun setFontScale(scale: Float) = state.update { it.copy(fontScale = scale) }
 
+  override suspend fun setBoldness(value: Float) = state.update { it.copy(boldness = value) }
+
   override suspend fun setMargins(margins: ReaderMargins) = state.update {
     it.copy(margins = margins)
   }

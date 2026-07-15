@@ -67,7 +67,10 @@ fun ReaderPageViewer(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
-  val typeface = remember(preferences.font) { loadReaderTypeface(context.assets, preferences.font) }
+  val typeface =
+    remember(preferences.font, preferences.boldness) {
+      loadReaderTypeface(context.assets, preferences.font, preferences.boldness)
+    }
   val selectionLocale = remember(document.language) { document.language.toSelectionLocale() }
 
   BoxWithConstraints(modifier = modifier) {
@@ -469,6 +472,33 @@ private fun ReaderPageAndroidView(
 private fun loadReaderTypeface(
   assets: android.content.res.AssetManager,
   font: ReaderFont,
+  boldness: Float,
 ): Typeface =
-  runCatching { Typeface.createFromAsset(assets, font.regularAssetPath) }
+  runCatching {
+      val boldPath = font.boldAssetPath
+      if (boldness > 0f && boldPath != null) {
+        // Static font: no wght axis; the bold file is the whole boldness range.
+        Typeface.createFromAsset(assets, boldPath)
+      } else {
+        checkNotNull(
+          Typeface.Builder(assets, font.regularAssetPath)
+            .setFontVariationSettings("'wght' ${readerFontWeight(boldness, font.maxFontWeight)}")
+            .build()
+        )
+      }
+    }
     .getOrElse { Typeface.SERIF }
+
+/**
+ * Per-step positions along the font's wght axis, calibrated against Kindle on-device: the first
+ * step takes the biggest jump (Kindle's level 1 ≈ 600 on a 400..900 axis) and later steps compress,
+ * since weight differences read smaller at the heavy end. The curve normalizes into each font's
+ * real axis range so every slider step changes rendering — fonts with short axes (LibreBaskerville
+ * tops out at 700) get subtler steps instead of dead taps.
+ */
+private val BOLDNESS_CURVE = floatArrayOf(0f, 0.4f, 0.6f, 0.8f, 0.9f, 1f)
+
+internal fun readerFontWeight(boldness: Float, maxFontWeight: Int = 900): Int {
+  val step = (boldness * 10f).roundToInt().coerceIn(0, BOLDNESS_CURVE.lastIndex)
+  return 400 + ((maxFontWeight - 400) * BOLDNESS_CURVE[step]).roundToInt()
+}

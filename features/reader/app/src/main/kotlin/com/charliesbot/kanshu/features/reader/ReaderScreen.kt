@@ -121,6 +121,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
               ReaderPrefsCallbacks(
                 onFontChange = viewModel::setFont,
                 onFontScaleChange = viewModel::setFontScale,
+                onBoldnessChange = viewModel::setBoldness,
                 onMarginsChange = viewModel::setMargins,
                 onAlignmentChange = viewModel::setAlignment,
                 onLineSpacingChange = viewModel::setLineSpacing,
