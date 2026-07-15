@@ -36,10 +36,7 @@ internal object StylingCensusCollector {
       }
     }
 
-    val stylesheetHrefs =
-      document.select("link[rel=stylesheet]").mapNotNull { link ->
-        link.attr("href").trim().takeIf { it.isNotEmpty() }?.let { resolveHref(it, baseHref) }
-      }
+    val stylesheetHrefs = document.stylesheetLinkHrefs(baseHref)
 
     val stylesheetPropertyCounts = linkedMapOf<String, Int>()
     val atRuleCounts = linkedMapOf<String, Int>()
