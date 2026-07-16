@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.parser.css
 
 import com.charliesbot.kanshu.navigator.model.BlockAlignment
+import com.charliesbot.kanshu.navigator.model.BlockSpacing
 import org.jsoup.nodes.Element
 
 /**
@@ -12,7 +13,19 @@ internal data class ResolvedStyle(
   val italic: Boolean? = null,
   val bold: Boolean? = null,
   val textAlign: CssTextAlign? = null,
+  // Structural spacing, normalized to em and clamped at application time (see
+  // docs/PRD_PUBLISHER_STYLES.md § Structural Spacing). Margins do NOT inherit per CSS —
+  // InheritedStyleResolver strips them before passing a parent style down; text-indent inherits.
+  val marginTopEm: Float? = null,
+  val marginBottomEm: Float? = null,
+  val marginStartEm: Float? = null,
+  val marginEndEm: Float? = null,
+  val textIndentEm: Float? = null,
 ) {
+  /** The subset that flows to children during the DOM walk — margins are non-inheriting. */
+  fun inheritable(): ResolvedStyle =
+    copy(marginTopEm = null, marginBottomEm = null, marginStartEm = null, marginEndEm = null)
+
   /**
    * Publisher block alignment for rendering. `Justify` maps to null — the reader's default already
    * justifies, so it is not a signal; `Start` survives as an explicit opt-out of justification
@@ -26,6 +39,17 @@ internal data class ResolvedStyle(
       CssTextAlign.Justify,
       null -> null
     }
+
+  /** Publisher structural spacing for the block model, or null when nothing was declared. */
+  fun blockSpacing(): BlockSpacing? =
+    BlockSpacing(
+        marginTopEm = marginTopEm,
+        marginBottomEm = marginBottomEm,
+        marginStartEm = marginStartEm,
+        marginEndEm = marginEndEm,
+        textIndentEm = textIndentEm,
+      )
+      .takeUnless { it == BlockSpacing() }
 
   companion object {
     val None = ResolvedStyle()
@@ -69,14 +93,14 @@ internal class CssStyleResolver(stylesheets: List<CssStylesheet>) {
   }
 
   private fun parseInlineDeclarations(styleAttr: String): List<CssDeclaration> =
-    styleAttr.split(';').mapNotNull { segment ->
+    styleAttr.split(';').flatMap { segment ->
       val property = segment.substringBefore(':', "").trim().lowercase()
       if (property.isEmpty() || !segment.contains(':') || property !in ALLOWLISTED_PROPERTIES) {
-        return@mapNotNull null
+        return@flatMap emptyList()
       }
       val value =
         segment.substringAfter(':').removeSuffixIgnoreCase("!important").trim().lowercase()
-      value.takeIf { it.isNotEmpty() }?.let { CssDeclaration(property, it) }
+      if (value.isEmpty()) emptyList() else expandCssDeclaration(property, value)
     }
 
   private fun String.removeSuffixIgnoreCase(suffix: String): String =
@@ -98,7 +122,7 @@ internal class InheritedStyleResolver(private val resolver: CssStyleResolver) {
     val parent = element.parent()
     val inherited =
       if (parent == null || parent.tagName() in NON_INHERITING_ROOTS) ResolvedStyle.None
-      else resolve(parent)
+      else resolve(parent).inheritable()
     return resolver.resolve(element, inherited).also { cache[element] = it }
   }
 
@@ -157,11 +181,47 @@ internal fun ResolvedStyle.applying(declarations: List<CssDeclaration>): Resolve
             "justify" -> resolved.copy(textAlign = CssTextAlign.Justify)
             else -> resolved
           }
+        "margin-top" ->
+          resolved.applyingLength(declaration.value, MAX_VERTICAL_MARGIN_EM) {
+            copy(marginTopEm = it)
+          }
+        "margin-bottom" ->
+          resolved.applyingLength(declaration.value, MAX_VERTICAL_MARGIN_EM) {
+            copy(marginBottomEm = it)
+          }
+        "margin-left" ->
+          resolved.applyingLength(declaration.value, MAX_HORIZONTAL_INSET_EM) {
+            copy(marginStartEm = it)
+          }
+        "margin-right" ->
+          resolved.applyingLength(declaration.value, MAX_HORIZONTAL_INSET_EM) {
+            copy(marginEndEm = it)
+          }
+        "text-indent" ->
+          resolved.applyingLength(declaration.value, MAX_TEXT_INDENT_EM) {
+            copy(textIndentEm = it)
+          }
         else -> resolved
       }
   }
   return resolved
 }
+
+/**
+ * Parses [value] as a CSS length, clamps it to [maxEm], and applies it via [set]; no-signal values
+ * leave the style unchanged.
+ */
+private fun ResolvedStyle.applyingLength(
+  value: String,
+  maxEm: Float,
+  set: ResolvedStyle.(Float) -> ResolvedStyle,
+): ResolvedStyle = parseCssLengthToEm(value)?.let { set(it.coerceAtMost(maxEm)) } ?: this
+
+// Normalization clamps from docs/PRD_PUBLISHER_STYLES.md § Structural Spacing. Lengths are
+// already non-negative (parseCssLengthToEm treats negatives as no signal).
+private const val MAX_VERTICAL_MARGIN_EM = 2f
+private const val MAX_TEXT_INDENT_EM = 3f
+private const val MAX_HORIZONTAL_INSET_EM = 6f
 
 private fun mapFontWeight(value: String): Boolean? =
   when {

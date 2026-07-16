@@ -73,12 +73,12 @@ If a tripwire fires, the escape hatch is not a rewrite: it is **embedding crengi
 
 Extends the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`:
 
-| Owner     | Properties                                                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Reader    | Font family, font size, line height, page margins, justification default, paragraph spacing, word spacing, letter spacing.       |
-| Publisher | Structural semantics (headings, quotes, lists, emphasis) **plus, via this PRD:** emphasis and block alignment expressed in CSS. |
+| Owner     | Properties                                                                                                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reader    | Font family, font size, line height, page margins, justification default, word spacing, letter spacing. Paragraph spacing becomes an **additive** preference over publisher rhythm (see § Structural Spacing). |
+| Publisher | Structural semantics (headings, quotes, lists, emphasis) **plus, via this PRD:** emphasis, block alignment, and structural spacing (vertical margins, first-line indent, block insets) expressed in CSS.  |
 
-Publisher signals refine structure; they never override reader typography. `text-align: center` on a scene break wins over the justification default because it is structural intent; `font-size: 0.9em` on body text loses because size is reader-owned.
+Publisher signals refine structure; they never override reader typography. `text-align: center` on a scene break wins over the justification default because it is structural intent; `margin-top` on a copyright paragraph wins because vertical rhythm is structural intent; `font-size: 0.9em` on body text loses because size is reader-owned.
 
 A user-visible **publisher styles toggle** (KOReader's idea) is a candidate future product feature once the engine exists; it is one boolean at parse time. Not in scope for the first slices.
 
@@ -183,13 +183,33 @@ Same posture as the XHTML parser: styling never crashes and never produces visib
 
 \* `text-align: justify` maps to null (the reader's default already justifies); `left` maps to `Start` only when the reader default is justify — it is the publisher opting a block out of justification (poetry, code), which is structural intent.
 
-### v2 Candidates (admitted only by census data)
+### v2 Allowlist: Structural Spacing (census-admitted July 2026)
 
-- `text-indent` — first-line indents; interacts with the reader paragraph-model discussion (separate typography PRD territory).
-- Margin-based blockquote inference — `margin-left` on paragraphs as quote signal when `<blockquote>` is absent.
+The census did its job. Evidence from a representative InDesign export (Hachette, `idGeneratedStyles.css`, single sheet shared by all 49 spine items): **77 `margin-top`, 75 `margin-bottom`, 73 `text-indent`, 62 `margin-left`, 60 `margin-right`, 19 `margin` shorthand** declarations — against zero honored. On-device Kindle side-by-side (July 2026) showed the consequences per page:
+
+- **Copyright page:** paragraph classes split into spaced (`CRTS`, `margin-top`) and glued (`CRT`, margin 0) variants. Kindle renders the publisher's rhythm — grouped address blocks, separated legal paragraphs. Kanshu flattened both into one uniform gap.
+- **Chapter bodies:** body text (`TX`) separates by first-line indent with zero vertical margin; the chapter opener (`COTX`) is the unindented exception. Kindle shows the classic indent convention; Kanshu showed no indents and a uniform gap the publisher never asked for.
+
+A single reader-side spacing constant cannot reproduce either page — the spacing *is* per-paragraph publisher data. This admits the structural spacing set:
+
+| Property                                          | Maps to                                                | Renders via                                  |
+| ------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------- |
+| `margin-top`, `margin-bottom` (+ shorthand vertical components) | Block vertical rhythm                                   | Existing `BlockStyle.marginTop/BottomPx`      |
+| `text-indent`                                     | First-line indent                                       | `StaticLayout.Builder.setIndents` (first line indented, remaining lines 0) |
+| `margin-left`, `margin-right` (+ shorthand components) | Block insets (quotes, verse, letters without `<blockquote>`) | Existing `indentPx` inset model               |
+
+**Normalization is the core design piece** (the actual Kindle behavior — honor, then clamp): units resolve to em at parse time (`em`/`rem` as-is, `pt` ÷ 12, `px` ÷ 16); vertical margins clamp to `0..2em`, `text-indent` to `0..3em`, horizontal insets to `0..6em` cumulative. Percentages (width-relative, not font-relative), negative values, `auto`, and unparseable lengths degrade to "no signal," never break pagination. Resolved values are stored on blocks at parse time like `BlockAlignment` — nothing downstream learns CSS exists. Headings honor publisher margins and insets but not `text-indent` (indented headings are not a book convention worth the surface).
+
+Cascade note: unlike every v1 property, **margins do not inherit** in CSS — they resolve declared-only (the `resolveDeclared` path), while `text-indent` inherits normally. The inheritance table in § Cascade Semantics is v1-specific.
+
+**Unstyled-book defaults (product decision, ships with the `text-indent` slice):** books with no spacing signals get Kindle's fallback convention — first-line indent on body paragraphs, no vertical gap — replacing today's flat gap. The reader's paragraph-spacing slider becomes additive on top of publisher/default rhythm, defaulting to 0. This supersedes the flat per-block-type spacing table in `docs/PRD_NATIVE_READER.md` § Block Spacing Model for blocks carrying publisher spacing.
+
+### v3 Candidates (admitted only by census data)
+
 - `font-variant: small-caps` — `InlineStyle.SmallCaps` already exists, unused.
 - `vertical-align: super/sub` + `<sub>/<sup>` styling — currently unwrapped to plain text.
 - `text-decoration: underline` — rare in books outside links.
+- Relative `font-size` on headings/front matter — deferred indefinitely; touches pagination budgets for marginal gain.
 
 ### Never (tripwire territory, not backlog)
 
@@ -229,6 +249,14 @@ If a pathological book blows the stylesheet budget, the degradation policy appli
 
 **D+ — Data-gated growth.** One property per slice, census-justified, each with fixtures.
 
+Structural spacing (§ v2 Allowlist) lands as three D-series slices, in this order:
+
+**E — Publisher vertical margins.** `margin-top`/`margin-bottom` (+ shorthand vertical components) through the cascade onto blocks; `BlockStyleResolver` prefers publisher values over the reader constant. Acceptance: the copyright-page rhythm matches the Kindle side-by-side.
+
+**F — `text-indent` + unstyled-book defaults.** First-line indent via `StaticLayout.Builder.setIndents`; Kindle-convention fallback for unstyled books (indent, no gap); paragraph-spacing slider becomes additive, default 0. Acceptance: chapter bodies separate by indent, not uniform gaps.
+
+**G — Horizontal insets.** `margin-left`/`margin-right` onto the `indentPx` model with the cumulative clamp. Acceptance: indented verse/letters render inset without breaking measurement-width parity.
+
 ## Success Criteria
 
 - Books that express emphasis via CSS classes show italics and bold identically to their semantic-tag equivalents.
@@ -236,6 +264,12 @@ If a pathological book blows the stylesheet budget, the degradation policy appli
 - A semantic-tags-only book renders byte-identically to today (regression fixture).
 - Malformed-CSS book renders as today, with counts in the panel.
 - Census numbers recorded for the library; pagination and page-turn timings unchanged on-device.
+
+After the structural spacing slices (E–G):
+
+- The copyright-page vertical rhythm (spaced vs. glued paragraph groups) matches the Kindle side-by-side.
+- Chapter body paragraphs separate by first-line indent with no artificial vertical gap, matching Kindle's default look.
+- An unstyled book renders with the Kindle fallback convention (indent, no gap), not a flat uniform gap.
 
 ## Tradeoffs
 
@@ -251,7 +285,7 @@ This PRD is first in the product-first ordering agreed for completing the native
 
 1. **Publisher styles** (this PRD, slices A–C).
 2. **EPD spike + baseline refresh control** — requires on-device work; typography judgments are polluted by ghosting until refresh modes are controlled.
-3. **Typography quality pass** — Kindle side-by-side defect list: hyphenation validation, justification quality, paragraph model (first-line indent vs. spacing), widow/orphan rules. Own discussion/PRD.
+3. **Typography quality pass** — Kindle side-by-side defect list: hyphenation validation, justification quality, widow/orphan rules. Own discussion/PRD. (The paragraph model — first-line indent vs. spacing — moved into this PRD as § Structural Spacing, slices E–F.)
 4. **Structural fidelity by census rank** (slices D+, sub/sup, small caps).
 5. **Links and footnotes** (PRD_NATIVE_READER Phase 3 remainder).
 6. **Progress, TOC, Kavita sync — last**, once pagination behavior has settled and a resume point is stable.

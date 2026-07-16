@@ -104,4 +104,59 @@ class CssStyleResolverTest {
 
     assertEquals(false, resolver.resolve(paragraph, ResolvedStyle.None).italic)
   }
+
+  @Test
+  fun resolve_spacingLengths_normalizeToEm() {
+    val resolver =
+      resolverOf(".s { margin-top: 1em; margin-bottom: 12pt; margin-left: 32px; text-indent: 5% }")
+    val style = resolver.resolve(element("<p class=\"s\">a</p>", "p"), ResolvedStyle.None)
+
+    assertEquals(1f, checkNotNull(style.marginTopEm), 0.001f)
+    assertEquals(1f, checkNotNull(style.marginBottomEm), 0.001f)
+    assertEquals(2f, checkNotNull(style.marginStartEm), 0.001f)
+    // Percentages are width-relative, not font-relative — treated as no signal.
+    assertNull(style.textIndentEm)
+  }
+
+  @Test
+  fun resolve_spacingValues_clampAndRejectGarbage() {
+    val resolver =
+      resolverOf(
+        ".s { margin-top: 40em; margin-bottom: -1em; text-indent: 99em; margin-left: auto }"
+      )
+    val style = resolver.resolve(element("<p class=\"s\">a</p>", "p"), ResolvedStyle.None)
+
+    assertEquals(2f, checkNotNull(style.marginTopEm), 0.001f)
+    assertNull(style.marginBottomEm) // negative -> no signal
+    assertEquals(3f, checkNotNull(style.textIndentEm), 0.001f)
+    assertNull(style.marginStartEm) // auto -> no signal
+  }
+
+  @Test
+  fun resolve_marginShorthand_expandsToVerticalAndHorizontalComponents() {
+    val resolver = resolverOf(".s { margin: 1em 0 }")
+    val style = resolver.resolve(element("<p class=\"s\">a</p>", "p"), ResolvedStyle.None)
+
+    assertEquals(1f, checkNotNull(style.marginTopEm), 0.001f)
+    assertEquals(1f, checkNotNull(style.marginBottomEm), 0.001f)
+    assertEquals(0f, checkNotNull(style.marginStartEm), 0.001f)
+    assertEquals(0f, checkNotNull(style.marginEndEm), 0.001f)
+  }
+
+  @Test
+  fun inheritedResolver_marginsDoNotInherit_textIndentDoes() {
+    val inherited =
+      InheritedStyleResolver(resolverOf("div.wrap { margin-top: 1em; text-indent: 2em }"))
+    val html = "<div class=\"wrap\"><p id=\"child\">a</p></div>"
+    val style = inherited.resolve(element(html, "#child"))
+
+    assertNull(style.marginTopEm)
+    assertEquals(2f, checkNotNull(style.textIndentEm), 0.001f)
+  }
+
+  @Test
+  fun blockSpacing_isNullWhenNothingDeclared() {
+    assertNull(ResolvedStyle.None.blockSpacing())
+    assertEquals(0f, checkNotNull(ResolvedStyle(textIndentEm = 0f).blockSpacing()?.textIndentEm))
+  }
 }

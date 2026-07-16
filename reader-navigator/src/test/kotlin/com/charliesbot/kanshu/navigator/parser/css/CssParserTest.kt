@@ -29,7 +29,16 @@ class CssParserTest {
       CssSelector(listOf(CssCompound(type = "p", classes = setOf("center")))),
       sheet.rules[1].selector,
     )
-    assertEquals(listOf(CssDeclaration("text-align", "center")), sheet.rules[1].declarations)
+    assertEquals(
+      listOf(
+        CssDeclaration("text-align", "center"),
+        CssDeclaration("margin-top", "0"),
+        CssDeclaration("margin-right", "0"),
+        CssDeclaration("margin-bottom", "0"),
+        CssDeclaration("margin-left", "0"),
+      ),
+      sheet.rules[1].declarations,
+    )
     assertEquals(
       listOf(
         CssSelector(listOf(CssCompound(classes = setOf("bold")))),
@@ -71,17 +80,49 @@ class CssParserTest {
     val sheet =
       CssParser.parse(
         """
-        .a { margin: 0; text-indent: 1.2em; font-style: italic }
-        .b { margin: 1em }
+        .a { color: red; line-height: 1.2; font-style: italic }
+        .b { float: left }
         """
           .trimIndent()
       )
 
     assertEquals(
-      mapOf("margin" to 2, "text-indent" to 1, "font-style" to 1),
+      mapOf("color" to 1, "line-height" to 1, "font-style" to 1, "float" to 1),
       sheet.stats.declarationCounts,
     )
     assertEquals(1, sheet.rules.size)
+    assertEquals(listOf(CssDeclaration("font-style", "italic")), sheet.rules.single().declarations)
+  }
+
+  @Test
+  fun parse_marginShorthand_expandsPerCssValueCount() {
+    val sheet =
+      CssParser.parse(
+        """
+        .one { margin: 1em }
+        .three { margin: 1em 2em 3em }
+        """
+          .trimIndent()
+      )
+
+    assertEquals(
+      listOf(
+        CssDeclaration("margin-top", "1em"),
+        CssDeclaration("margin-right", "1em"),
+        CssDeclaration("margin-bottom", "1em"),
+        CssDeclaration("margin-left", "1em"),
+      ),
+      sheet.rules[0].declarations,
+    )
+    assertEquals(
+      listOf(
+        CssDeclaration("margin-top", "1em"),
+        CssDeclaration("margin-right", "2em"),
+        CssDeclaration("margin-bottom", "3em"),
+        CssDeclaration("margin-left", "2em"),
+      ),
+      sheet.rules[1].declarations,
+    )
   }
 
   @Test

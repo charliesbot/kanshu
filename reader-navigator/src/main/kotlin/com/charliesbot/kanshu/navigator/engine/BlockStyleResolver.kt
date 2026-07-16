@@ -7,6 +7,7 @@ import android.text.TextPaint
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.BlockAlignment
+import com.charliesbot.kanshu.navigator.model.BlockSpacing
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -26,15 +27,16 @@ internal class BlockStyleResolver(
 
   fun resolve(block: ReaderBlock): BlockStyle? =
     when (block) {
-      is HeadingBlock -> headingStyle(block.level, block.alignment)
+      is HeadingBlock -> headingStyle(block.level, block.alignment, block.spacing)
       is HorizontalRule -> ruleStyle()
       is ImageBlock -> imageStyle()
       is ListBlock -> listStyle()
-      is ParagraphBlock -> paragraphStyle(block.alignment)
+      is ParagraphBlock -> paragraphStyle(block.alignment, block.spacing)
       is QuoteBlock -> quoteStyle()
     }
 
-  private fun imageStyle(): BlockStyle = paragraphStyle(publisherAlignment = null)
+  private fun imageStyle(): BlockStyle =
+    paragraphStyle(publisherAlignment = null, spacing = BlockSpacing())
 
   /** The shared body-text paint; headings pass their own typeface and size. */
   private fun textPaint(
@@ -49,7 +51,17 @@ internal class BlockStyleResolver(
       letterSpacing = preferences.letterSpacing
     }
 
-  private fun paragraphStyle(publisherAlignment: BlockAlignment?): BlockStyle {
+  private fun paragraphStyle(
+    publisherAlignment: BlockAlignment?,
+    spacing: BlockSpacing?,
+  ): BlockStyle {
+    // Kindle-model spacing: publisher structural margins when declared; the user's
+    // paragraph-spacing preference is additive on top. A block with no publisher spacing at all
+    // falls back to the book convention — first-line indent, no vertical gap — unless the
+    // publisher aligned it (centered scene breaks and ornaments are never indented).
+    val firstLineIndentEm =
+      spacing?.textIndentEm
+        ?: if (spacing == null && publisherAlignment == null) DEFAULT_FIRST_LINE_INDENT_EM else 0f
     return BlockStyle(
       paint = textPaint(),
       lineSpacingMultiplier = preferences.lineSpacing,
@@ -57,15 +69,22 @@ internal class BlockStyleResolver(
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NORMAL,
       alignment = publisherAlignment.toLayoutAlignment(),
       breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
-      indentPx = 0f,
+      indentPx = (spacing?.marginStartEm ?: 0f) * fontSizePx,
       prefixWidthPx = 0f,
-      marginTopPx = 0f,
-      marginBottomPx = preferences.paragraphSpacing * fontSizePx,
+      endInsetPx = (spacing?.marginEndEm ?: 0f) * fontSizePx,
+      firstLineIndentPx = firstLineIndentEm * fontSizePx,
+      marginTopPx = (spacing?.marginTopEm ?: 0f) * fontSizePx,
+      marginBottomPx =
+        ((spacing?.marginBottomEm ?: 0f) + preferences.paragraphSpacing) * fontSizePx,
       justifiable = publisherAlignment == null,
     )
   }
 
-  private fun headingStyle(level: Int, publisherAlignment: BlockAlignment?): BlockStyle {
+  private fun headingStyle(
+    level: Int,
+    publisherAlignment: BlockAlignment?,
+    spacing: BlockSpacing?,
+  ): BlockStyle {
     val headingScale =
       when (level.coerceIn(1, 6)) {
         1 -> 1.65f
@@ -82,10 +101,15 @@ internal class BlockStyleResolver(
       hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE,
       alignment = publisherAlignment.toLayoutAlignment(),
       breakStrategy = Layout.BREAK_STRATEGY_HIGH_QUALITY,
-      indentPx = 0f,
+      indentPx = (spacing?.marginStartEm ?: 0f) * fontSizePx,
       prefixWidthPx = 0f,
-      marginTopPx = headingSizePx * if (level <= 3) 1.2f else 0.8f,
-      marginBottomPx = headingSizePx * if (level <= 3) 0.6f else 0.4f,
+      endInsetPx = (spacing?.marginEndEm ?: 0f) * fontSizePx,
+      // Publisher margins are in em of body text; heading defaults scale with the heading size.
+      marginTopPx =
+        spacing?.marginTopEm?.times(fontSizePx) ?: (headingSizePx * if (level <= 3) 1.2f else 0.8f),
+      marginBottomPx =
+        spacing?.marginBottomEm?.times(fontSizePx)
+          ?: (headingSizePx * if (level <= 3) 0.6f else 0.4f),
       justifiable = publisherAlignment == null,
     )
   }
@@ -164,5 +188,7 @@ internal class BlockStyleResolver(
   private companion object {
     const val BASE_TEXT_SP = 18f
     const val BASE_MARGIN_DP = 24f
+    // Kindle's unstyled-paragraph convention; calibrate on-device if it reads wide on the Boox.
+    const val DEFAULT_FIRST_LINE_INDENT_EM = 1.5f
   }
 }

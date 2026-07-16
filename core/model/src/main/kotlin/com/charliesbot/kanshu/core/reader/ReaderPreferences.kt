@@ -36,6 +36,9 @@ data class ReaderPreferences(
 
     const val PARAGRAPH_SPACING_MIN: Float = 0.0f
     const val PARAGRAPH_SPACING_MAX: Float = 2.0f
+    // Additive over publisher structural spacing (the Kindle model): books carry their own
+    // vertical rhythm via CSS margins, and unstyled paragraphs separate by first-line indent, so
+    // the reader adds nothing by default. See docs/PRD_PUBLISHER_STYLES.md § Structural Spacing.
     const val PARAGRAPH_SPACING_DEFAULT: Float = 0.0f
     const val PARAGRAPH_SPACING_STEP: Float = 0.5f
 

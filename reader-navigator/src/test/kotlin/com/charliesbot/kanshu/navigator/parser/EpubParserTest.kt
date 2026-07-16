@@ -631,6 +631,52 @@ class EpubParserTest {
   }
 
   @Test
+  fun parse_withStylesheet_appliesStructuralSpacing() {
+    // Shaped like the Hachette InDesign export that motivated the slice: CRTS = spaced copyright
+    // paragraph, CRT = glued continuation, TX = indented body text, COTX = unindented opener.
+    val sheet =
+      CssParser.parse(
+        """
+        p.CRTS { margin: 1em 0 0 0; text-indent: 0 }
+        p.CRT { margin: 0; text-indent: 0 }
+        p.TX { margin: 0; text-indent: 18pt }
+        p.COTX { margin: 0; text-indent: 0 }
+        """
+          .trimIndent()
+      )
+    val result =
+      EpubParser.parse(
+        """
+        <html><body>
+          <p class="CRTS">PublicAffairs</p>
+          <p class="CRT">Hachette Book Group</p>
+          <p class="COTX">A friend of a friend is suddenly posting.</p>
+          <p class="TX">She questions the accuracy of PCR tests.</p>
+          <p>Unstyled paragraph.</p>
+        </body></html>
+        """
+          .trimIndent(),
+        stylesheets = listOf(sheet),
+      )
+
+    val blocks = result.document.blocks.filterIsInstance<ParagraphBlock>()
+    val spaced = checkNotNull(blocks[0].spacing)
+    assertEquals(1f, checkNotNull(spaced.marginTopEm), 0.001f)
+    assertEquals(0f, checkNotNull(spaced.marginBottomEm), 0.001f)
+    assertEquals(0f, checkNotNull(spaced.textIndentEm), 0.001f)
+
+    val glued = checkNotNull(blocks[1].spacing)
+    assertEquals(0f, checkNotNull(glued.marginTopEm), 0.001f)
+    assertEquals(0f, checkNotNull(glued.marginBottomEm), 0.001f)
+
+    assertEquals(0f, checkNotNull(checkNotNull(blocks[2].spacing).textIndentEm), 0.001f)
+    assertEquals(1.5f, checkNotNull(checkNotNull(blocks[3].spacing).textIndentEm), 0.001f)
+
+    // No matching rules -> no publisher spacing; the renderer applies the indent convention.
+    assertNull(blocks[4].spacing)
+  }
+
+  @Test
   fun parse_inlineStyleAttribute_appliesWithoutStylesheets() {
     val result =
       EpubParser.parse(

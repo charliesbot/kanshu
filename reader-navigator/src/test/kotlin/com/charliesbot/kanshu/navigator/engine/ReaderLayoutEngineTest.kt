@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.text.Layout
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.navigator.model.BlockAlignment
+import com.charliesbot.kanshu.navigator.model.BlockSpacing
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -82,7 +83,10 @@ class ReaderLayoutEngineTest {
             ParagraphBlock(listOf(TextLeaf("Paragraph number $index with enough words to wrap.")))
           } + ParagraphBlock(listOf(TextLeaf("   ")))
       )
-    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    // Geometry calibrated without paragraph spacing; the default is pinned by
+    // BlockStyleResolverTest.
+    val styleResolver =
+      BlockStyleResolver(ReaderPreferences(paragraphSpacing = 0f), Typeface.DEFAULT, density = 2f)
     val viewport = ReaderViewport(widthPx = 632, heightPx = 840, density = 2f)
 
     val pages =
@@ -434,7 +438,10 @@ class ReaderLayoutEngineTest {
             )
           )
       )
-    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    // Gap assertion calibrated without paragraph spacing; the default is pinned by
+    // BlockStyleResolverTest.
+    val styleResolver =
+      BlockStyleResolver(ReaderPreferences(paragraphSpacing = 0f), Typeface.DEFAULT, density = 2f)
     val viewport = ReaderViewport(widthPx = 700, heightPx = 900, density = 2f)
 
     val pages =
@@ -520,7 +527,10 @@ class ReaderLayoutEngineTest {
           listOf(TextLeaf("Paragraph number $index with enough words to wrap across lines."))
         )
       } + ParagraphBlock(listOf(TextLeaf("E3-20230509-JV-PC-REV")))
-    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    // Geometry calibrated without paragraph spacing; the default is pinned by
+    // BlockStyleResolverTest.
+    val styleResolver =
+      BlockStyleResolver(ReaderPreferences(paragraphSpacing = 0f), Typeface.DEFAULT, density = 2f)
     val viewport = ReaderViewport(widthPx = 632, heightPx = 840, density = 2f)
 
     val pages =
@@ -572,6 +582,42 @@ class ReaderLayoutEngineTest {
   }
 
   @Test
+  fun layout_publisherEndInset_reducesMeasurementWidth() {
+    // The first-line indent half of the mechanism (StaticLayout.Builder.setIndents) is not
+    // observable under Robolectric — getLineLeft ignores indents there — so this pins the
+    // measurement-width contract and the indent position is part of on-device acceptance.
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ParagraphBlock(
+              listOf(TextLeaf("Inset paragraph text.")),
+              spacing = BlockSpacing(textIndentEm = 1f, marginEndEm = 1f),
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 500, heightPx = 840, density = 2f)
+    val horizontalMarginPx = styleResolver.horizontalMarginPx()
+
+    val pages =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    val entry = pages.first().entries.first() as PageEntry.FullBlock
+    val fontSizePx = 36f // 18sp * default scale * density 2
+    val contentWidthPx = (viewport.widthPx - horizontalMarginPx * 2).toInt()
+    assertEquals(contentWidthPx - fontSizePx.toInt(), entry.layout.width)
+  }
+
+  @Test
   fun layout_overflowingParagraphUsesRemainingPageSpace() {
     val leadingBlocks =
       List(5) { index ->
@@ -579,7 +625,10 @@ class ReaderLayoutEngineTest {
       }
     val overflowingBlock =
       ParagraphBlock(listOf(TextLeaf(List(80) { "overflow line $it" }.joinToString("\n"))))
-    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    // Geometry calibrated without paragraph spacing; the default is pinned by
+    // BlockStyleResolverTest.
+    val styleResolver =
+      BlockStyleResolver(ReaderPreferences(paragraphSpacing = 0f), Typeface.DEFAULT, density = 2f)
     val viewport = ReaderViewport(widthPx = 400, heightPx = 500, density = 2f)
 
     val pages =

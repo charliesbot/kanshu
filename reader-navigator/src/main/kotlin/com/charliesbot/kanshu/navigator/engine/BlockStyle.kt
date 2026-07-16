@@ -12,6 +12,10 @@ data class BlockStyle(
   val breakStrategy: Int,
   val indentPx: Float,
   val prefixWidthPx: Float,
+  /** Right-edge inset (publisher `margin-right`): reduces measurement width, no draw offset. */
+  val endInsetPx: Float = 0f,
+  /** First-line indent (publisher `text-indent` or the unstyled-book default). */
+  val firstLineIndentPx: Float = 0f,
   val marginTopPx: Float,
   val marginBottomPx: Float,
   val leadingRuleOffsetXPx: Float = 0f,

@@ -10,13 +10,17 @@ data class ReaderDocument(val blocks: List<ReaderBlock>, val language: String? =
  */
 sealed interface ReaderBlock
 
-data class ParagraphBlock(val spans: List<TextSpan>, val alignment: BlockAlignment? = null) :
-  ReaderBlock
+data class ParagraphBlock(
+  val spans: List<TextSpan>,
+  val alignment: BlockAlignment? = null,
+  val spacing: BlockSpacing? = null,
+) : ReaderBlock
 
 data class HeadingBlock(
   val level: Int,
   val spans: List<TextSpan>,
   val alignment: BlockAlignment? = null,
+  val spacing: BlockSpacing? = null,
 ) : ReaderBlock
 
 data class QuoteBlock(val children: List<ReaderBlock>) : ReaderBlock

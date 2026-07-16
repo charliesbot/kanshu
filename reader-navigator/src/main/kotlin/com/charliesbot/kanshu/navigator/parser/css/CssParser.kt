@@ -49,7 +49,7 @@ object CssParser {
         declarationCounts.merge(property, 1, Int::plus)
         if (property in ALLOWLISTED_PROPERTIES) {
           val value = declaration.expressionAsCSSString.trim().lowercase()
-          if (value.isNotEmpty()) declarations.add(CssDeclaration(property, value))
+          if (value.isNotEmpty()) declarations.addAll(expandCssDeclaration(property, value))
         }
       }
 
