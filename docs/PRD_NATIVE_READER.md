@@ -842,7 +842,4 @@ Building on Phase 0's feasibility proof:
 
 - `docs/PRD.md` — project north star. This PRD is the reader engine strategy underneath Phase 0's "render enough EPUB content to actually read."
 - `docs/KINDLE_TYPOGRAPHY.md` — the layout-mine-fonts-yours model. The native engine implements this directly: the block model carries publisher structure, the renderer applies Kanshu typography.
-- `docs/PRD_READIUM_MIGRATION.md` — the previous WebView-based migration plan. Superseded by this PRD. The Readium streamer/shared retention, sanitization allowlist research, Boox EPD integration, and `EinkPageTurner` interface carry forward. The WebView renderer, CSS pagination, JS bridge, request interceptor, and command serialization do not.
-- `docs/READIUM_API.md` — Readium navigator surface reference. No longer needed for the reader engine (navigator is removed). Still useful as historical context for why certain APIs don't exist.
-- `docs/READIUM_PAGINATION_EXTRACTION.md` — Readium pagination source analysis. Historical context only. The native engine does not use CSS multi-column pagination.
 - Ares `../ares/htmlparser` — sibling RSS app's HTML parser. Reference for inline style extraction and fallback traversal; not a Kanshu dependency. See § Reference: Ares `:htmlparser`.

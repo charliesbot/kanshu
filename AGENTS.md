@@ -6,13 +6,11 @@ Read `docs/PRD.md` before any design, UX, or feature decision — it defines e-i
 
 Read `docs/KAVITA_API.md` before any Kavita networking work — it captures the verified auth flow, the endpoints we use, the ones we deliberately don't, and the footguns we've already paid for.
 
-Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle and the `EpubPreferences` mapping.
+Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle.
 
 Read `docs/PRD_NATIVE_READER.md` before any reader engine, pagination, rendering, or selection work — it defines the native `StaticLayout`/Canvas architecture, the `:reader-navigator` module, Phase 0 scope, performance budgets, and the block model that replaces WebView.
 
 Read `docs/PRD_PUBLISHER_STYLES.md` before any CSS, publisher styling, or rendering-fidelity work — it defines the parse-time micro-cascade, the property allowlist and styling census, the Kotlin-vs-native-engine decision with its tripwires, and the product-first roadmap ordering (styling before progress).
-
-Read `docs/READIUM_API.md` for historical context on why certain Readium navigator APIs don't exist. The navigator is removed; only `readium-shared` and `readium-streamer` remain.
 
 ## Stack Overrides
 
