@@ -38,4 +38,64 @@ data class CssParseStats(
 )
 
 /** Properties the micro-cascade honors. Growth is census-gated; see the PRD. */
-internal val ALLOWLISTED_PROPERTIES = setOf("font-style", "font-weight", "text-align")
+internal val ALLOWLISTED_PROPERTIES =
+  setOf(
+    "font-style",
+    "font-weight",
+    "text-align",
+    "margin",
+    "margin-top",
+    "margin-bottom",
+    "margin-left",
+    "margin-right",
+    "text-indent",
+  )
+
+/**
+ * Normalizes shorthand into the longhand declarations the resolver understands. `margin` expands
+ * per the CSS 1-4 value pattern; everything else passes through. Downstream code only ever sees
+ * longhands.
+ */
+internal fun expandCssDeclaration(property: String, value: String): List<CssDeclaration> {
+  if (property != "margin") return listOf(CssDeclaration(property, value))
+  val parts = value.split(CSS_VALUE_WHITESPACE).filter { it.isNotEmpty() }
+  val (top, right, bottom, left) =
+    when (parts.size) {
+      1 -> listOf(parts[0], parts[0], parts[0], parts[0])
+      2 -> listOf(parts[0], parts[1], parts[0], parts[1])
+      3 -> listOf(parts[0], parts[1], parts[2], parts[1])
+      4 -> parts
+      else -> return emptyList()
+    }
+  return listOf(
+    CssDeclaration("margin-top", top),
+    CssDeclaration("margin-right", right),
+    CssDeclaration("margin-bottom", bottom),
+    CssDeclaration("margin-left", left),
+  )
+}
+
+private val CSS_VALUE_WHITESPACE = Regex("""\s+""")
+
+/**
+ * A CSS length normalized to em, or null for values the cascade treats as "no signal" (`auto`,
+ * percentages, negatives, unparseable). Nominal ratios: 1em = 16px = 12pt. Clamping to the
+ * per-property ranges happens where the value is applied; see docs/PRD_PUBLISHER_STYLES.md §
+ * Structural Spacing.
+ */
+internal fun parseCssLengthToEm(value: String): Float? {
+  val trimmed = value.trim().lowercase()
+  if (trimmed == "0") return 0f
+  val match = CSS_LENGTH_PATTERN.matchEntire(trimmed) ?: return null
+  val number = match.groupValues[1].toFloatOrNull() ?: return null
+  if (number < 0f) return null
+  return when (match.groupValues[2]) {
+    "em",
+    "rem" -> number
+    "px" -> number / 16f
+    "pt" -> number / 12f
+    else -> null
+  }
+}
+
+private val CSS_LENGTH_PATTERN = Regex("""(-?\d*\.?\d+)([a-z%]+)""")

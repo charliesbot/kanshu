@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.BlockAlignment
+import com.charliesbot.kanshu.navigator.model.BlockSpacing
 import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
@@ -116,14 +117,24 @@ internal class BlockLevelParser(
   private fun paragraphFromInline(nodes: List<Node>, owner: Element? = null): ParagraphBlock? {
     val spans = inlineSpanExtractor.extract(nodes, baseStyleFor(owner))
     return if (spans.isEmpty()) null
-    else ParagraphBlock(spans, alignment = publisherAlignment(owner))
+    else
+      ParagraphBlock(
+        spans,
+        alignment = publisherAlignment(owner),
+        spacing = publisherSpacing(owner),
+      )
   }
 
   private fun headingFromInline(tag: String, element: Element): HeadingBlock? {
     val spans = inlineSpanExtractor.extract(element.childNodes(), baseStyleFor(element))
     if (spans.isEmpty()) return null
     val level = tag.removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
-    return HeadingBlock(level = level, spans = spans, alignment = publisherAlignment(element))
+    return HeadingBlock(
+      level = level,
+      spans = spans,
+      alignment = publisherAlignment(element),
+      spacing = publisherSpacing(element),
+    )
   }
 
   private fun baseStyleFor(owner: Element?): InlineStyle =
@@ -131,6 +142,10 @@ internal class BlockLevelParser(
 
   private fun publisherAlignment(owner: Element?): BlockAlignment? = owner?.let {
     styles?.resolve(it)?.blockAlignment()
+  }
+
+  private fun publisherSpacing(owner: Element?): BlockSpacing? = owner?.let {
+    styles?.resolve(it)?.blockSpacing()
   }
 
   private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
@@ -173,7 +188,12 @@ internal class BlockLevelParser(
   private fun textParagraph(text: String, owner: Element? = null): ParagraphBlock? {
     val trimmed = text.trim()
     return if (trimmed.isEmpty()) null
-    else ParagraphBlock(listOf(TextLeaf(trimmed)), alignment = publisherAlignment(owner))
+    else
+      ParagraphBlock(
+        listOf(TextLeaf(trimmed)),
+        alignment = publisherAlignment(owner),
+        spacing = publisherSpacing(owner),
+      )
   }
 
   private fun Element.hasBlockDescendant(): Boolean = allElements.any { descendant ->

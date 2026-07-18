@@ -17,3 +17,6 @@
 local.properties
 .obsidian/
 screenshot.png
+
+# Local device captures used during on-device debugging
+/PXL_*.jpg
