@@ -19,10 +19,13 @@ class ReaderLayoutEngine {
     styleResolver: (ReaderBlock) -> BlockStyle?,
     imageBounds: (String) -> ImageBounds? = { null },
     shouldContinue: () -> Boolean = { true },
-  ): List<ReaderPage> {
+  ): ReaderLayoutResult {
     val contentWidthPx = (viewport.widthPx - horizontalMarginPx * 2).toInt().coerceAtLeast(1)
     val contentHeightPx = (viewport.heightPx - verticalMarginPx * 2).coerceAtLeast(1f)
 
+    // Threaded through measurement so the text stream is walked exactly once: the same flatten
+    // that feeds StaticLayout also assigns offsets, leaving no second traversal to drift from it.
+    val cursor = TextStreamCursor()
     val measuredBlocks =
       measureBlocks(
         document = document,
@@ -33,18 +36,19 @@ class ReaderLayoutEngine {
         styleResolver = styleResolver,
         imageBounds = imageBounds,
         shouldContinue = shouldContinue,
-      ) ?: return emptyList()
+        cursor = cursor,
+      ) ?: return ReaderLayoutResult(emptyList(), 0)
 
     if (measuredBlocks.isEmpty()) {
-      return listOf(ReaderPage(emptyList()))
+      return ReaderLayoutResult(listOf(ReaderPage(emptyList())), cursor.offset)
     }
 
     val paginator = Paginator(contentWidthPx, contentHeightPx)
     measuredBlocks.forEach { measured ->
-      if (!shouldContinue()) return emptyList()
+      if (!shouldContinue()) return ReaderLayoutResult(emptyList(), 0)
       paginator.add(measured)
     }
-    return paginator.build()
+    return ReaderLayoutResult(paginator.build(), cursor.offset)
   }
 
   /** Measures every block into a page-agnostic [MeasuredBlock], or null when aborted. */
@@ -57,6 +61,7 @@ class ReaderLayoutEngine {
     styleResolver: (ReaderBlock) -> BlockStyle?,
     imageBounds: (String) -> ImageBounds?,
     shouldContinue: () -> Boolean,
+    cursor: TextStreamCursor,
   ): List<MeasuredBlock>? {
     val measuredBlocks = mutableListOf<MeasuredBlock>()
     var nextSyntheticSelectionId = document.blocks.size
@@ -71,6 +76,7 @@ class ReaderLayoutEngine {
             blockIndex = index,
             style = style,
             heightPx = viewport.density.coerceAtLeast(1f),
+            textStartCharOffset = cursor.offset,
           )
         )
         return@forEachIndexed
@@ -84,6 +90,7 @@ class ReaderLayoutEngine {
             contentWidthPx = contentWidthPx,
             contentHeightPx = contentHeightPx,
             bounds = imageBounds(block.resourceHref),
+            textStartCharOffset = cursor.offset,
           )
         )
         return@forEachIndexed
@@ -98,10 +105,14 @@ class ReaderLayoutEngine {
           justify = justify,
           selectionId = ::syntheticSelectionId,
           measuredBlocks = measuredBlocks,
+          cursor = cursor,
         )
         return@forEachIndexed
       }
       val text = SpanFlattener.flatten(block) ?: return@forEachIndexed
+      // Blank blocks consume their stream offsets even though they never render — offsets must
+      // stay stable against rendering decisions, not track what ended up on a page.
+      val textStartCharOffset = cursor.take(text.length)
       if (text.isBlank()) return@forEachIndexed
       val layout = StaticLayoutFactory.build(text, style, contentWidthPx, justify)
       measuredBlocks.add(
@@ -111,10 +122,24 @@ class ReaderLayoutEngine {
           style = style,
           layout = layout,
           textJustified = justify && style.justifiable,
+          textStartCharOffset = textStartCharOffset,
         )
       )
     }
     return measuredBlocks
+  }
+}
+
+/** Running position in the chapter's flattened text stream while blocks are measured. */
+internal class TextStreamCursor {
+  var offset: Int = 0
+    private set
+
+  /** Consumes [length] characters and returns the offset they start at. */
+  fun take(length: Int): Int {
+    val start = offset
+    offset += length
+    return start
   }
 }
 
@@ -205,6 +230,7 @@ private class Paginator(private val contentWidthPx: Int, private val contentHeig
         markerText = measured.markerText,
         markerOffsetXPx = depthOffsetX(measured.style, measured.depth),
         layout = measured.layout,
+        textStartCharOffset = measured.textStartCharOffset,
       ),
       marginBottomPx = measured.style.marginBottomPx,
     )
@@ -232,6 +258,7 @@ private class Paginator(private val contentWidthPx: Int, private val contentHeig
         layout = measured.layout,
         lineRange = lineRange,
         firstLineTopPx = firstLineTop,
+        textStartCharOffset = measured.textStartCharOffset,
       ),
       marginBottomPx = measured.style.marginBottomPx,
     )
@@ -244,6 +271,7 @@ private class Paginator(private val contentWidthPx: Int, private val contentHeig
         yOffsetPx = yOffset,
         visibleHeightPx = measured.heightPx,
         drawOffsetXPx = drawOffsetX(measured.style),
+        textStartCharOffset = measured.textStartCharOffset,
       ),
       marginBottomPx = measured.style.marginBottomPx,
     )
@@ -260,6 +288,7 @@ private class Paginator(private val contentWidthPx: Int, private val contentHeig
         resourceHref = measured.resourceHref,
         alt = measured.alt,
         widthPx = measured.widthPx,
+        textStartCharOffset = measured.textStartCharOffset,
       ),
       marginBottomPx = measured.style.marginBottomPx,
     )
@@ -341,6 +370,7 @@ private fun appendListBlock(
   justify: Boolean,
   selectionId: () -> Int,
   measuredBlocks: MutableList<MeasuredBlock>,
+  cursor: TextStreamCursor,
 ) {
   block.items.forEachIndexed { itemIndex, item ->
     val textBlocks = mutableListOf<ReaderBlock>()
@@ -348,6 +378,9 @@ private fun appendListBlock(
 
     fun flushTextBlocks() {
       val text = SpanFlattener.flatten(ListItem(textBlocks))
+      // Markers are drawn from `markerText`, never flattened into the text, so bullets and
+      // numbers stay out of the stream the way the progress model requires.
+      val textStartCharOffset = cursor.take(text?.length ?: 0)
       if (!text.isNullOrBlank()) {
         measuredBlocks.add(
           MeasuredBlock.Text(
@@ -361,6 +394,7 @@ private fun appendListBlock(
               if (emittedItemText) null
               else if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER,
             depth = depth,
+            textStartCharOffset = textStartCharOffset,
           )
         )
         emittedItemText = true
@@ -380,6 +414,7 @@ private fun appendListBlock(
           justify = justify,
           selectionId = selectionId,
           measuredBlocks = measuredBlocks,
+          cursor = cursor,
         )
       } else {
         textBlocks.add(child)
@@ -397,6 +432,7 @@ private sealed interface MeasuredBlock {
   val blockIndex: Int
   val style: BlockStyle
   val heightPx: Float
+  val textStartCharOffset: Int
 
   data class Text(
     override val blockIndex: Int,
@@ -406,6 +442,7 @@ private sealed interface MeasuredBlock {
     val textJustified: Boolean,
     val markerText: String? = null,
     val depth: Int = 0,
+    override val textStartCharOffset: Int = 0,
   ) : MeasuredBlock {
     override val heightPx: Float
       get() = layout.height.toFloat()
@@ -415,6 +452,7 @@ private sealed interface MeasuredBlock {
     override val blockIndex: Int,
     override val style: BlockStyle,
     override val heightPx: Float,
+    override val textStartCharOffset: Int = 0,
   ) : MeasuredBlock
 
   data class Image(
@@ -424,6 +462,7 @@ private sealed interface MeasuredBlock {
     val alt: String?,
     val widthPx: Float,
     override val heightPx: Float,
+    override val textStartCharOffset: Int = 0,
   ) : MeasuredBlock
 }
 
@@ -434,6 +473,7 @@ private fun measureImageBlock(
   contentWidthPx: Int,
   contentHeightPx: Float,
   bounds: ImageBounds?,
+  textStartCharOffset: Int,
 ): MeasuredBlock.Image {
   val (widthPx, heightPx) =
     if (bounds != null && bounds.intrinsicWidthPx > 0 && bounds.intrinsicHeightPx > 0) {
@@ -455,6 +495,7 @@ private fun measureImageBlock(
     alt = block.alt,
     widthPx = widthPx,
     heightPx = heightPx,
+    textStartCharOffset = textStartCharOffset,
   )
 }
 

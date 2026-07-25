@@ -633,23 +633,26 @@ Page count is a navigation convenience, not a persistence primitive. Reflowable 
 ```kotlin
 @Serializable
 data class ReaderPosition(
-  val schemaVersion: Int = 2,
   val spineIndex: Int,
-  val charOffset: Int,           // character offset into the chapter's flattened text stream
+  val charOffset: Int = 0,       // character offset into the chapter's flattened text stream
   val progressInSpine: Float,    // charOffset / totalChapterCharLength, 0.0–1.0
 )
 ```
 
+**The text stream is defined by what the flattener emits.** `charOffset` means "offset into the sequence `SpanFlattener` produces for the chapter," which is why the layout engine assigns offsets from the same flatten call that feeds `StaticLayout` rather than from a second traversal. The consequence is a standing constraint: any change to flattening — whitespace normalization, promoting a new tag into the stream, adding markers to the text — silently invalidates every stored offset. Such a change reopens books at the wrong place with nothing in the logs to explain it. There is no version field to hang a migration on, deliberately — see below — so the mitigation is to notice the coupling at review time.
+
 `totalChapterCharLength` is the sum of flattened text character counts across all blocks in the spine item (list prefixes and image placeholders contribute zero). This is intentional: progress offsets must stay stable when Phase 1 adds list prefixes and image blocks — `charOffset` means "offset into the chapter's text stream," not "offset into rendered glyphs on screen." `charOffset` identifies the first visible character on the current page. `progressInSpine` is denormalized for cheap Kavita sync and overall book percentage without re-layout.
 
-### Migration From Schema v1
+### Replacing The Page-Index Shape
 
-The codebase currently ships schema v1 with `pageIndex` + `progressInSpine`. Migration is not deferred to Phase 4 — the v2 shape is designed during Phase 0 so page-index assumptions do not spread through the ViewModel.
+The shipped predecessor stored `pageIndex` + `progressInSpine` behind a `schemaVersion` field. The offset shape is designed during Phase 0 rather than deferred to Phase 4, so page-index assumptions do not spread through the ViewModel.
 
-| When    | Action                                                                                                              |
-| ------- | ------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 | Define v2 fields and document the mapping. ViewModel may still use page index locally for tap-to-turn.              |
-| Phase 4 | Persist v2 to Room, migrate v1 records (best-effort: reopen at spine item start if unmappable), update Kavita sync. |
+Old rows need no migration code. `charOffset` defaults to 0 and the decoder ignores unknown keys, so a page-index row decodes straight to the chapter start, which is the only honest mapping available. The `schemaVersion` field is dropped with it: nothing branched on it except the migration it existed to trigger. If a future flattening change makes stored offsets untrustworthy, reintroducing a version field is a one-line change, and speculative versioning in the meantime buys nothing.
+
+| When    | Action                                                                                                    |
+| ------- | --------------------------------------------------------------------------------------------------------- |
+| Phase 0 | Define the offset fields and document the mapping. ViewModel may still use page index locally for tap-to-turn. |
+| Phase 4 | Persist to Room and update Kavita sync. Page-index rows reopen at the spine item start via the `charOffset` default, so there is no migration step to write. |
 
 Kavita's remote progress format may not align with character offsets. Phase 4 defines the mapping layer in `core:data` — local truth is `charOffset`; remote sync uses the best available Kavita field with documented precision loss.
 
@@ -703,7 +706,7 @@ This proves the full vertical: touch coordinate → `PageEntry` lookup → `Stat
 **Required deliverables (non-negotiable for Phase 0):**
 
 - Parser unit tests with real EPUB chapter XHTML from the user's Kavita library. The parser is the foundation; it must be tested before anything downstream is built. Tests assert text preservation for tables, asides, and nested divs even when structure is lossy. Tests assert `ParseDiagnostics` tag counts for known unsupported markup.
-- `ReaderPosition` schema v2 shape documented and reviewed (implementation may land in Phase 4; design lands in Phase 0).
+- `ReaderPosition` character-offset shape documented and reviewed (implementation may land in Phase 4; design lands in Phase 0).
 - Boox EPD API spike: on-device research confirming how to control refresh mode on the Go 7 (Boox SDK / system APIs / `EinkPageTurner` abstraction). Document findings and a Phase 2 integration plan. If no usable API exists, Phase 2 falls back to standard Android surface behavior and EPD work stays in Phase 5.
 - On-device profiling data from the Boox Go 7 confirming the < 200ms pagination budget.
 - Selection profiling: long-press hit-test time, `BreakIterator` word-boundary time, popup anchor correctness (manual verification on-device).
@@ -779,7 +782,7 @@ Building on Phase 0's feasibility proof:
 
 ### Phase 4: Progress and Navigation
 
-- Implement `ReaderPosition` schema v2 (`charOffset` + `progressInSpine`). Migrate v1 records from Room.
+- Implement `ReaderPosition` (`charOffset` + `progressInSpine`). Page-index rows resume at the chapter start.
 - Progress UI and Kavita sync use character-offset percentage, not page count.
 - TOC navigation using `Publication.tableOfContents`.
 - Chapter boundary navigation (next/previous spine item).
@@ -827,7 +830,7 @@ Building on Phase 0's feasibility proof:
 - **Block model lives in `:reader-navigator`.** The AST is the native reader engine contract. Parser, layout, rendering, and selection share it inside the same module. `core:model` stays a leaf module for user-facing preferences.
 - **Eager pagination is preferred, lazy is acceptable.** Build all `StaticLayout` objects up front on `Dispatchers.Default` if it completes within 200ms. If not, lazy pagination (stay one page ahead of reading) is not a failure — users feel first-page latency and page turns, not whether page 87 was pre-measured. The spike determines which path ships.
 - **Parse diagnostics are a parser side-channel.** `EpubParser.parse()` returns `ParseResult(document, diagnostics)`. Unsupported tag counts never appear on the reading surface.
-- **Character-offset percentage for progress.** Page count requires full layout and is unstable across preference changes. Character-offset progress (`charOffset / totalChapterCharLength`) is stable, cheap, and matches Kindle's convention. Schema v2 is designed in Phase 0; persistence lands in Phase 4. Text-stream offsets exclude list prefixes and image placeholders so progress survives rendering-phase additions.
+- **Character-offset percentage for progress.** Page count requires full layout and is unstable across preference changes. Character-offset progress (`charOffset / totalChapterCharLength`) is stable, cheap, and matches Kindle's convention. The shape is designed in Phase 0; persistence lands in Phase 4. It carries no schema version — see the Progress Model. Text-stream offsets exclude list prefixes and image placeholders so progress survives rendering-phase additions.
 - **Silent degradation on the reading surface.** Unsupported markup unwraps to text; tag counts appear in diagnostics only. No placeholder boxes in production.
 - **Horizontal insets reduce measurement width.** `prefixWidthPx` and `indentPx` both subtract from layout width before `StaticLayout` construction. Drawing offsets alone are insufficient for lists and quotes.
 - **Selection uses `StaticLayout` geometry directly.** No `SelectionContainer`, no `onTextLayout` callbacks. `StaticLayout` exposes line/offset APIs for hit-testing. Full selection is Phase 3; Phase 0 includes one-word selection feasibility only.

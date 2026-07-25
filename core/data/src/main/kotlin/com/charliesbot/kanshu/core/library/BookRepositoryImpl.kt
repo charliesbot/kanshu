@@ -26,10 +26,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private const val TAG = "BookRepository"
-private const val DEFAULT_PAGE_SIZE = 100
-private const val SOURCE_KAVITA = "kavita"
-
 class BookRepositoryImpl(
   private val credentialsRepository: CredentialsRepository,
   private val api: KavitaApi,
@@ -282,15 +278,19 @@ class BookRepositoryImpl(
     }
   }
 
-  private fun bookIdFor(seriesId: Int): String = "$SOURCE_KAVITA:$seriesId"
+  private fun bookIdFor(seriesId: Int): String = BookIds.forKavitaSeries(seriesId)
 
-  private fun seriesIdFromBookId(bookId: String): Int? =
-    if (bookId.startsWith("$SOURCE_KAVITA:")) bookId.removePrefix("$SOURCE_KAVITA:").toIntOrNull()
-    else null
+  private fun seriesIdFromBookId(bookId: String): Int? = BookIds.kavitaSeriesId(bookId)
 
   private fun bookFile(seriesId: Int) = File(booksDir, "$seriesId.epub")
 
   private fun tmpFile(seriesId: Int) = File(booksDir, "$seriesId.epub.tmp")
+
+  private companion object {
+    const val TAG = "BookRepository"
+    const val DEFAULT_PAGE_SIZE = 100
+    const val SOURCE_KAVITA = BookIds.SOURCE_KAVITA
+  }
 }
 
 // Kavita's image endpoints take the api key as a query param so the URL is usable as an <img src>.

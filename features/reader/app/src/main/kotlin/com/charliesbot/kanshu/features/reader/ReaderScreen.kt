@@ -63,6 +63,9 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             preferences = preferences,
             currentPage = currentPage,
             onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
+            onPagePositions = { positions ->
+              viewModel.onPagePositions(state.spineIndex, positions)
+            },
             resourceLoader = resourceLoader,
             onLayoutDiagnostics = { diagnostics -> layoutDiagnostics = diagnostics },
             onLayoutFailed = viewModel::onLayoutFailed,

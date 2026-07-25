@@ -10,8 +10,7 @@ class ReaderPositionTest {
 
   @Test
   fun roundTripSerialization() {
-    val original =
-      ReaderPosition(schemaVersion = 1, spineIndex = 4, pageIndex = 2, progressInSpine = 0.5f)
+    val original = ReaderPosition(spineIndex = 4, charOffset = 1_820, progressInSpine = 0.5f)
     val encoded = Json.encodeToString(ReaderPosition.serializer(), original)
     val decoded = Json.decodeFromString(ReaderPosition.serializer(), encoded)
     assertEquals(original, decoded)
@@ -19,13 +18,12 @@ class ReaderPositionTest {
 
   @Test
   fun forwardCompatibilityWithUnknownFields() {
-    // A serialized JSON representing a future schemaVersion with new extra fields.
+    // Fields a later build might add have to decode away rather than throw.
     val futureJson =
       """
       {
-        "schemaVersion": 2,
         "spineIndex": 5,
-        "pageIndex": 3,
+        "charOffset": 900,
         "progressInSpine": 0.75,
         "newExtraField": "some new value",
         "anotherNewField": 42
@@ -34,29 +32,47 @@ class ReaderPositionTest {
         .trimIndent()
 
     val decoded = json.decodeFromString(ReaderPosition.serializer(), futureJson)
-    assertEquals(2, decoded.schemaVersion)
     assertEquals(5, decoded.spineIndex)
-    assertEquals(3, decoded.pageIndex)
+    assertEquals(900, decoded.charOffset)
     assertEquals(0.75f, decoded.progressInSpine)
   }
 
   @Test
   fun backwardCompatibilityWithDefaults() {
-    // If some fields are missing (e.g. from an older version), default values should apply.
     val minimalJson =
       """
       {
         "spineIndex": 10,
-        "pageIndex": 0,
         "progressInSpine": 0.0
       }
       """
         .trimIndent()
 
     val decoded = json.decodeFromString(ReaderPosition.serializer(), minimalJson)
-    assertEquals(1, decoded.schemaVersion) // Default value
     assertEquals(10, decoded.spineIndex)
-    assertEquals(0, decoded.pageIndex)
+    assertEquals(0, decoded.charOffset)
     assertEquals(0.0f, decoded.progressInSpine)
+  }
+
+  @Test
+  fun pageIndexRowsDecodeToTheChapterStart() {
+    // Rows written before the native engine stored a page index and a schema version, neither of
+    // which survives here. The page index cannot be mapped back to an offset without the
+    // typography that produced it, so the chapter start is the honest landing spot.
+    val pageIndexJson =
+      """
+      {
+        "schemaVersion": 1,
+        "spineIndex": 7,
+        "pageIndex": 12,
+        "progressInSpine": 0.4
+      }
+      """
+        .trimIndent()
+
+    val decoded = json.decodeFromString(ReaderPosition.serializer(), pageIndexJson)
+    assertEquals(7, decoded.spineIndex)
+    assertEquals(0, decoded.charOffset)
+    assertEquals(0.4f, decoded.progressInSpine)
   }
 }
