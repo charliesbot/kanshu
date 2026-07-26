@@ -2,7 +2,6 @@ package com.charliesbot.kanshu.navigator
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.SystemClock
 import android.util.Log
@@ -61,7 +60,10 @@ fun ReaderPageViewer(
   onPreviousPage: (() -> Unit)? = null,
   onCenterTap: (() -> Unit)? = null,
   onNextPage: (() -> Unit)? = null,
-  onTextSelected: ((String, RectF) -> Unit)? = null,
+  onTextSelected: ((ReaderSelectionInfo) -> Unit)? = null,
+  highlights: List<ReaderHighlight> = emptyList(),
+  /** Bump to drop the current selection — e.g. once it has been turned into a highlight. */
+  clearSelectionToken: Int = 0,
   onSelectionCleared: (() -> Unit)? = null,
   onLinkTapped: ((String) -> Unit)? = null,
   imageCache: ReaderImageCache = rememberReaderImageCache(),
@@ -160,7 +162,9 @@ fun ReaderPageViewer(
           }
         },
         onLinkTapped = onLinkTapped,
-        onTextSelected = { text, anchor -> onTextSelected?.invoke(text, anchor) },
+        onTextSelected = { info -> onTextSelected?.invoke(info) },
+        highlights = highlights,
+        clearSelectionToken = clearSelectionToken,
         onSelectionCleared = {
           selectionCarryState = SelectionCarryState()
           pendingSelectionSeedPage = null
@@ -445,7 +449,9 @@ private fun ReaderPageAndroidView(
   imageBitmaps: Map<String, Bitmap>,
   onTapZone: (ReaderPageTapZone) -> Unit,
   onLinkTapped: ((String) -> Unit)?,
-  onTextSelected: (String, RectF) -> Unit,
+  onTextSelected: (ReaderSelectionInfo) -> Unit,
+  highlights: List<ReaderHighlight>,
+  clearSelectionToken: Int,
   onSelectionCleared: () -> Unit,
   onSelectionPageTurn: (SelectionPageTurnDirection, String, String, TextSelection) -> Boolean,
   onSelectionSeeded: () -> Unit,
@@ -466,6 +472,8 @@ private fun ReaderPageAndroidView(
         onTapZone = onTapZone,
         onLinkTapped = onLinkTapped,
         onTextSelected = onTextSelected,
+        highlightRanges = highlights.map { it.range },
+        clearSelectionToken = clearSelectionToken,
         onSelectionCleared = onSelectionCleared,
         onSelectionPageTurn = onSelectionPageTurn,
         selectionTextPrefix = selectionTextPrefix,

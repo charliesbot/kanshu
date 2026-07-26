@@ -281,7 +281,7 @@ class ReaderPageCanvasViewTest {
       page = page,
       horizontalMarginPx = 0f,
       verticalMarginPx = 0f,
-      onTextSelected = { text, _ -> selectedTexts += text },
+      onTextSelected = { info -> selectedTexts += info.text },
       onSelectionCleared = { clearCount++ },
       selectionTextPrefix = "previous page\n\n",
       seedSelectionAtPageStart = true,
@@ -308,7 +308,7 @@ class ReaderPageCanvasViewTest {
       page = page,
       horizontalMarginPx = 0f,
       verticalMarginPx = 0f,
-      onTextSelected = { text, _ -> selectedTexts += text },
+      onTextSelected = { info -> selectedTexts += info.text },
       onSelectionCleared = { clearCount++ },
       selectionTextSuffix = "\n\nnext page",
       seedSelectionAtPageEnd = true,
@@ -322,6 +322,45 @@ class ReaderPageCanvasViewTest {
 
     assertEquals("alpha", selectedTexts.last())
     assertEquals(1, clearCount)
+  }
+
+  @Test
+  fun clearSelectionTokenDropsTheSelectionWithoutReopeningIt() {
+    // Committing a highlight bumps the token so the engine drops its selection. This shipped once
+    // with the token checked before the selection was rebuilt, so the popup reopened on top of the
+    // highlight the user had just made.
+    val view = ReaderPageCanvasView(RuntimeEnvironment.getApplication())
+    val events = mutableListOf<String>()
+    val page = selectablePage("alpha beta")
+    view.layout(0, 0, 500, 1000)
+    view.setPage(
+      page = page,
+      horizontalMarginPx = 0f,
+      verticalMarginPx = 0f,
+      onTextSelected = { info -> events += "selected:${info.text}" },
+      onSelectionCleared = { events += "cleared" },
+      seedSelectionAtPageStart = true,
+    )
+    events.clear()
+
+    // A different page instance plus a re-seed, so the controller actually rebuilds a selection
+    // during this pass. With the same instance nothing re-notifies and the ordering is vacuous.
+    view.setPage(
+      page = selectablePage("alpha beta"),
+      horizontalMarginPx = 0f,
+      verticalMarginPx = 0f,
+      onTextSelected = { info -> events += "selected:${info.text}" },
+      onSelectionCleared = { events += "cleared" },
+      seedSelectionAtPageStart = true,
+      clearSelectionToken = 1,
+    )
+
+    // The clear has to be the last thing that happens. The selection is rebuilt for the new page
+    // first, which re-notifies — harmless only because the clear follows it and closes the popup.
+    // Reversing the two leaves the popup open on top of the new highlight.
+    assertTrue("the selection is rebuilt during the pass", events.any { it.startsWith("selected") })
+    assertEquals("cleared", events.last())
+    assertEquals(1, events.count { it == "cleared" })
   }
 
   private fun selectablePage(text: String = "alpha beta"): ReaderPage {

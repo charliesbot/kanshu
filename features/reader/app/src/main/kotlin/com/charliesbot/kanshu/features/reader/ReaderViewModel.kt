@@ -10,11 +10,14 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.navigator.ReaderHighlight
 import com.charliesbot.kanshu.navigator.ReaderPagePositions
 import com.charliesbot.kanshu.navigator.ReaderResourceLoader
+import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import java.io.File
@@ -52,6 +55,7 @@ class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
   private val syncRepository: SyncRepository,
+  private val annotationRepository: AnnotationRepository,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -118,6 +122,17 @@ class ReaderViewModel(
   private val _resourceLoader = MutableStateFlow<ReaderResourceLoader?>(null)
   val resourceLoader: StateFlow<ReaderResourceLoader?> = _resourceLoader.asStateFlow()
 
+  private val _highlights = MutableStateFlow<List<ReaderHighlight>>(emptyList())
+
+  /**
+   * Highlights for the chapter on screen, in chapter text-stream offsets.
+   *
+   * Re-subscribed per chapter rather than held per book, so the renderer never has to filter, and
+   * emptied on every chapter change so the previous chapter's marks can't paint on the new one.
+   */
+  val highlights: StateFlow<List<ReaderHighlight>> = _highlights.asStateFlow()
+  private var highlightsJob: Job? = null
+
   private enum class LandingPage {
     Start,
     End,
@@ -162,6 +177,9 @@ class ReaderViewModel(
     bookFile = null
     pagePositions = ReaderPagePositions.Empty
     anchorCharOffset = null
+    highlightsJob?.cancel()
+    highlightsJob = null
+    _highlights.value = emptyList()
 
     openJob = viewModelScope.launch {
       Log.d(TAG, "open($seriesId): loading")
@@ -202,6 +220,7 @@ class ReaderViewModel(
           }
           spineItemCache[spineItem.spineIndex] = spineItem
           currentSpineIndex = spineItem.spineIndex
+          observeHighlights()
           Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
           _uiState.value =
             ReaderUiState.Reading(
@@ -263,6 +282,39 @@ class ReaderViewModel(
         positions.charOffsetOf(_currentPage.value.coerceIn(0, positions.pageCount - 1))
     }
     persistProgress()
+  }
+
+  /**
+   * Stores the current selection as a highlight. The range is the engine's, in chapter text-stream
+   * offsets, so the highlight lands on the same words after any repagination.
+   */
+  fun addHighlight(selection: ReaderSelectionInfo) {
+    val id = bookId ?: return
+    if (!selection.hasRange) return
+    val spineIndex = currentSpineIndex
+    viewModelScope.launch {
+      annotationRepository.addHighlight(
+        bookId = id,
+        spineIndex = spineIndex,
+        startCharOffset = selection.startCharOffset,
+        endCharOffset = selection.endCharOffset,
+        selectedText = selection.text,
+      )
+    }
+  }
+
+  private fun observeHighlights() {
+    val id = bookId ?: return
+    val spineIndex = currentSpineIndex
+    highlightsJob?.cancel()
+    _highlights.value = emptyList()
+    highlightsJob = viewModelScope.launch {
+      annotationRepository.observeForSpine(id, spineIndex).collect { annotations ->
+        _highlights.value = annotations.map {
+          ReaderHighlight(it.startCharOffset, it.endCharOffset)
+        }
+      }
+    }
   }
 
   /** Re-anchors to the page the reader just moved to, then persists it. */
@@ -408,6 +460,7 @@ class ReaderViewModel(
         // chapter can be persisted or re-anchored against this spine index.
         pagePositions = ReaderPagePositions.Empty
         anchorCharOffset = null
+        observeHighlights()
         _currentPage.value = if (landing == LandingPage.End) LAST_PAGE_SENTINEL else 0
         Log.d(TAG, "openSpineItem: opened spine[${item.spineIndex}] landing=$landing")
         _uiState.value =
@@ -426,6 +479,7 @@ class ReaderViewModel(
   }
 
   override fun onCleared() {
+    highlightsJob?.cancel()
     openJob?.cancel()
     spineJob?.cancel()
     publication?.close()

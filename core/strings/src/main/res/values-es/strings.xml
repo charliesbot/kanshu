@@ -48,6 +48,7 @@
     <string name="reader_overlay_next_chapter">Capítulo siguiente</string>
     <string name="reader_overlay_sync_to_furthest">Sincronizar con el punto más avanzado</string>
     <string name="reader_overlay_page_label">Página %1$d de %2$d</string>
+    <string name="reader_selection_highlight">Subrayar</string>
     <string name="reader_diagnostics_title">Diagnósticos del lector</string>
     <string name="reader_diagnostics_block_count">Bloques: %1$d</string>
     <string name="reader_diagnostics_page_count">Páginas: %1$d</string>

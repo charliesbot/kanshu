@@ -26,6 +26,7 @@ import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
 import com.charliesbot.kanshu.navigator.ReaderImageCache
 import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.ReaderPageViewer
+import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -41,10 +42,12 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   // Hoisted above key(spineIndex) so decoded images survive chapter changes.
   val imageCache = remember(seriesId) { ReaderImageCache() }
   val preferences by viewModel.preferences.collectAsStateWithLifecycle()
+  val highlights by viewModel.highlights.collectAsStateWithLifecycle()
   var overlayVisible by remember { mutableStateOf(false) }
   var readerPrefsVisible by remember { mutableStateOf(false) }
   var layoutDiagnostics by remember { mutableStateOf<ReaderLayoutDiagnostics?>(null) }
-  var selectedText by remember { mutableStateOf<ReaderSelectedText?>(null) }
+  var selectedText by remember { mutableStateOf<ReaderSelectionInfo?>(null) }
+  var clearSelectionToken by remember { mutableStateOf(0) }
 
   when (val state = uiState) {
     ReaderUiState.Loading ->
@@ -78,11 +81,13 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
               overlayVisible = false
               viewModel.nextPage()
             },
-            onTextSelected = { text, anchor ->
+            onTextSelected = { info ->
               overlayVisible = false
               readerPrefsVisible = false
-              selectedText = ReaderSelectedText(text = text, anchor = anchor)
+              selectedText = info
             },
+            highlights = highlights,
+            clearSelectionToken = clearSelectionToken,
             onSelectionCleared = { selectedText = null },
             onLinkTapped = { href ->
               overlayVisible = false
@@ -97,7 +102,16 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             modifier = Modifier.fillMaxSize(),
           )
         }
-        selectedText?.let { selection -> ReaderSelectionPopup(selection) }
+        selectedText?.let { selection ->
+          ReaderSelectionPopup(
+            selection = selection,
+            onHighlight = {
+              viewModel.addHighlight(selection)
+              // Drops the engine's selection too; onSelectionCleared closes the popup.
+              clearSelectionToken++
+            },
+          )
+        }
         if (overlayVisible) {
           ReaderOverlay(
             title = title,

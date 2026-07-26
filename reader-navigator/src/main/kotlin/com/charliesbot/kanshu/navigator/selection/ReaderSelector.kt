@@ -28,6 +28,12 @@ internal data class TextSelection(
   val anchor: RectF,
   val focusEntryIndex: Int = entryIndex,
   val focusRange: IntRange = range,
+  /**
+   * Half-open range of chapter text-stream offsets this selection covers. Computed where the
+   * segments and entries are already in hand, so nothing has to reconstruct them later. This is
+   * what a highlight is stored as — the same primitive the reader resumes from.
+   */
+  val streamRange: IntRange = IntRange.EMPTY,
 )
 
 internal object ReaderSelector {
@@ -435,7 +441,49 @@ internal object ReaderSelector {
       anchor = rects.union(),
       focusEntryIndex = focus.entryIndex,
       focusRange = focus.range,
+      streamRange = segments.streamRange(this),
     )
+  }
+
+  /** Chapter-stream span of these segments, as a half-open `start until end` range. */
+  private fun List<SelectionSegment>.streamRange(page: ReaderPage): IntRange {
+    if (isEmpty()) return IntRange.EMPTY
+    val start = minOf { page.entries[it.entryIndex].textStartCharOffset + it.range.first }
+    val end = maxOf { page.entries[it.entryIndex].textStartCharOffset + it.range.last + 1 }
+    return start until end
+  }
+
+  /**
+   * Rects for stored highlights on this page: each highlight's chapter-stream range is intersected
+   * with every text entry's own span and drawn through the same geometry selection uses, so a
+   * highlight lands on exactly the glyphs the selection covered — including across a block that
+   * splits over a page boundary.
+   */
+  internal fun highlightRects(
+    page: ReaderPage,
+    highlights: List<IntRange>,
+    horizontalMarginPx: Float,
+    verticalMarginPx: Float,
+  ): List<RectF> {
+    if (highlights.isEmpty()) return emptyList()
+    return page.entries.flatMap { entry ->
+      val layout = entry.textLayout() ?: return@flatMap emptyList()
+      val entryStart = entry.textStartCharOffset
+      val entryEnd = entryStart + layout.text.length
+      highlights.flatMap { highlight ->
+        val start = max(highlight.first, entryStart)
+        val end = min(highlight.last + 1, entryEnd)
+        if (start >= end) return@flatMap emptyList()
+        selectionRects(
+          layout = layout,
+          range = (start - entryStart) until (end - entryStart),
+          entry = entry,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+          extent = RectExtent.GlyphBox,
+        )
+      }
+    }
   }
 
   private fun ReaderPage.selectionSegments(
@@ -495,12 +543,26 @@ internal object ReaderSelector {
       layout.text.substring(segment.range.first, segment.range.last + 1)
     }
 
+  /**
+   * How far down a rect should extend.
+   *
+   * A selection fill covers the whole line box, leading included, so consecutive selected lines
+   * form one unbroken block. An underline has to stop at the glyphs: [StaticLayout.getLineBottom]
+   * carries the line-spacing leading, which at the default 1.4 multiplier would draw the bar well
+   * below the text and into the next line's ascenders.
+   */
+  private enum class RectExtent {
+    LineBox,
+    GlyphBox,
+  }
+
   private fun selectionRects(
     layout: StaticLayout,
     range: IntRange,
     entry: PageEntry,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
+    extent: RectExtent = RectExtent.LineBox,
   ): List<RectF> {
     val startLine = layout.getLineForOffset(range.first)
     val endLine = layout.getLineForOffset(range.last)
@@ -520,11 +582,16 @@ internal object ReaderSelector {
             else -> 0f
           }
         val bounds = layout.horizontalBounds(line, startOffset, endOffset, entry.textJustified)
+        val bottom =
+          when (extent) {
+            RectExtent.LineBox -> layout.getLineBottom(line).toFloat()
+            RectExtent.GlyphBox -> layout.getLineBaseline(line) + layout.paint.fontMetrics.descent
+          }
         RectF(
           horizontalMarginPx + bounds.left + entry.drawOffsetXPx,
           verticalMarginPx + layout.getLineTop(line) - topOffset + entry.yOffsetPx,
           horizontalMarginPx + bounds.right + entry.drawOffsetXPx,
-          verticalMarginPx + layout.getLineBottom(line) - topOffset + entry.yOffsetPx,
+          verticalMarginPx + bottom - topOffset + entry.yOffsetPx,
         )
       }
   }

@@ -922,4 +922,92 @@ class ReaderSelectionTest {
     }
     return measuredWidth
   }
+
+  @Test
+  fun highlightRects_coverOnlyTheHighlightedRangeOnThePage() {
+    val fixture = layoutDocument("Alpha beta gamma delta epsilon.")
+    val entry = fixture.page.entries.first() as PageEntry.FullBlock
+    val text = entry.layout.text.toString()
+    val start = text.indexOf("beta")
+    val range = entry.textStartCharOffset + start until entry.textStartCharOffset + start + 4
+
+    val rects =
+      ReaderSelector.highlightRects(
+        page = fixture.page,
+        highlights = listOf(range),
+        horizontalMarginPx = fixture.horizontalMarginPx,
+        verticalMarginPx = fixture.verticalMarginPx,
+      )
+
+    // Bounds, not just existence: an implementation that underlined the whole line, or dropped the
+    // entry-relative offset translation, would still return non-empty rects of positive size.
+    val paint = entry.layout.paint
+    val expectedLeft = fixture.horizontalMarginPx + entry.layout.text.measureText(paint, 0, start)
+    val expectedRight =
+      fixture.horizontalMarginPx + entry.layout.text.measureText(paint, 0, start + 4)
+
+    assertEquals("a highlight inside one line is one rect", 1, rects.size)
+    assertEquals(expectedLeft, rects.single().left, 1f)
+    assertEquals(expectedRight, rects.single().right, 1f)
+
+    // The bar marks the glyphs, not the line box. getLineBottom carries the line-spacing leading
+    // (1.4 by default), which would put it below the text and into the next line's ascenders.
+    val glyphBottom =
+      fixture.verticalMarginPx + entry.layout.getLineBaseline(0) + paint.fontMetrics.descent
+    assertEquals(glyphBottom, rects.single().bottom, 0.5f)
+    assertTrue(
+      "the glyph box must stop above the leaded line box",
+      rects.single().bottom < fixture.verticalMarginPx + entry.layout.getLineBottom(0),
+    )
+  }
+
+  @Test
+  fun highlightRects_translateStreamOffsetsPerEntry() {
+    // Two blocks, so the second entry's textStartCharOffset is non-zero. With a single-block
+    // fixture the entry-relative translation in highlightRects is the identity and a regression
+    // there would go unnoticed.
+    val fixture =
+      layoutDocument(
+        listOf(
+          ParagraphBlock(listOf(TextLeaf("Alpha beta gamma."))),
+          ParagraphBlock(listOf(TextLeaf("Delta epsilon zeta."))),
+        )
+      )
+    val second = fixture.page.entries[1] as PageEntry.FullBlock
+    val secondText = second.layout.text.toString()
+    val start = secondText.indexOf("epsilon")
+    val range =
+      second.textStartCharOffset + start until second.textStartCharOffset + start + "epsilon".length
+
+    val rects =
+      ReaderSelector.highlightRects(
+        page = fixture.page,
+        highlights = listOf(range),
+        horizontalMarginPx = fixture.horizontalMarginPx,
+        verticalMarginPx = fixture.verticalMarginPx,
+      )
+
+    assertTrue("the second block's offsets must resolve", rects.isNotEmpty())
+    val paint = second.layout.paint
+    val expectedLeft = fixture.horizontalMarginPx + secondText.measureText(paint, 0, start)
+
+    assertEquals(expectedLeft, rects.first().left, 1f)
+    // And it lands on the second block, not the first.
+    assertTrue(rects.first().top > fixture.page.entries[0].yOffsetPx)
+  }
+
+  @Test
+  fun highlightRects_ignoreRangesOutsideThePage() {
+    val fixture = layoutDocument("Alpha beta gamma.")
+
+    val rects =
+      ReaderSelector.highlightRects(
+        page = fixture.page,
+        highlights = listOf(10_000 until 10_010),
+        horizontalMarginPx = fixture.horizontalMarginPx,
+        verticalMarginPx = fixture.verticalMarginPx,
+      )
+
+    assertTrue(rects.isEmpty())
+  }
 }

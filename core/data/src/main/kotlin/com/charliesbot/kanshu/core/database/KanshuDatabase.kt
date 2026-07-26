@@ -1,6 +1,5 @@
 package com.charliesbot.kanshu.core.database
 
-import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
@@ -12,9 +11,10 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 
 @Database(
   entities = [BookEntity::class, ReadingProgressEntity::class, AnnotationEntity::class],
-  version = 2,
-  autoMigrations = [AutoMigration(from = 1, to = 2)],
-  exportSchema = true,
+  version = 3,
+  // No exported schemas and no migrations: a bump rebuilds the database (see CoreDataModule). The
+  // entity classes are the schema, so a checked-in JSON copy of them has no reader.
+  exportSchema = false,
 )
 abstract class KanshuDatabase : RoomDatabase() {
   abstract fun bookDao(): BookDao
