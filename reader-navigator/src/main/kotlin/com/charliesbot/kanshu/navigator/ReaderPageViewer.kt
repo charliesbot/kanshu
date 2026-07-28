@@ -54,6 +54,7 @@ fun ReaderPageViewer(
   preferences: ReaderPreferences,
   currentPage: Int,
   onPageCount: (Int) -> Unit,
+  onPagePositions: (ReaderPagePositions) -> Unit = {},
   resourceLoader: ReaderResourceLoader? = null,
   onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit = {},
   onLayoutFailed: () -> Unit = {},
@@ -90,6 +91,7 @@ fun ReaderPageViewer(
       imageBoundsCache = imageCache.bounds,
       onPages = { laidOut -> pages = laidOut },
       onPageCount = onPageCount,
+      onPagePositions = onPagePositions,
       onLayoutDiagnostics = onLayoutDiagnostics,
       onLayoutFailed = onLayoutFailed,
     )
@@ -233,6 +235,7 @@ private fun LaunchedReaderLayout(
   imageBoundsCache: MutableMap<String, ImageBounds>,
   onPages: (List<ReaderPage>?) -> Unit,
   onPageCount: (Int) -> Unit,
+  onPagePositions: (ReaderPagePositions) -> Unit,
   onLayoutDiagnostics: (ReaderLayoutDiagnostics) -> Unit,
   onLayoutFailed: () -> Unit,
 ) {
@@ -290,6 +293,9 @@ private fun LaunchedReaderLayout(
     )
     onPages(laidOut)
     onPageCount(laidOut.size)
+    // Reported after the staleness check so a cancelled generation never overwrites the
+    // offsets the live layout published.
+    onPagePositions(layoutResult.pagePositions)
     onLayoutDiagnostics(
       ReaderLayoutDiagnostics(
         blockCount = document.blocks.size,
@@ -311,7 +317,7 @@ private suspend fun layoutPages(
 ): LayoutResult? =
   try {
     val startedAt = SystemClock.elapsedRealtime()
-    val pages =
+    val result =
       withContext(Dispatchers.Default) {
         ReaderLayoutEngine()
           .layout(
@@ -325,7 +331,11 @@ private suspend fun layoutPages(
             shouldContinue = { generation == currentGeneration() },
           )
       }
-    LayoutResult(pages = pages, paginationMillis = SystemClock.elapsedRealtime() - startedAt)
+    LayoutResult(
+      pages = result.pages,
+      pagePositions = result.toPagePositions(),
+      paginationMillis = SystemClock.elapsedRealtime() - startedAt,
+    )
   } catch (e: CancellationException) {
     throw e
   } catch (e: Exception) {
@@ -413,7 +423,11 @@ private fun decodeImageBounds(bytes: ByteArray): ImageBounds? {
   }
 }
 
-private data class LayoutResult(val pages: List<ReaderPage>, val paginationMillis: Long)
+private data class LayoutResult(
+  val pages: List<ReaderPage>,
+  val pagePositions: ReaderPagePositions,
+  val paginationMillis: Long,
+)
 
 internal fun List<ReaderPage>.hasRenderablePage(): Boolean = isNotEmpty()
 

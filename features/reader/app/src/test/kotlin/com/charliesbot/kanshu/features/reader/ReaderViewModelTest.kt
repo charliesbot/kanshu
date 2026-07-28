@@ -8,7 +8,12 @@ import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
+import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.core.sync.InitialPosition
+import com.charliesbot.kanshu.core.sync.RemoteProgress
+import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.navigator.ReaderPagePositions
 import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -865,6 +870,267 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `stored position reopens its chapter at the page containing its char offset`() =
+    runTest(testDispatcher) {
+      val sync =
+        FakeSyncRepository(
+          stored = ReaderPosition(spineIndex = 1, charOffset = 150, progressInSpine = 0.5f)
+        )
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          ),
+          syncRepository = sync,
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      assertEquals(1, viewModel.currentSpineIndex())
+
+      viewModel.onPagePositions(
+        1,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
+      )
+
+      assertEquals(1, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `repagination keeps the reader on the same text, not the same page index`() =
+    runTest(testDispatcher) {
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
+      )
+      viewModel.nextPage()
+      assertEquals(1, viewModel.currentPage.value)
+
+      // Shrinking the font repaginates the chapter into more, smaller pages. Character offset
+      // 100 now lives on page 2 — holding the old index would show different text.
+      viewModel.onPageCount(0, 6)
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(
+          pageStartCharOffsets = listOf(0, 50, 100, 150, 200, 250),
+          textStreamLength = 300,
+        ),
+      )
+
+      assertEquals(2, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `repagination at an unchanged position keeps the same page`() =
+    runTest(testDispatcher) {
+      val sync =
+        FakeSyncRepository(
+          stored = ReaderPosition(spineIndex = 0, charOffset = 200, progressInSpine = 0.6f)
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val positions =
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPagePositions(0, positions)
+      assertEquals(2, viewModel.currentPage.value)
+
+      viewModel.onPageCount(0, 3)
+      viewModel.previousPage()
+      assertEquals(1, viewModel.currentPage.value)
+      viewModel.onPagePositions(0, positions)
+
+      assertEquals(1, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `stored position for an unreadable chapter falls back to the first spine item`() =
+    runTest(testDispatcher) {
+      val sync =
+        FakeSyncRepository(
+          stored = ReaderPosition(spineIndex = 1, charOffset = 150, progressInSpine = 0.5f)
+        )
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublicationWithMissingResource(
+                missingResourceIndex = 1,
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          ),
+          syncRepository = sync,
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(0, viewModel.currentSpineIndex())
+      // The offset belonged to the chapter we couldn't open; it must not seek within this one.
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
+      )
+      assertEquals(0, viewModel.currentPage.value)
+    }
+
+  @Test
+  fun `a resume that lands mid-page reports the page start, not the stored offset`() =
+    runTest(testDispatcher) {
+      // Typography changed between sessions, so the stored offset no longer starts a page. The
+      // reader lands on the page containing it, which is behind the stored offset — the sync
+      // layer's pre-push check is what stops that going to the server, so the reader must report
+      // it honestly rather than echoing the stored value back.
+      val sync =
+        FakeSyncRepository(
+          stored = ReaderPosition(spineIndex = 0, charOffset = 150, progressInSpine = 0.375f)
+        )
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
+      )
+
+      assertEquals(
+        listOf(ReaderPosition(spineIndex = 0, charOffset = 100, progressInSpine = 0.25f)),
+        sync.saved,
+      )
+    }
+
+  @Test
+  fun `opening a book reports the position it resumed from and nothing else`() =
+    runTest(testDispatcher) {
+      // The sync layer drops a position matching the one it handed out, which is what stops a
+      // stale local row from clobbering a further-ahead server. That only holds if the reader
+      // reports the resumed position exactly rather than something near it.
+      val resumed = ReaderPosition(spineIndex = 0, charOffset = 100, progressInSpine = 0.25f)
+      val sync = FakeSyncRepository(stored = resumed)
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
+      )
+
+      assertEquals(listOf(resumed), sync.saved)
+    }
+
+  @Test
+  fun `opening a book does not consult the remote`() =
+    runTest(testDispatcher) {
+      // The open path must stay local-only: a slow or unreachable host would otherwise sit in
+      // front of the first page.
+      val sync = FakeSyncRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(false, sync.remoteConsulted)
+    }
+
+  @Test
+  fun `repagination re-reports the current position, not a shifted one`() =
+    runTest(testDispatcher) {
+      val sync = FakeSyncRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val positions =
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.onPagePositions(0, positions)
+      viewModel.nextPage()
+
+      // A preference change repaginates the same chapter at the same position.
+      viewModel.onPagePositions(0, positions)
+
+      // Two distinct positions total — the landing page and the page turned to. The repagination
+      // re-reports the second rather than introducing a third, which is what lets the sync layer
+      // drop it as redundant.
+      assertEquals(2, sync.saved.distinct().size)
+      // Specifically the page turned to, re-reported. A repagination that reported the landing
+      // page again would also leave two distinct values but would send the reader backwards.
+      assertEquals(sync.saved[sync.saved.size - 2], sync.saved.last())
+    }
+
+  @Test
+  fun `page turns persist the char offset of the page landed on`() =
+    runTest(testDispatcher) {
+      val sync = FakeSyncRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.onPagePositions(
+        0,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
+      )
+      viewModel.nextPage()
+
+      val last = sync.saved.last()
+      assertEquals(0, last.spineIndex)
+      assertEquals(100, last.charOffset)
+      assertEquals(0.25f, last.progressInSpine)
+    }
+
+  @Test
+  fun `a tap that cannot move reports no new position`() =
+    runTest(testDispatcher) {
+      // Last page of the last chapter: nextPage has nowhere to go, so every report is the position
+      // the reader was already at and the sync layer drops all but the first.
+      val sync = FakeSyncRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val positions = ReaderPagePositions(pageStartCharOffsets = listOf(0), textStreamLength = 100)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 1)
+      viewModel.onPagePositions(0, positions)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      viewModel.onPagePositions(0, positions)
+
+      assertEquals(1, sync.saved.distinct().size)
+    }
+
+  @Test
+  fun `progress is not persisted before the offsets table arrives`() =
+    runTest(testDispatcher) {
+      val sync = FakeSyncRepository()
+      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.onPageCount(0, 3)
+      viewModel.nextPage()
+
+      // Without offsets there is no stable position to write — a page index alone is the very
+      // thing character offsets exist to stop persisting.
+      assertTrue(sync.saved.isEmpty())
+    }
+
+  @Test
   fun `duplicate open with same seriesId is no-op`() =
     runTest(testDispatcher) {
       val publication = testPublication()
@@ -881,8 +1147,14 @@ class ReaderViewModelTest {
   private fun viewModel(
     source: ReaderSource,
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
+    syncRepository: SyncRepository = FakeSyncRepository(),
   ): ReaderViewModel =
-    ReaderViewModel(OpenBookUseCase(source), preferencesRepository, ioDispatcher = testDispatcher)
+    ReaderViewModel(
+      OpenBookUseCase(source),
+      preferencesRepository,
+      syncRepository,
+      ioDispatcher = testDispatcher,
+    )
 
   private fun testPublication(vararg xhtml: String): Publication {
     val spine =
@@ -997,6 +1269,45 @@ private class FakeReaderPreferencesRepository(initial: ReaderPreferences = Reade
   override suspend fun resetSpacing() {
     spacingReset = true
   }
+}
+
+private class FakeSyncRepository(private val stored: ReaderPosition? = null) : SyncRepository {
+  val saved = mutableListOf<ReaderPosition>()
+  var remoteConsulted = false
+    private set
+
+  override suspend fun localPosition(bookId: String): ReaderPosition? = stored
+
+  override suspend fun resolveInitialPosition(
+    bookId: String,
+    file: File,
+    publication: Publication,
+  ): InitialPosition {
+    remoteConsulted = true
+    return InitialPosition.UseLocal(stored)
+  }
+
+  override fun setProgress(
+    bookId: String,
+    file: File,
+    position: ReaderPosition,
+    publication: Publication,
+  ) {
+    saved += position
+  }
+
+  override suspend fun flushProgress(
+    bookId: String,
+    file: File,
+    position: ReaderPosition,
+    publication: Publication,
+  ) = Unit
+
+  override suspend fun pullFurthestPosition(
+    bookId: String,
+    file: File,
+    publication: Publication,
+  ): RemoteProgress? = null
 }
 
 private class FakeReaderSource(vararg publications: Pair<Int, Publication>) : ReaderSource {

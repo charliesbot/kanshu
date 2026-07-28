@@ -3,16 +3,21 @@ package com.charliesbot.kanshu.features.reader
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.charliesbot.kanshu.core.library.BookIds
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
+import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
+import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.navigator.ReaderPagePositions
 import com.charliesbot.kanshu.navigator.ReaderResourceLoader
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,12 +31,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.readium.r2.shared.publication.Publication
-
-private const val TAG = "ReaderViewModel"
-
-// Placeholder page index meaning "last page of the chapter". Set when navigating backward into a
-// chapter whose page count is not known yet; onPageCount clamps it to the real last page.
-private const val LAST_PAGE_SENTINEL = Int.MAX_VALUE
 
 sealed interface ReaderUiState {
   data object Loading : ReaderUiState
@@ -52,6 +51,7 @@ sealed interface ReaderUiState {
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
+  private val syncRepository: SyncRepository,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -128,6 +128,15 @@ class ReaderViewModel(
   private var currentSeriesId: Int? = null
   private var publication: Publication? = null
   private var currentSpineIndex = -1
+  private var bookId: String? = null
+  private var bookFile: File? = null
+  // Char offsets of the current chapter's pages. Empty until its layout reports them, which is
+  // why progress is only written once positions arrive rather than on every page-index change.
+  private var pagePositions = ReaderPagePositions.Empty
+  // The character offset the reader is holding in the current chapter. Seeded from the restored
+  // position, re-resolved to a page on every pagination, and updated on every page turn. Null
+  // only between opening a chapter and its first layout.
+  private var anchorCharOffset: Int? = null
   // Chapter reentry (e.g. paging back across a boundary) must not re-parse the spine item.
   private val spineItemCache = mutableMapOf<Int, SpineItem>()
   private var stylesheets: PublicationStylesheets? = null
@@ -149,6 +158,10 @@ class ReaderViewModel(
     currentSpineIndex = -1
     spineItemCache.clear()
     stylesheets = null
+    bookId = null
+    bookFile = null
+    pagePositions = ReaderPagePositions.Empty
+    anchorCharOffset = null
 
     openJob = viewModelScope.launch {
       Log.d(TAG, "open($seriesId): loading")
@@ -156,19 +169,36 @@ class ReaderViewModel(
       when (result) {
         is ReaderResult.Success -> {
           publication = result.publication
+          bookId = BookIds.forKavitaSeries(seriesId)
+          bookFile = result.file
           _resourceLoader.value = PublicationResourceLoader(result.publication)
           stylesheets = PublicationStylesheets(result.publication)
           Log.d(
             TAG,
             "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
           )
+          val restored = restoredPosition()
+          anchorCharOffset = restored?.charOffset
           val spineItem =
             withContext(ioDispatcher) {
-              result.publication.readNextSpineItem(afterSpineIndex = -1, stylesheets)
+              val stored =
+                restored?.spineIndex?.let { result.publication.readSpineItemAt(it, stylesheets) }
+              // An unreadable stored chapter (book replaced, spine reordered) falls back to the
+              // start rather than refusing to open the book.
+              //
+              // TODO: this fallback is silent, and the first layout then reports the book start,
+              // which overwrites the stored position. Acceptable for now because the case that
+              // reaches here is almost always a changed spine, where the stored offset no longer
+              // means anything. The fix is to surface the failed resume instead of guessing: show
+              // "couldn't open where you left off", and let the user's choice create the position.
+              stored ?: result.publication.readNextSpineItem(afterSpineIndex = -1, stylesheets)
             }
           if (spineItem == null) {
             failOpen("open($seriesId): no spine item → OpenFailed")
             return@launch
+          }
+          if (spineItem.spineIndex != restored?.spineIndex) {
+            anchorCharOffset = null
           }
           spineItemCache[spineItem.spineIndex] = spineItem
           currentSpineIndex = spineItem.spineIndex
@@ -205,6 +235,83 @@ class ReaderViewModel(
     _currentPage.update { page -> page.coerceIn(0, lastPageIndex()) }
   }
 
+  /**
+   * Receives the chapter's page-to-character-offset table once layout completes.
+   *
+   * Every pagination re-resolves [anchorCharOffset] to a page, not just the first one after a
+   * restore. A preference change repaginates the chapter, and holding the old page *index* against
+   * a new pagination would land the reader on different text — the exact failure character offsets
+   * exist to prevent. Once anchored, the reader keeps its place across font size, margins, and
+   * spacing.
+   */
+  fun onPagePositions(spineIndex: Int, positions: ReaderPagePositions) {
+    val reading = _uiState.value as? ReaderUiState.Reading
+    if (reading?.spineIndex != spineIndex) {
+      Log.d(TAG, "onPagePositions ignored for stale spine[$spineIndex]")
+      return
+    }
+    pagePositions = positions
+    val anchor = anchorCharOffset
+    if (anchor != null) {
+      val page = positions.pageIndexOf(anchor)
+      Log.d(TAG, "anchor charOffset=$anchor → page $page")
+      _currentPage.value = page
+    } else if (positions.pageCount > 0) {
+      // First pagination of a freshly opened chapter with nothing to restore: adopt the page we
+      // landed on (0, or the last page when paging backward across a boundary) as the anchor.
+      anchorCharOffset =
+        positions.charOffsetOf(_currentPage.value.coerceIn(0, positions.pageCount - 1))
+    }
+    persistProgress()
+  }
+
+  /** Re-anchors to the page the reader just moved to, then persists it. */
+  private fun onPageChanged() {
+    if (pagePositions.pageCount == 0) return
+    val page = _currentPage.value.coerceIn(0, pagePositions.pageCount - 1)
+    anchorCharOffset = pagePositions.charOffsetOf(page)
+    persistProgress()
+  }
+
+  /**
+   * The position to reopen at, or null to start from the beginning.
+   *
+   * Read from the local row only. Reconciling with a newer remote needs the "continue from
+   * (device)?" prompt, and consulting the server here would put an HTTP timeout in front of the
+   * first page on a device that is regularly offline.
+   */
+  private suspend fun restoredPosition(): ReaderPosition? = bookId?.let {
+    syncRepository.localPosition(it)
+  }
+
+  /**
+   * Reports the current page's character offset to the sync layer, which persists locally at once
+   * and debounces the remote push on its own scope — so progress survives this ViewModel being torn
+   * down without a teardown flush of our own.
+   *
+   * Called freely, including on the pagination that follows a resume. Deciding what is worth
+   * writing and what would overwrite a further-along remote is the sync layer's job.
+   */
+  private fun persistProgress() {
+    val id = bookId ?: return
+    val file = bookFile ?: return
+    val currentPublication = publication ?: return
+    if (pagePositions.pageCount == 0 || currentSpineIndex < 0) return
+    val page = _currentPage.value.coerceIn(0, pagePositions.pageCount - 1)
+    val position =
+      ReaderPosition(
+        spineIndex = currentSpineIndex,
+        charOffset = pagePositions.charOffsetOf(page),
+        progressInSpine = pagePositions.progressInSpine(page),
+      )
+    syncRepository.setProgress(
+      bookId = id,
+      file = file,
+      position = position,
+      publication = currentPublication,
+    )
+  }
+
   fun onLayoutFailed() {
     failOpen("onLayoutFailed → OpenFailed")
   }
@@ -228,6 +335,7 @@ class ReaderViewModel(
       Log.d(TAG, "nextPage: $page → $next (of ${_pageCount.value})")
       next
     }
+    onPageChanged()
   }
 
   fun previousPage() {
@@ -248,6 +356,7 @@ class ReaderViewModel(
       Log.d(TAG, "previousPage: $page → $previous (of ${_pageCount.value})")
       previous
     }
+    onPageChanged()
   }
 
   /**
@@ -295,6 +404,10 @@ class ReaderViewModel(
         spineItemCache[item.spineIndex] = item
         currentSpineIndex = item.spineIndex
         _pageCount.value = 0
+        // Cleared before the new chapter reports its own table, so no offset from the previous
+        // chapter can be persisted or re-anchored against this spine index.
+        pagePositions = ReaderPagePositions.Empty
+        anchorCharOffset = null
         _currentPage.value = if (landing == LandingPage.End) LAST_PAGE_SENTINEL else 0
         Log.d(TAG, "openSpineItem: opened spine[${item.spineIndex}] landing=$landing")
         _uiState.value =
@@ -316,5 +429,13 @@ class ReaderViewModel(
     openJob?.cancel()
     spineJob?.cancel()
     publication?.close()
+  }
+
+  private companion object {
+    const val TAG = "ReaderViewModel"
+    // Placeholder page index meaning "last page of the chapter". Set when navigating backward
+    // into a chapter whose page count is not known yet; onPageCount clamps it to the real last
+    // page.
+    const val LAST_PAGE_SENTINEL = Int.MAX_VALUE
   }
 }

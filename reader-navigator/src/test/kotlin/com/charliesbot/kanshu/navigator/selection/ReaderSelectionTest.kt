@@ -56,6 +56,7 @@ class ReaderSelectionTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
         .single()
     val entry = page.entries.single() as PageEntry.FullBlock
     val layout = entry.layout
@@ -890,6 +891,7 @@ class ReaderSelectionTest {
           justify = justify,
           styleResolver = styleResolver::resolve,
         )
+        .pages
     return LayoutFixture(
       page = pagePicker(pages),
       horizontalMarginPx = horizontalMarginPx,

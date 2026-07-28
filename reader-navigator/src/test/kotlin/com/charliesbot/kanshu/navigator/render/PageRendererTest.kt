@@ -52,6 +52,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertTrue(pages.size >= 2)
     val secondPage = pages[1]
@@ -94,6 +95,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertEquals(2, pages.size)
 
@@ -125,6 +127,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertTrue(pages.single().entries.single() is PageEntry.HorizontalRule)
 
@@ -159,6 +162,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.Image
 
@@ -198,6 +202,7 @@ class PageRendererTest {
           styleResolver = styleResolver::resolve,
           imageBounds = { ImageBounds(intrinsicWidthPx = 80, intrinsicHeightPx = 40) },
         )
+        .pages
     val entry = pages.single().entries.single() as PageEntry.Image
 
     val imageBitmap =
@@ -241,6 +246,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.FullBlock
     val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
@@ -286,6 +292,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.FullBlock
     val bitmap = Bitmap.createBitmap(viewport.widthPx, viewport.heightPx, Bitmap.Config.ARGB_8888)
@@ -344,6 +351,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries.map { it as PageEntry.FullBlock }
     assertEquals(2, entries.size)
@@ -380,6 +388,7 @@ class PageRendererTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.FullBlock
     val selectionRect =

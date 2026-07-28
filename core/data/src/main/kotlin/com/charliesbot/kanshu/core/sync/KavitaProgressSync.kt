@@ -16,8 +16,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.readium.r2.shared.publication.Publication
 
-private const val TAG = "KavitaProgressSync"
-
 class KavitaProgressSync(
   private val api: KavitaApi,
   private val credentials: CredentialsRepository,
@@ -62,11 +60,15 @@ class KavitaProgressSync(
             ?: return@runCatchingNetwork null
         val spineIndex = KoreaderPosition.decodeSpineIndex(remote.progress)
         if (spineIndex == null) {
-          Log.w(TAG, "Remote progress had no decodable spine index; skipping")
-          return@runCatchingNetwork null
+          Log.w(TAG, "Remote progress had no decodable spine index; percentage only")
         }
         RemoteProgress(
-          position = ReaderPosition(spineIndex = spineIndex, pageIndex = 0, progressInSpine = 0f),
+          // kosync carries only a spine-level position, so the offset within the chapter is
+          // unknown — resume lands at the chapter start.
+          position =
+            spineIndex?.let {
+              ReaderPosition(spineIndex = it, charOffset = 0, progressInSpine = 0f)
+            },
           percentage = remote.percentage.toDouble(),
           // KOReader's kosync protocol uses epoch seconds; we expose millis everywhere else.
           timestampMillis = remote.timestamp * 1000L,
@@ -85,6 +87,10 @@ class KavitaProgressSync(
     } catch (e: Exception) {
       Result.failure(e)
     }
+
+  private companion object {
+    const val TAG = "KavitaProgressSync"
+  }
 }
 
 // Sentinel exceptions so callers can distinguish "skip, no setup" from "retry later."

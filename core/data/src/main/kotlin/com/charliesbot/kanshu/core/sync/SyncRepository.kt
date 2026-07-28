@@ -6,6 +6,7 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.progress.progressionIn
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,31 +17,53 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.readium.r2.shared.publication.Publication
 
-private const val TAG = "SyncRepository"
-private const val PUSH_DEBOUNCE_MILLIS = 5_000L
-private const val FLUSH_PUSH_TIMEOUT_MILLIS = 4_000L
-
-// Orchestrates the reader's relationship with both stores: the local DB (always-on, always
-// current) and the remote sync (best-effort, online-only). The reader VM calls these methods;
-// everything else (locator serialization, debounce timing, decision logic) lives here.
+/**
+ * Orchestrates the reader's relationship with both stores: the local DB (always-on, always current)
+ * and the remote sync (best-effort, online-only). The reader VM calls these methods; everything
+ * else — locator serialization, debounce timing, decision logic — lives here.
+ */
 interface SyncRepository {
-  // Called once when the reader opens. Returns either the local resume position, or
-  // PromptForRemote if the server has a position written after our local one — in which case
-  // the VM shows the "Continue from page X on (device)?" dialog and lets the user choose.
+  /**
+   * The position to open at, resolved against the server.
+   *
+   * Returns [InitialPosition.UseLocal], or [InitialPosition.PromptForRemote] when the server has a
+   * position written after our local one — in which case the VM shows the "Continue from page X on
+   * (device)?" dialog and lets the user choose.
+   */
   suspend fun resolveInitialPosition(
     bookId: String,
     file: File,
     publication: Publication,
   ): InitialPosition
 
-  // Called on every ReaderPosition change. Writes locally immediately, schedules a debounced
-  // push. Calling again before the debounce expires cancels the previous push and reschedules.
+  /**
+   * Local-only resume lookup: decodes the DB row, with no network involved.
+   *
+   * A row written by the page-index build decodes to the chapter start via the `charOffset`
+   * default, so there is no upgrade step. The reader opens through this rather than
+   * [resolveInitialPosition] so an unreachable Kavita host can't hold the first page behind an HTTP
+   * timeout — acting on a newer remote position needs the prompt above, which doesn't exist yet.
+   */
+  suspend fun localPosition(bookId: String): ReaderPosition?
+
+  /**
+   * Records where the reader is. Writes locally immediately and schedules a debounced push; calling
+   * again before the debounce expires cancels the previous push and reschedules.
+   *
+   * A push that would overwrite a further-along remote is skipped, so callers do not need to track
+   * whether the reader has actually moved.
+   */
   fun setProgress(bookId: String, file: File, position: ReaderPosition, publication: Publication)
 
-  // Called from the reader VM's onCleared. Cancels the pending debounce and force-pushes the
-  // last position synchronously, with a short timeout so a hanging network doesn't block book
-  // teardown. Best-effort: failure is logged and ignored — the DB row is the source of truth
-  // and the next book open will retry.
+  /**
+   * Teardown flush: cancels the pending debounce and force-pushes the last position synchronously,
+   * with a short timeout so a hanging network doesn't block book teardown. Best-effort — failure is
+   * logged and ignored, since the DB row is the source of truth and the next book open will retry.
+   *
+   * Nothing calls this yet. The debounce lives on this repository's own scope rather than the
+   * reader's, so a position survives the ViewModel being torn down as long as the process does;
+   * this exists for the case where it doesn't.
+   */
   suspend fun flushProgress(
     bookId: String,
     file: File,
@@ -48,8 +71,10 @@ interface SyncRepository {
     publication: Publication,
   )
 
-  // Manual "Sync to Furthest Page Read" action. Returns the remote progress only if it's
-  // further along than the local position; null means "already at furthest" or "no remote yet."
+  /**
+   * Manual "Sync to Furthest Page Read" action. Returns the remote progress only if it is further
+   * along than the local position; null means "already at furthest" or "no remote yet".
+   */
   suspend fun pullFurthestPosition(
     bookId: String,
     file: File,
@@ -58,11 +83,13 @@ interface SyncRepository {
 }
 
 sealed interface InitialPosition {
-  // Apply this position (or just start at the beginning if null). No prompt.
+  /** Apply this position, or just start at the beginning when null. No prompt. */
   data class UseLocal(val position: ReaderPosition?) : InitialPosition
 
-  // Show a dialog. local is what we'd use if the user declines; remote is the suggested
-  // alternative.
+  /**
+   * Show a dialog. [local] is what we'd use if the user declines; [remote] is the suggested
+   * alternative.
+   */
   data class PromptForRemote(val local: ReaderPosition?, val remote: RemoteProgress) :
     InitialPosition
 }
@@ -102,6 +129,9 @@ class SyncRepositoryImpl(
     }
   }
 
+  override suspend fun localPosition(bookId: String): ReaderPosition? =
+    progressDao.find(bookId)?.locatorJson?.let(::decodePosition)
+
   override fun setProgress(
     bookId: String,
     file: File,
@@ -112,15 +142,24 @@ class SyncRepositoryImpl(
     val locatorJson = jsonSerializer.encodeToString(ReaderPosition.serializer(), position)
     val progression = position.progressionIn(publication)
     scope.launch {
-      progressDao.upsert(
-        ReadingProgressEntity(
-          bookId = bookId,
-          locatorJson = locatorJson,
-          progression = progression,
-          updatedAt = now,
-          syncMetadata = null,
+      // Caught rather than allowed to reach the uncaught handler: this runs on a bare scope with
+      // no exception handler, so a full disk or a missing parent book row would take the app down
+      // mid-read. Losing one progress write is recoverable; the next page turn rewrites it.
+      try {
+        progressDao.upsert(
+          ReadingProgressEntity(
+            bookId = bookId,
+            locatorJson = locatorJson,
+            progression = progression,
+            updatedAt = now,
+            syncMetadata = null,
+          )
         )
-      )
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w(TAG, "Local progress write failed (will retry on next save): $e")
+      }
     }
     pendingPush?.cancel()
     pendingPush = scope.launch {
@@ -151,7 +190,35 @@ class SyncRepositoryImpl(
   }
 
   private suspend fun push(file: File, position: ReaderPosition, publication: Publication) {
-    val result = progressSync.push(file, position, publication, System.currentTimeMillis())
+    // The remote overwrites unconditionally, so reading ahead elsewhere and then turning one page
+    // here would destroy it. Fails open: a pull that errors must not block syncing on a device
+    // that is usually offline. Suppresses deliberate backward navigation too, which is the
+    // accepted cost until the "continue from another device?" prompt replaces this.
+    val remote =
+      try {
+        progressSync.pull(file, publication).getOrNull()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        null
+      }
+    if (remote != null && remote.percentage > position.progressionIn(publication)) {
+      Log.d(TAG, "Skipping push: remote is further along")
+      return
+    }
+    val result =
+      try {
+        progressSync.push(file, position, publication, System.currentTimeMillis())
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // Normalized rather than left to propagate: ProgressSync implementations do work outside
+        // their Result boundary (credential reads, file hashing), so a book file that vanishes
+        // between the exists() check and the open throws instead of returning a failed Result.
+        // These pushes run on a bare scope with no exception handler, so that would reach the
+        // default uncaught handler and kill the app mid-read.
+        Result.failure(e)
+      }
     result.exceptionOrNull()?.let { Log.w(TAG, "Push failed (will retry on next save): $it") }
   }
 
@@ -160,6 +227,13 @@ class SyncRepositoryImpl(
       jsonSerializer.decodeFromString(ReaderPosition.serializer(), json)
     } catch (e: Exception) {
       Log.w(TAG, "Failed to decode local ReaderPosition: $e")
-      ReaderPosition(schemaVersion = 1, spineIndex = 0, pageIndex = 0, progressInSpine = 0f)
+      ReaderPosition(spineIndex = 0, charOffset = 0, progressInSpine = 0f)
     }
+
+  private companion object {
+    const val TAG = "SyncRepository"
+    const val PUSH_DEBOUNCE_MILLIS = 5_000L
+    // Covers a pull and a push, since every push checks the remote first.
+    const val FLUSH_PUSH_TIMEOUT_MILLIS = 6_000L
+  }
 }

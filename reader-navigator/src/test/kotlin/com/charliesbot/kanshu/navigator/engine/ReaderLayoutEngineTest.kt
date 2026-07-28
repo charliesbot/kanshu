@@ -41,6 +41,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertEquals(1, pages.size)
     assertTrue(pages.first().entries.isNotEmpty())
@@ -69,6 +70,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertTrue(pages.size > 1)
     assertEquals(8, pages.sumOf { page -> page.entries.map { it.blockIndex }.distinct().size })
@@ -99,6 +101,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertEquals(1, pages.size)
   }
@@ -127,6 +130,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries
     assertEquals(3, entries.size)
@@ -153,6 +157,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.Image
     assertEquals(0, entry.blockIndex)
@@ -185,6 +190,7 @@ class ReaderLayoutEngineTest {
           justify = true,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries.filterIsInstance<PageEntry.FullBlock>()
     assertEquals(Layout.Alignment.ALIGN_CENTER, entries[0].layout.alignment)
@@ -213,6 +219,7 @@ class ReaderLayoutEngineTest {
           styleResolver = styleResolver::resolve,
           imageBounds = { ImageBounds(intrinsicWidthPx = 2000, intrinsicHeightPx = 1000) },
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.Image
     assertEquals(contentWidthPx, entry.widthPx, 0.01f)
@@ -239,6 +246,7 @@ class ReaderLayoutEngineTest {
           styleResolver = styleResolver::resolve,
           imageBounds = { ImageBounds(intrinsicWidthPx = 100, intrinsicHeightPx = 40) },
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.Image
     assertEquals(100f, entry.widthPx, 0.01f)
@@ -266,6 +274,7 @@ class ReaderLayoutEngineTest {
           styleResolver = styleResolver::resolve,
           imageBounds = { ImageBounds(intrinsicWidthPx = 500, intrinsicHeightPx = 5000) },
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.Image
     assertEquals(contentHeightPx, entry.visibleHeightPx, 0.01f)
@@ -290,6 +299,7 @@ class ReaderLayoutEngineTest {
           styleResolver = styleResolver::resolve,
           imageBounds = bounds,
         )
+        .pages
         .single()
         .entries
         .single() as PageEntry.Image
@@ -324,6 +334,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.single().entries.single() as PageEntry.FullBlock
     assertTrue(entry.drawOffsetXPx > 0f)
@@ -360,6 +371,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries
     assertEquals(2, entries.size)
@@ -400,6 +412,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertTrue(pages.single().entries.single() is PageEntry.FullBlock)
   }
@@ -454,6 +467,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries.map { it as PageEntry.FullBlock }
     assertEquals(4, entries.size)
@@ -507,6 +521,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entries = pages.single().entries.map { it as PageEntry.FullBlock }
     assertEquals(3, entries.size)
@@ -543,6 +558,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertEquals(2, pages.size)
     assertEquals(18, pages.first().entries.map { it.blockIndex }.distinct().size)
@@ -570,6 +586,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     pages.forEachIndexed { pageIndex, page ->
       page.entries.forEach { entry ->
@@ -610,6 +627,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     val entry = pages.first().entries.first() as PageEntry.FullBlock
     val fontSizePx = 36f // 18sp * default scale * density 2
@@ -641,6 +659,7 @@ class ReaderLayoutEngineTest {
           justify = false,
           styleResolver = styleResolver::resolve,
         )
+        .pages
 
     assertTrue(
       "first page should use remaining space for the next paragraph",
@@ -648,5 +667,163 @@ class ReaderLayoutEngineTest {
         entry is PageEntry.SplitBlock && entry.blockIndex == leadingBlocks.size
       },
     )
+  }
+
+  @Test
+  fun layout_textStreamLength_countsEveryBlocksText() {
+    val first = "Hello reader."
+    val second = "Second paragraph."
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ParagraphBlock(listOf(TextLeaf(first))),
+            HorizontalRule,
+            ParagraphBlock(listOf(TextLeaf(second))),
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val result =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    // The rule contributes nothing to the stream — only text does.
+    assertEquals(first.length + second.length, result.textStreamLength)
+  }
+
+  @Test
+  fun layout_blankBlock_stillConsumesStreamOffsets() {
+    val blank = "   "
+    val visible = "Visible text."
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(ParagraphBlock(listOf(TextLeaf(blank))), ParagraphBlock(listOf(TextLeaf(visible))))
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val result =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    // The blank block never renders, but dropping its offsets would shift every stored position
+    // behind it the moment the renderer's blank-skipping rule changed.
+    assertEquals(blank.length + visible.length, result.textStreamLength)
+    val entry = result.pages.first().entries.first()
+    assertEquals(blank.length, entry.textStartCharOffset)
+  }
+
+  @Test
+  fun layout_pageStartCharOffsets_increaseAcrossPages() {
+    val paragraphs = (1..40).map { ParagraphBlock(listOf(TextLeaf("Paragraph number $it."))) }
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val result =
+      ReaderLayoutEngine()
+        .layout(
+          document = ReaderDocument(blocks = paragraphs),
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    assertTrue("fixture should paginate", result.pages.size > 1)
+    val offsets = result.pages.map { it.startCharOffset }
+    assertEquals(0, offsets.first())
+    assertEquals(offsets.sorted(), offsets)
+    assertTrue("offsets should be distinct", offsets.toSet().size == offsets.size)
+    assertTrue("offsets stay within the stream", offsets.all { it < result.textStreamLength })
+  }
+
+  @Test
+  fun layout_splitBlock_pageStartsAtFirstVisibleLine() {
+    // A leading paragraph so the split block's own stream offset is non-zero — otherwise the
+    // textStartCharOffset + getLineStart(...) sum is only ever exercised against a zero base.
+    val leading = "Leading paragraph."
+    val leadingBlock = ParagraphBlock(listOf(TextLeaf(leading)))
+    // Explicit newlines rather than wrapping: Robolectric doesn't measure glyph widths, so line
+    // count has to come from the text itself (same approach as the overflow tests above).
+    val longParagraph =
+      ParagraphBlock(listOf(TextLeaf(List(80) { "split line $it" }.joinToString("\n"))))
+    val styleResolver =
+      BlockStyleResolver(ReaderPreferences(paragraphSpacing = 0f), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 500, density = 2f)
+
+    val result =
+      ReaderLayoutEngine()
+        .layout(
+          document = ReaderDocument(blocks = listOf(leadingBlock, longParagraph)),
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    assertTrue("fixture should split across pages", result.pages.size > 1)
+    val splitPage =
+      result.pages.withIndex().first { (_, page) ->
+        page.entries.firstOrNull() is PageEntry.SplitBlock
+      }
+    val entry = splitPage.value.entries.first() as PageEntry.SplitBlock
+    // Resuming mid-paragraph must land on the line the reader left, not the paragraph's start —
+    // and the offset is measured from the block's own start in the stream, not the chapter's.
+    assertEquals(leading.length, entry.textStartCharOffset)
+    assertEquals(
+      entry.textStartCharOffset + entry.layout.getLineStart(entry.lineRange.first),
+      splitPage.value.startCharOffset,
+    )
+    assertTrue(splitPage.value.startCharOffset > leading.length)
+  }
+
+  @Test
+  fun layout_listMarkers_stayOutOfTextStream() {
+    val items = listOf("first item", "second item")
+    val document =
+      ReaderDocument(
+        blocks =
+          listOf(
+            ListBlock(
+              ordered = true,
+              items = items.map { ListItem(listOf(ParagraphBlock(listOf(TextLeaf(it))))) },
+            )
+          )
+      )
+    val styleResolver = BlockStyleResolver(ReaderPreferences(), Typeface.DEFAULT, density = 2f)
+    val viewport = ReaderViewport(widthPx = 400, heightPx = 600, density = 2f)
+
+    val result =
+      ReaderLayoutEngine()
+        .layout(
+          document = document,
+          viewport = viewport,
+          horizontalMarginPx = styleResolver.horizontalMarginPx(),
+          verticalMarginPx = styleResolver.verticalMarginPx(),
+          justify = false,
+          styleResolver = styleResolver::resolve,
+        )
+
+    // "1." / "2." are drawn from markerText, so they must not inflate the stream.
+    assertEquals(items.sumOf { it.length }, result.textStreamLength)
   }
 }
