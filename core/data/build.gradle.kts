@@ -1,7 +1,6 @@
 plugins {
   alias(libs.plugins.android.library)
   alias(libs.plugins.ksp)
-  alias(libs.plugins.androidx.room)
   alias(libs.plugins.kotlin.serialization)
 }
 
@@ -24,10 +23,6 @@ android {
 
   testOptions { unitTests { isReturnDefaultValues = true } }
 }
-
-// Schema JSONs are checked in. Bumping KanshuDatabase.version writes a new file here that future
-// migrations are validated against.
-room { schemaDirectory("$projectDir/schemas") }
 
 dependencies {
   coreLibraryDesugaring(libs.android.desugar.jdk.libs)

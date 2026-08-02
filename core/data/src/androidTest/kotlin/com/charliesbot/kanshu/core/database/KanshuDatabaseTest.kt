@@ -79,7 +79,7 @@ class KanshuDatabaseTest {
     bookDao.upsert(sampleBook("kavita:1"))
     annotationDao.upsert(sampleAnnotation("a-1", "kavita:1"))
     bookDao.delete("kavita:1")
-    assertTrue(annotationDao.observeForBook("kavita:1").first().isEmpty())
+    assertTrue(annotationDao.observeForSpine("kavita:1", 0).first().isEmpty())
   }
 
   @Test
@@ -91,12 +91,16 @@ class KanshuDatabaseTest {
   }
 
   @Test
-  fun annotationsOrderedByCreatedAt() = runTest {
+  fun annotationsForASpineItemAreOrderedByOffset() = runTest {
     bookDao.upsert(sampleBook("kavita:1"))
-    annotationDao.upsert(sampleAnnotation("a-2", "kavita:1", createdAt = 200))
-    annotationDao.upsert(sampleAnnotation("a-1", "kavita:1", createdAt = 100))
-    val ids = annotationDao.observeForBook("kavita:1").first().map { it.id }
-    assertEquals(listOf("a-1", "a-2"), ids)
+    annotationDao.upsert(sampleAnnotation("late", "kavita:1", startCharOffset = 900))
+    annotationDao.upsert(sampleAnnotation("early", "kavita:1", startCharOffset = 100))
+    // A different chapter, to pin the spine filter against a real database.
+    annotationDao.upsert(sampleAnnotation("other", "kavita:1", spineIndex = 4))
+
+    val ids = annotationDao.observeForSpine("kavita:1", 0).first().map { it.id }
+
+    assertEquals(listOf("early", "late"), ids)
   }
 
   private fun sampleBook(
@@ -124,15 +128,20 @@ class KanshuDatabaseTest {
       syncMetadata = null,
     )
 
-  private fun sampleAnnotation(id: String, bookId: String, createdAt: Long = 0L): AnnotationEntity =
+  private fun sampleAnnotation(
+    id: String,
+    bookId: String,
+    createdAt: Long = 0L,
+    spineIndex: Int = 0,
+    startCharOffset: Int = 0,
+  ): AnnotationEntity =
     AnnotationEntity(
       id = id,
       bookId = bookId,
-      locatorJson = """{"href":"chapter1.xhtml"}""",
+      spineIndex = spineIndex,
+      startCharOffset = startCharOffset,
+      endCharOffset = startCharOffset + 5,
       selectedText = "hello",
-      color = null,
-      noteBody = null,
-      containsSpoiler = false,
       createdAt = createdAt,
       updatedAt = createdAt,
     )

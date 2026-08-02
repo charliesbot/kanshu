@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.features.reader
 
+import android.graphics.RectF
 import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
@@ -8,12 +9,16 @@ import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.ReaderSource
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
+import com.charliesbot.kanshu.core.reader.annotation.ReaderAnnotation
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
 import com.charliesbot.kanshu.core.sync.RemoteProgress
 import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.navigator.ReaderHighlight
 import com.charliesbot.kanshu.navigator.ReaderPagePositions
+import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.ParagraphBlock
@@ -31,6 +36,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -1131,6 +1137,83 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `addHighlight stores the selection range for the current chapter`() =
+    runTest(testDispatcher) {
+      val annotations = FakeAnnotationRepository()
+      val viewModel =
+        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.addHighlight(
+        ReaderSelectionInfo(
+          text = "highlighted words",
+          anchor = RectF(),
+          startCharOffset = 40,
+          endCharOffset = 57,
+        )
+      )
+      advanceUntilIdle()
+
+      val stored = annotations.saved.single()
+      assertEquals(0, stored.spineIndex)
+      assertEquals(40, stored.startCharOffset)
+      assertEquals(57, stored.endCharOffset)
+      assertEquals("highlighted words", stored.selectedText)
+      assertEquals(listOf(ReaderHighlight(40, 57)), viewModel.highlights.value)
+    }
+
+  @Test
+  fun `an empty selection range is not stored`() =
+    runTest(testDispatcher) {
+      val annotations = FakeAnnotationRepository()
+      val viewModel =
+        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.addHighlight(
+        ReaderSelectionInfo(text = "", anchor = RectF(), startCharOffset = 5, endCharOffset = 5)
+      )
+      advanceUntilIdle()
+
+      assertTrue(annotations.saved.isEmpty())
+    }
+
+  @Test
+  fun `highlights are scoped to the chapter on screen`() =
+    runTest(testDispatcher) {
+      val annotations = FakeAnnotationRepository()
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
+                "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
+              )
+          ),
+          annotationRepository = annotations,
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.addHighlight(
+        ReaderSelectionInfo(text = "one", anchor = RectF(), startCharOffset = 1, endCharOffset = 4)
+      )
+      advanceUntilIdle()
+      assertEquals(listOf(ReaderHighlight(1, 4)), viewModel.highlights.value)
+
+      viewModel.onPageCount(0, 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+
+      // Chapter 2 has none of its own, and must not inherit chapter 1's offsets.
+      assertEquals(1, viewModel.currentSpineIndex())
+      assertEquals(emptyList<ReaderHighlight>(), viewModel.highlights.value)
+    }
+
+  @Test
   fun `duplicate open with same seriesId is no-op`() =
     runTest(testDispatcher) {
       val publication = testPublication()
@@ -1148,11 +1231,13 @@ class ReaderViewModelTest {
     source: ReaderSource,
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
     syncRepository: SyncRepository = FakeSyncRepository(),
+    annotationRepository: AnnotationRepository = FakeAnnotationRepository(),
   ): ReaderViewModel =
     ReaderViewModel(
       OpenBookUseCase(source),
       preferencesRepository,
       syncRepository,
+      annotationRepository,
       ioDispatcher = testDispatcher,
     )
 
@@ -1269,6 +1354,39 @@ private class FakeReaderPreferencesRepository(initial: ReaderPreferences = Reade
   override suspend fun resetSpacing() {
     spacingReset = true
   }
+}
+
+private class FakeAnnotationRepository : AnnotationRepository {
+  private val stored = MutableStateFlow<List<ReaderAnnotation>>(emptyList())
+  val saved: List<ReaderAnnotation>
+    get() = stored.value
+
+  override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>> =
+    stored.map { all ->
+      all.filter { it.spineIndex == spineIndex }
+    }
+
+  override suspend fun addHighlight(
+    bookId: String,
+    spineIndex: Int,
+    startCharOffset: Int,
+    endCharOffset: Int,
+    selectedText: String,
+  ): ReaderAnnotation? {
+    if (endCharOffset <= startCharOffset) return null
+    val annotation =
+      ReaderAnnotation(
+        id = "annotation-${stored.value.size}",
+        spineIndex = spineIndex,
+        startCharOffset = startCharOffset,
+        endCharOffset = endCharOffset,
+        selectedText = selectedText,
+      )
+    stored.update { it + annotation }
+    return annotation
+  }
+
+  override suspend fun delete(id: String) = stored.update { all -> all.filterNot { it.id == id } }
 }
 
 private class FakeSyncRepository(private val stored: ReaderPosition? = null) : SyncRepository {

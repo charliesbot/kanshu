@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator.render
 
 import android.graphics.RectF
+import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.selection.ReaderSelector
 import com.charliesbot.kanshu.navigator.selection.TextSelection
@@ -18,7 +19,13 @@ internal class ReaderPageSelectionController(
   private var selectionTextPrefix = ""
   private var selectionTextSuffix = ""
   private var selectionLocale: Locale = Locale.getDefault()
-  private var onTextSelected: ((String, RectF) -> Unit)? = null
+  private var onTextSelected: ((ReaderSelectionInfo) -> Unit)? = null
+  // Stream range of the word the selection was anchored on, captured once when the selection
+  // starts and never revised. The full selection is always contiguous from the anchor to the
+  // focus, so unioning this with the on-page range reconstructs the whole span even when the
+  // anchor has scrolled onto another page — and, unlike accumulating every reported range, it
+  // shrinks correctly when the reader drags back toward the anchor.
+  private var anchorStreamRange: IntRange? = null
   private var onSelectionCleared: (() -> Unit)? = null
   private var onSelectionPageTurn:
     ((SelectionPageTurnDirection, String, String, TextSelection) -> Boolean)? =
@@ -33,7 +40,7 @@ internal class ReaderPageSelectionController(
     page: ReaderPage,
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
-    onTextSelected: ((String, RectF) -> Unit)?,
+    onTextSelected: ((ReaderSelectionInfo) -> Unit)?,
     onSelectionCleared: (() -> Unit)?,
     onSelectionPageTurn: ((SelectionPageTurnDirection, String, String, TextSelection) -> Boolean)?,
     selectionTextPrefix: String,
@@ -71,7 +78,7 @@ internal class ReaderPageSelectionController(
       }
     }
     selection?.let { textSelection ->
-      onTextSelected?.invoke(currentSelectedText().orEmpty(), textSelection.anchor)
+      notifySelected(textSelection)
     }
     return pageChanged && selection != null
   }
@@ -80,6 +87,7 @@ internal class ReaderPageSelectionController(
     if (selection == null) return false
     scheduler.cancel()
     selection = null
+    anchorStreamRange = null
     onSelectionCleared?.invoke()
     invalidate()
     return true
@@ -89,6 +97,7 @@ internal class ReaderPageSelectionController(
     if (selection == null && selectionTextPrefix.isEmpty() && selectionTextSuffix.isEmpty()) return
     scheduler.cancel()
     selection = null
+    anchorStreamRange = null
     selectionTextPrefix = ""
     selectionTextSuffix = ""
     onSelectionCleared?.invoke()
@@ -97,6 +106,7 @@ internal class ReaderPageSelectionController(
   fun startSelectionFromLongPress(xPx: Float, yPx: Float) {
     val currentPage = page ?: return
     clearSelectionCarryOver()
+    anchorStreamRange = null
     val textSelection =
       ReaderSelector.startSelectionAt(
         page = currentPage,
@@ -110,7 +120,7 @@ internal class ReaderPageSelectionController(
     if (textSelection == null) {
       onSelectionCleared?.invoke()
     } else {
-      onTextSelected?.invoke(currentSelectedText().orEmpty(), textSelection.anchor)
+      notifySelected(textSelection)
     }
     invalidate()
   }
@@ -119,7 +129,7 @@ internal class ReaderPageSelectionController(
     lastDragYPx = yPx
     if (updateSelectionPageTurn(yPx)) {
       selection?.let { updatedSelection ->
-        onTextSelected?.invoke(currentSelectedText().orEmpty(), updatedSelection.anchor)
+        notifySelected(updatedSelection)
       }
       invalidate()
       return
@@ -138,7 +148,7 @@ internal class ReaderPageSelectionController(
       ) ?: return
     if (updatedSelection == currentSelection) return
     selection = updatedSelection
-    onTextSelected?.invoke(currentSelectedText().orEmpty(), updatedSelection.anchor)
+    notifySelected(updatedSelection)
     invalidate()
   }
 
@@ -150,6 +160,7 @@ internal class ReaderPageSelectionController(
   fun release() {
     scheduler.cancel()
     selection = null
+    anchorStreamRange = null
     lastDragYPx = null
     onTextSelected = null
     onSelectionCleared = null
@@ -238,6 +249,34 @@ internal class ReaderPageSelectionController(
           locale = selectionLocale,
         )
     }
+
+  /** Reports the selection spanning the anchor and whatever of it is on this page. */
+  private fun notifySelected(textSelection: TextSelection) {
+    val callback = onTextSelected ?: return
+    val pageRange = textSelection.streamRange
+    if (anchorStreamRange == null && !pageRange.isEmpty()) {
+      // Only a fresh long press starts a selection; a page carried into mid-drag keeps the
+      // anchor it began with.
+      anchorStreamRange = pageRange
+    }
+    val anchor = anchorStreamRange
+    val range =
+      when {
+        // Nothing anchored yet, so there is no range to report.
+        anchor == null -> IntRange.EMPTY
+        // The selection is anchored but sits entirely on another page.
+        pageRange.isEmpty() -> anchor
+        else -> minOf(anchor.first, pageRange.first)..maxOf(anchor.last, pageRange.last)
+      }
+    callback(
+      ReaderSelectionInfo(
+        text = currentSelectedText().orEmpty(),
+        anchor = textSelection.anchor,
+        startCharOffset = if (range.isEmpty()) 0 else range.first,
+        endCharOffset = if (range.isEmpty()) 0 else range.last + 1,
+      )
+    )
+  }
 
   private fun currentSelectedText(): String? {
     val currentSelection = selection ?: return null

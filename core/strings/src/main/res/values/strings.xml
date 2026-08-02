@@ -48,6 +48,7 @@
     <string name="reader_overlay_next_chapter">Next chapter</string>
     <string name="reader_overlay_sync_to_furthest">Sync to furthest page read</string>
     <string name="reader_overlay_page_label">Page %1$d of %2$d</string>
+    <string name="reader_selection_highlight">Highlight</string>
     <string name="reader_diagnostics_title">Reader diagnostics</string>
     <string name="reader_diagnostics_block_count">Blocks: %1$d</string>
     <string name="reader_diagnostics_page_count">Pages: %1$d</string>

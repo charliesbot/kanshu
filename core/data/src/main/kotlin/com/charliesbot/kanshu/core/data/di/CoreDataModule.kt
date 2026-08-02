@@ -20,6 +20,8 @@ import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
 import com.charliesbot.kanshu.core.reader.KavitaReaderSource
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderSource
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.ReaderPreferencesRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.readerPreferencesDataStore
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -42,7 +44,12 @@ val coreDataModule = module {
   single<KeyCipher> { KavitaApiKeyCipher() }
   single<CredentialsRepository> { CredentialsRepositoryImpl(get(), get()) }
   single {
-    Room.databaseBuilder(androidContext(), KanshuDatabase::class.java, KanshuDatabase.NAME).build()
+    Room.databaseBuilder(androidContext(), KanshuDatabase::class.java, KanshuDatabase.NAME)
+      // Personal app: a schema bump rebuilds the database rather than carrying hand-written SQL
+      // that has to byte-match Room's generated schema. `books` re-syncs from Kavita and progress
+      // is pushed there too, so the only local-only loss is highlights.
+      .fallbackToDestructiveMigration(dropAllTables = true)
+      .build()
   }
   single { get<KanshuDatabase>().bookDao() }
   single { get<KanshuDatabase>().readingProgressDao() }
@@ -77,4 +84,5 @@ val coreDataModule = module {
   }
   single<ProgressSync> { KavitaProgressSync(api = get(), credentials = get(), device = get()) }
   single<SyncRepository> { SyncRepositoryImpl(progressSync = get(), progressDao = get()) }
+  single<AnnotationRepository> { AnnotationRepositoryImpl(annotationDao = get()) }
 }

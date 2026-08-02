@@ -15,6 +15,7 @@ internal object PageRenderer {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     selectionRects: List<RectF> = emptyList(),
+    highlightRects: List<RectF> = emptyList(),
     imageBitmaps: Map<String, Bitmap> = emptyMap(),
   ) {
     canvas.drawColor(Color.WHITE)
@@ -25,6 +26,17 @@ internal object PageRenderer {
       canvas.width - horizontalMarginPx,
       canvas.height - verticalMarginPx,
     )
+    // Highlights underline rather than fill: on a B&W panel a second grey fill would be hard to
+    // tell from the selection, and an underline stays legible under the text either way.
+    highlightRects.forEach { rect ->
+      canvas.drawRect(
+        rect.left,
+        rect.bottom - highlightThicknessPx(rect),
+        rect.right,
+        rect.bottom,
+        highlightPaint,
+      )
+    }
     selectionRects.forEach { rect -> canvas.drawRect(rect, selectionPaint) }
     page.entries.forEach { entry ->
       drawEntry(canvas, entry, horizontalMarginPx, verticalMarginPx, imageBitmaps)
@@ -157,6 +169,16 @@ internal object PageRenderer {
   }
 
   private val rulePaint =
+    Paint().apply {
+      color = Color.BLACK
+      isAntiAlias = false
+    }
+
+  // Proportional to line height so it tracks font size without a density parameter.
+  private fun highlightThicknessPx(rect: RectF): Float =
+    ((rect.bottom - rect.top) * 0.08f).coerceAtLeast(1f)
+
+  private val highlightPaint =
     Paint().apply {
       color = Color.BLACK
       isAntiAlias = false

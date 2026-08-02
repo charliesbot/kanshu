@@ -10,9 +10,13 @@ import androidx.room.PrimaryKey
 // highlight has `noteBody == null`; a highlight + note has it set. Kavita requires xPath, so a
 // "note without a highlight" can't round-trip — we don't model it.
 //
-// `locatorJson` is the Readium locator (start/end DOM range serialized). The Kavita-side xPath
-// pair is derived at sync time by walking the rendered DOM; we don't pre-cache it here because
-// annotations are typically created in-reader where the DOM is live anyway.
+// The range is stored as character offsets into the chapter's flattened text stream — the same
+// primitive reading progress uses (see ReaderPosition). This table previously held a Readium
+// DOM-range locator and planned to derive Kavita's xPath "by walking the rendered DOM"; that
+// predates the native engine, which has no live DOM at all. Offsets also survive typography
+// changes, where a pixel- or page-anchored highlight would drift off its words the first time
+// the reader changed the font. Kavita's xPath is a sync-time projection from the parsed
+// document, not something this table caches.
 @Entity(
   tableName = "annotations",
   foreignKeys =
@@ -24,16 +28,15 @@ import androidx.room.PrimaryKey
         onDelete = ForeignKey.CASCADE,
       )
     ],
-  indices = [Index("book_id")],
+  indices = [Index("book_id"), Index(value = ["book_id", "spine_index"])],
 )
 data class AnnotationEntity(
   @PrimaryKey val id: String,
   @ColumnInfo(name = "book_id") val bookId: String,
-  @ColumnInfo(name = "locator_json") val locatorJson: String,
+  @ColumnInfo(name = "spine_index") val spineIndex: Int,
+  @ColumnInfo(name = "start_char_offset") val startCharOffset: Int,
+  @ColumnInfo(name = "end_char_offset") val endCharOffset: Int,
   @ColumnInfo(name = "selected_text") val selectedText: String,
-  val color: Int?,
-  @ColumnInfo(name = "note_body") val noteBody: String?,
-  @ColumnInfo(name = "contains_spoiler") val containsSpoiler: Boolean,
   @ColumnInfo(name = "created_at") val createdAt: Long,
   @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )

@@ -3,20 +3,20 @@ package com.charliesbot.kanshu.navigator.render
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.RectF
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.selection.ReaderSelector
 import com.charliesbot.kanshu.navigator.selection.TextSelection
 import java.util.Locale
 
-private const val TAG = "ReaderPageCanvasView"
-
 internal class ReaderPageCanvasView(context: Context) : View(context) {
   private var page: ReaderPage? = null
+  private var highlightRanges: List<IntRange> = emptyList()
+  private var clearSelectionToken = 0
   private var horizontalMarginPx = 0f
   private var verticalMarginPx = 0f
   private var imageBitmaps: Map<String, Bitmap> = emptyMap()
@@ -67,9 +67,11 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     imageBitmaps: Map<String, Bitmap> = emptyMap(),
+    highlightRanges: List<IntRange> = emptyList(),
+    clearSelectionToken: Int = 0,
     onTapZone: ((ReaderPageTapZone) -> Unit)? = null,
     onLinkTapped: ((String) -> Unit)? = null,
-    onTextSelected: ((String, RectF) -> Unit)? = null,
+    onTextSelected: ((ReaderSelectionInfo) -> Unit)? = null,
     onSelectionCleared: (() -> Unit)? = null,
     onSelectionPageTurn: ((SelectionPageTurnDirection, String, String, TextSelection) -> Boolean)? =
       null,
@@ -84,6 +86,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     this.horizontalMarginPx = horizontalMarginPx
     this.verticalMarginPx = verticalMarginPx
     this.imageBitmaps = imageBitmaps
+    this.highlightRanges = highlightRanges
     this.onTapZone = onTapZone
     this.onLinkTapped = onLinkTapped
     if (
@@ -103,6 +106,12 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
       )
     ) {
       handledLongPress = true
+    }
+    // Committing an action on the selection (e.g. highlighting it) has to drop the selection
+    // itself; otherwise the next recomposition re-reports it and the popup reopens over it.
+    if (clearSelectionToken != this.clearSelectionToken) {
+      this.clearSelectionToken = clearSelectionToken
+      selectionController.clearSelection()
     }
     Log.d(TAG, "render entries=${page.entries.size}")
     invalidate()
@@ -174,7 +183,18 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
       horizontalMarginPx = horizontalMarginPx,
       verticalMarginPx = verticalMarginPx,
       selectionRects = selectionController.selectionRects,
+      highlightRects =
+        ReaderSelector.highlightRects(
+          page = page,
+          highlights = highlightRanges,
+          horizontalMarginPx = horizontalMarginPx,
+          verticalMarginPx = verticalMarginPx,
+        ),
       imageBitmaps = imageBitmaps,
     )
+  }
+
+  private companion object {
+    const val TAG = "ReaderPageCanvasView"
   }
 }
