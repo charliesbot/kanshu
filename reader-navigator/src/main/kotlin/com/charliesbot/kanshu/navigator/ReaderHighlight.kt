@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.navigator
 
 import android.graphics.RectF
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 
 /**
  * A stored highlight, addressed the same way reading progress is: a half-open range of character
@@ -10,7 +11,12 @@ import android.graphics.RectF
  * highlight pinned to pixels or page indexes would drift off its words the first time the reader
  * changed the font. See the Progress Model in `docs/PRD_NATIVE_READER.md`.
  */
-data class ReaderHighlight(val startCharOffset: Int, val endCharOffset: Int) {
+data class ReaderHighlight(
+  val startCharOffset: Int,
+  val endCharOffset: Int,
+  val id: String = "",
+  val color: ReaderHighlightColor = ReaderHighlightColor.default,
+) {
   init {
     require(endCharOffset > startCharOffset) {
       "Highlight must cover at least one character: $startCharOffset..$endCharOffset"
@@ -21,6 +27,11 @@ data class ReaderHighlight(val startCharOffset: Int, val endCharOffset: Int) {
   internal val range: IntRange
     get() = startCharOffset until endCharOffset
 }
+
+/** A stored highlight hit by a tap, anchored to its visible geometry on the current page. */
+data class ReaderHighlightTap(val highlight: ReaderHighlight, val anchor: RectF)
+
+internal data class RenderedHighlight(val highlight: ReaderHighlight, val rect: RectF)
 
 /**
  * What the reader currently has selected. Carries the text for display and the stream range so the

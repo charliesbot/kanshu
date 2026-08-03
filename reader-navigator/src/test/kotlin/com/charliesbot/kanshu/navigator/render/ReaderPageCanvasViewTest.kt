@@ -4,6 +4,8 @@ import android.os.Looper
 import android.text.Layout
 import android.text.TextPaint
 import android.view.MotionEvent
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.navigator.ReaderHighlight
 import com.charliesbot.kanshu.navigator.engine.BlockStyle
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
@@ -22,6 +24,33 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
 class ReaderPageCanvasViewTest {
+  @Test
+  fun tappingHighlightConsumesTapBeforePageZone() {
+    val view = ReaderPageCanvasView(RuntimeEnvironment.getApplication())
+    val highlights = mutableListOf<ReaderHighlight>()
+    val tappedZones = mutableListOf<ReaderPageTapZone>()
+    val page = selectablePage("alpha beta")
+    view.layout(0, 0, 500, 1000)
+    view.setPage(
+      page = page,
+      horizontalMarginPx = 0f,
+      verticalMarginPx = 0f,
+      highlights =
+        listOf(ReaderHighlight(0, 5, id = "highlight-1", color = ReaderHighlightColor.Pink)),
+      onHighlightTapped = { highlights += it.highlight },
+      onTapZone = tappedZones::add,
+    )
+    val entry = page.entries.single() as PageEntry.FullBlock
+    val x = entry.layout.paint.measureText("al")
+    val y = (entry.layout.getLineTop(0) + entry.layout.getLineBottom(0)) / 2f
+
+    view.onTouchEvent(MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, x, y, 0))
+    view.onTouchEvent(MotionEvent.obtain(0L, 10L, MotionEvent.ACTION_UP, x, y, 0))
+
+    assertEquals(listOf("highlight-1"), highlights.map { it.id })
+    assertEquals(emptyList<ReaderPageTapZone>(), tappedZones)
+  }
+
   @Test
   fun performClick_invokesCenterTapZoneForAccessibilityClicks() {
     val view = ReaderPageCanvasView(RuntimeEnvironment.getApplication())

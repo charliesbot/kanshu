@@ -2,8 +2,10 @@ package com.charliesbot.kanshu.core.reader.annotation
 
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.flow.first
@@ -14,6 +16,17 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AnnotationRepositoryTest {
+  @Test
+  fun `updateHighlightColor updates the stored annotation color and timestamp`() = runTest {
+    val dao =
+      mockk<AnnotationDao> {
+        coEvery { updateColor("annotation-id", "AQUA", 1_700L) } returns Unit
+      }
+
+    repository(dao).updateHighlightColor("annotation-id", ReaderHighlightColor.Aqua)
+
+    coVerify(exactly = 1) { dao.updateColor("annotation-id", "AQUA", 1_700L) }
+  }
 
   @Test
   fun `addHighlight stores the offsets and returns the annotation`() = runTest {
@@ -87,6 +100,36 @@ class AnnotationRepositoryTest {
     )
   }
 
+  @Test
+  fun `stored colors accept legacy casing and unknown values fall back to yellow`() = runTest {
+    val rows =
+      listOf(
+        annotationEntity(id = "legacy", color = "aqua"),
+        annotationEntity(id = "unknown", color = "not-a-color"),
+      )
+    val dao = mockk<AnnotationDao> { every { observeForSpine("kavita:7", 3) } returns flowOf(rows) }
+
+    val annotations = repository(dao).observeForSpine("kavita:7", 3).first()
+
+    assertEquals(
+      listOf(ReaderHighlightColor.Aqua, ReaderHighlightColor.Yellow),
+      annotations.map { it.color },
+    )
+  }
+
   private fun repository(dao: AnnotationDao): AnnotationRepository =
     AnnotationRepositoryImpl(annotationDao = dao, now = { 1_700L }, newId = { "annotation-id" })
 }
+
+private fun annotationEntity(id: String, color: String): AnnotationEntity =
+  AnnotationEntity(
+    id = id,
+    bookId = "kavita:7",
+    spineIndex = 3,
+    startCharOffset = 10,
+    endCharOffset = 20,
+    selectedText = "words",
+    color = color,
+    createdAt = 5L,
+    updatedAt = 5L,
+  )

@@ -23,6 +23,7 @@ import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
+import com.charliesbot.kanshu.navigator.ReaderHighlightTap
 import com.charliesbot.kanshu.navigator.ReaderImageCache
 import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.ReaderPageViewer
@@ -47,6 +48,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
   var readerPrefsVisible by remember { mutableStateOf(false) }
   var layoutDiagnostics by remember { mutableStateOf<ReaderLayoutDiagnostics?>(null) }
   var selectedText by remember { mutableStateOf<ReaderSelectionInfo?>(null) }
+  var tappedHighlight by remember { mutableStateOf<ReaderHighlightTap?>(null) }
   var clearSelectionToken by remember { mutableStateOf(0) }
 
   when (val state = uiState) {
@@ -74,19 +76,28 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
             onLayoutFailed = viewModel::onLayoutFailed,
             onPreviousPage = {
               overlayVisible = false
+              tappedHighlight = null
               viewModel.previousPage()
             },
             onCenterTap = { overlayVisible = true },
             onNextPage = {
               overlayVisible = false
+              tappedHighlight = null
               viewModel.nextPage()
             },
             onTextSelected = { info ->
               overlayVisible = false
               readerPrefsVisible = false
+              tappedHighlight = null
               selectedText = info
             },
             highlights = highlights,
+            onHighlightTapped = { tap ->
+              overlayVisible = false
+              readerPrefsVisible = false
+              selectedText = null
+              tappedHighlight = tap
+            },
             clearSelectionToken = clearSelectionToken,
             onSelectionCleared = { selectedText = null },
             onLinkTapped = { href ->
@@ -104,11 +115,29 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
         }
         selectedText?.let { selection ->
           ReaderSelectionPopup(
-            selection = selection,
-            onHighlight = {
-              viewModel.addHighlight(selection)
+            anchor = selection.anchor,
+            currentColor = null,
+            canDelete = false,
+            onDelete = {},
+            onColorSelected = { color ->
+              viewModel.addHighlight(selection, color)
               // Drops the engine's selection too; onSelectionCleared closes the popup.
               clearSelectionToken++
+            },
+          )
+        }
+        tappedHighlight?.let { tap ->
+          ReaderSelectionPopup(
+            anchor = tap.anchor,
+            currentColor = tap.highlight.color,
+            canDelete = true,
+            onDelete = {
+              viewModel.removeHighlight(tap.highlight.id)
+              tappedHighlight = null
+            },
+            onColorSelected = { color ->
+              viewModel.setHighlightColor(tap.highlight.id, color)
+              tappedHighlight = null
             },
           )
         }
