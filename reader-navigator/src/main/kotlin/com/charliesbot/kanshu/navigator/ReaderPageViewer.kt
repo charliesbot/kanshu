@@ -62,6 +62,7 @@ fun ReaderPageViewer(
   onNextPage: (() -> Unit)? = null,
   onTextSelected: ((ReaderSelectionInfo) -> Unit)? = null,
   highlights: List<ReaderHighlight> = emptyList(),
+  onHighlightTapped: ((ReaderHighlightTap) -> Unit)? = null,
   /** Bump to drop the current selection — e.g. once it has been turned into a highlight. */
   clearSelectionToken: Int = 0,
   onSelectionCleared: (() -> Unit)? = null,
@@ -164,6 +165,7 @@ fun ReaderPageViewer(
         onLinkTapped = onLinkTapped,
         onTextSelected = { info -> onTextSelected?.invoke(info) },
         highlights = highlights,
+        onHighlightTapped = onHighlightTapped,
         clearSelectionToken = clearSelectionToken,
         onSelectionCleared = {
           selectionCarryState = SelectionCarryState()
@@ -451,6 +453,7 @@ private fun ReaderPageAndroidView(
   onLinkTapped: ((String) -> Unit)?,
   onTextSelected: (ReaderSelectionInfo) -> Unit,
   highlights: List<ReaderHighlight>,
+  onHighlightTapped: ((ReaderHighlightTap) -> Unit)?,
   clearSelectionToken: Int,
   onSelectionCleared: () -> Unit,
   onSelectionPageTurn: (SelectionPageTurnDirection, String, String, TextSelection) -> Boolean,
@@ -472,7 +475,8 @@ private fun ReaderPageAndroidView(
         onTapZone = onTapZone,
         onLinkTapped = onLinkTapped,
         onTextSelected = onTextSelected,
-        highlightRanges = highlights.map { it.range },
+        highlights = highlights,
+        onHighlightTapped = onHighlightTapped,
         clearSelectionToken = clearSelectionToken,
         onSelectionCleared = onSelectionCleared,
         onSelectionPageTurn = onSelectionPageTurn,
