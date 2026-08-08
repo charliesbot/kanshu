@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.charliesbot.kanshu.core.library.BookIds
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
@@ -288,7 +289,10 @@ class ReaderViewModel(
    * Stores the current selection as a highlight. The range is the engine's, in chapter text-stream
    * offsets, so the highlight lands on the same words after any repagination.
    */
-  fun addHighlight(selection: ReaderSelectionInfo) {
+  fun addHighlight(
+    selection: ReaderSelectionInfo,
+    color: ReaderHighlightColor = ReaderHighlightColor.default,
+  ) {
     val id = bookId ?: return
     if (!selection.hasRange) return
     val spineIndex = currentSpineIndex
@@ -299,8 +303,17 @@ class ReaderViewModel(
         startCharOffset = selection.startCharOffset,
         endCharOffset = selection.endCharOffset,
         selectedText = selection.text,
+        color = color,
       )
     }
+  }
+
+  fun removeHighlight(id: String) {
+    viewModelScope.launch { annotationRepository.delete(id) }
+  }
+
+  fun setHighlightColor(id: String, color: ReaderHighlightColor) {
+    viewModelScope.launch { annotationRepository.updateHighlightColor(id, color) }
   }
 
   private fun observeHighlights() {
@@ -311,7 +324,12 @@ class ReaderViewModel(
     highlightsJob = viewModelScope.launch {
       annotationRepository.observeForSpine(id, spineIndex).collect { annotations ->
         _highlights.value = annotations.map {
-          ReaderHighlight(it.startCharOffset, it.endCharOffset)
+          ReaderHighlight(
+            startCharOffset = it.startCharOffset,
+            endCharOffset = it.endCharOffset,
+            id = it.id,
+            color = it.color,
+          )
         }
       }
     }

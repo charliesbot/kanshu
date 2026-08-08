@@ -5,6 +5,9 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.MetricAffectingSpan
+import com.charliesbot.kanshu.navigator.ReaderHighlight
+import com.charliesbot.kanshu.navigator.ReaderHighlightTap
+import com.charliesbot.kanshu.navigator.RenderedHighlight
 import com.charliesbot.kanshu.navigator.engine.EpubLinkSpan
 import com.charliesbot.kanshu.navigator.engine.PageEntry
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
@@ -484,6 +487,43 @@ internal object ReaderSelector {
         )
       }
     }
+  }
+
+  internal fun renderedHighlights(
+    page: ReaderPage,
+    highlights: List<ReaderHighlight>,
+    horizontalMarginPx: Float,
+    verticalMarginPx: Float,
+  ): List<RenderedHighlight> = highlights.flatMap { highlight ->
+    highlightRects(
+        page = page,
+        highlights = listOf(highlight.range),
+        horizontalMarginPx = horizontalMarginPx,
+        verticalMarginPx = verticalMarginPx,
+      )
+      .map { rect -> RenderedHighlight(highlight, rect) }
+  }
+
+  internal fun highlightAt(
+    page: ReaderPage,
+    highlights: List<ReaderHighlight>,
+    xPx: Float,
+    yPx: Float,
+    horizontalMarginPx: Float,
+    verticalMarginPx: Float,
+  ): ReaderHighlightTap? {
+    val rendered =
+      renderedHighlights(page, highlights, horizontalMarginPx, verticalMarginPx).groupBy {
+        it.highlight
+      }
+    val hit =
+      highlights.asReversed().firstOrNull { highlight ->
+        rendered[highlight].orEmpty().any { it.rect.contains(xPx, yPx) }
+      } ?: return null
+    return ReaderHighlightTap(
+      highlight = hit,
+      anchor = rendered.getValue(hit).map { it.rect }.union(),
+    )
   }
 
   private fun ReaderPage.selectionSegments(

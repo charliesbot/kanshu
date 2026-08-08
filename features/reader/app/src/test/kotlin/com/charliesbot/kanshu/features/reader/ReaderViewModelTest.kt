@@ -4,6 +4,7 @@ import android.graphics.RectF
 import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
@@ -1160,7 +1161,52 @@ class ReaderViewModelTest {
       assertEquals(40, stored.startCharOffset)
       assertEquals(57, stored.endCharOffset)
       assertEquals("highlighted words", stored.selectedText)
-      assertEquals(listOf(ReaderHighlight(40, 57)), viewModel.highlights.value)
+      assertEquals(
+        listOf(ReaderHighlight(40, 57, id = "annotation-0")),
+        viewModel.highlights.value,
+      )
+    }
+
+  @Test
+  fun `removeHighlight deletes the tapped annotation`() =
+    runTest(testDispatcher) {
+      val annotations = FakeAnnotationRepository()
+      val viewModel =
+        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.addHighlight(
+        ReaderSelectionInfo("words", RectF(), startCharOffset = 4, endCharOffset = 9),
+        ReaderHighlightColor.Pink,
+      )
+      advanceUntilIdle()
+
+      viewModel.removeHighlight(annotations.saved.single().id)
+      advanceUntilIdle()
+
+      assertTrue(annotations.saved.isEmpty())
+      assertTrue(viewModel.highlights.value.isEmpty())
+    }
+
+  @Test
+  fun `setHighlightColor recolors the tapped annotation`() =
+    runTest(testDispatcher) {
+      val annotations = FakeAnnotationRepository()
+      val viewModel =
+        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+      viewModel.open(1)
+      advanceUntilIdle()
+      viewModel.addHighlight(
+        ReaderSelectionInfo("words", RectF(), startCharOffset = 4, endCharOffset = 9),
+        ReaderHighlightColor.Pink,
+      )
+      advanceUntilIdle()
+
+      viewModel.setHighlightColor(annotations.saved.single().id, ReaderHighlightColor.Aqua)
+      advanceUntilIdle()
+
+      assertEquals(ReaderHighlightColor.Aqua, annotations.saved.single().color)
+      assertEquals(ReaderHighlightColor.Aqua, viewModel.highlights.value.single().color)
     }
 
   @Test
@@ -1202,7 +1248,10 @@ class ReaderViewModelTest {
         ReaderSelectionInfo(text = "one", anchor = RectF(), startCharOffset = 1, endCharOffset = 4)
       )
       advanceUntilIdle()
-      assertEquals(listOf(ReaderHighlight(1, 4)), viewModel.highlights.value)
+      assertEquals(
+        listOf(ReaderHighlight(1, 4, id = "annotation-0")),
+        viewModel.highlights.value,
+      )
 
       viewModel.onPageCount(0, 1)
       viewModel.nextPage()
@@ -1372,6 +1421,7 @@ private class FakeAnnotationRepository : AnnotationRepository {
     startCharOffset: Int,
     endCharOffset: Int,
     selectedText: String,
+    color: ReaderHighlightColor,
   ): ReaderAnnotation? {
     if (endCharOffset <= startCharOffset) return null
     val annotation =
@@ -1381,10 +1431,16 @@ private class FakeAnnotationRepository : AnnotationRepository {
         startCharOffset = startCharOffset,
         endCharOffset = endCharOffset,
         selectedText = selectedText,
+        color = color,
       )
     stored.update { it + annotation }
     return annotation
   }
+
+  override suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor) =
+    stored.update { all ->
+      all.map { if (it.id == id) it.copy(color = color) else it }
+    }
 
   override suspend fun delete(id: String) = stored.update { all -> all.filterNot { it.id == id } }
 }
