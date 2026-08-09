@@ -22,6 +22,7 @@ import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -139,13 +140,29 @@ class ReaderViewModel(
     End,
   }
 
+  private sealed interface BookLifecycle {
+    data object Empty : BookLifecycle
+
+    data class Opening(val token: Long, val seriesId: Int) : BookLifecycle
+
+    data class Open(val session: BookSession) : BookLifecycle
+  }
+
+  private data class BookSession(
+    val seriesId: Int,
+    val bookId: String,
+    val file: File,
+    val publication: Publication,
+    val resourceLoader: ReaderResourceLoader,
+    val stylesheets: PublicationStylesheets,
+    val spineItems: MutableMap<Int, SpineItem> = mutableMapOf(),
+  )
+
   private var openJob: Job? = null
   private var spineJob: Job? = null
-  private var currentSeriesId: Int? = null
-  private var publication: Publication? = null
+  private var bookLifecycle: BookLifecycle = BookLifecycle.Empty
+  private var nextBookToken = 0L
   private var currentSpineIndex = -1
-  private var bookId: String? = null
-  private var bookFile: File? = null
   // Char offsets of the current chapter's pages. Empty until its layout reports them, which is
   // why progress is only written once positions arrive rather than on every page-index change.
   private var pagePositions = ReaderPagePositions.Empty
@@ -153,29 +170,31 @@ class ReaderViewModel(
   // position, re-resolved to a page on every pagination, and updated on every page turn. Null
   // only between opening a chapter and its first layout.
   private var anchorCharOffset: Int? = null
-  // Chapter reentry (e.g. paging back across a boundary) must not re-parse the spine item.
-  private val spineItemCache = mutableMapOf<Int, SpineItem>()
-  private var stylesheets: PublicationStylesheets? = null
+  private val openSession: BookSession?
+    get() = (bookLifecycle as? BookLifecycle.Open)?.session
 
   private fun lastPageIndex(): Int = (_pageCount.value - 1).coerceAtLeast(0)
 
   fun open(seriesId: Int) {
-    if (currentSeriesId == seriesId) return
-    currentSeriesId = seriesId
+    val activeSeriesId =
+      when (val lifecycle = bookLifecycle) {
+        BookLifecycle.Empty -> null
+        is BookLifecycle.Opening -> lifecycle.seriesId
+        is BookLifecycle.Open -> lifecycle.session.seriesId
+      }
+    if (activeSeriesId == seriesId) return
+
+    val opening = BookLifecycle.Opening(token = ++nextBookToken, seriesId = seriesId)
+    openJob?.cancel()
+    spineJob?.cancel()
+    openSession?.publication?.close()
+    bookLifecycle = opening
     _uiState.value = ReaderUiState.Loading
     _currentPage.value = 0
     _pageCount.value = 0
-    openJob?.cancel()
-    spineJob?.cancel()
     spineJob = null
-    publication?.close()
-    publication = null
     _resourceLoader.value = null
     currentSpineIndex = -1
-    spineItemCache.clear()
-    stylesheets = null
-    bookId = null
-    bookFile = null
     pagePositions = ReaderPagePositions.Empty
     anchorCharOffset = null
     highlightsJob?.cancel()
@@ -183,63 +202,95 @@ class ReaderViewModel(
     _highlights.value = emptyList()
 
     openJob = viewModelScope.launch {
-      Log.d(TAG, "open($seriesId): loading")
-      val result = withContext(ioDispatcher) { openBook(seriesId) }
-      when (result) {
-        is ReaderResult.Success -> {
-          publication = result.publication
-          bookId = BookIds.forKavitaSeries(seriesId)
-          bookFile = result.file
-          _resourceLoader.value = PublicationResourceLoader(result.publication)
-          stylesheets = PublicationStylesheets(result.publication)
-          Log.d(
-            TAG,
-            "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
-          )
-          val restored = restoredPosition()
-          anchorCharOffset = restored?.charOffset
-          val spineItem =
-            withContext(ioDispatcher) {
-              val stored =
-                restored?.spineIndex?.let { result.publication.readSpineItemAt(it, stylesheets) }
-              // An unreadable stored chapter (book replaced, spine reordered) falls back to the
-              // start rather than refusing to open the book.
-              //
-              // TODO: this fallback is silent, and the first layout then reports the book start,
-              // which overwrites the stored position. Acceptable for now because the case that
-              // reaches here is almost always a changed spine, where the stored offset no longer
-              // means anything. The fix is to surface the failed resume instead of guessing: show
-              // "couldn't open where you left off", and let the user's choice create the position.
-              stored ?: result.publication.readNextSpineItem(afterSpineIndex = -1, stylesheets)
+      val unownedPublication = AtomicReference<Publication?>()
+      try {
+        Log.d(TAG, "open($seriesId): loading")
+        val result =
+          withContext(ioDispatcher) {
+            openBook(seriesId).also { opened ->
+              unownedPublication.set((opened as? ReaderResult.Success)?.publication)
             }
-          if (spineItem == null) {
-            failOpen("open($seriesId): no spine item → OpenFailed")
-            return@launch
           }
-          if (spineItem.spineIndex != restored?.spineIndex) {
-            anchorCharOffset = null
-          }
-          spineItemCache[spineItem.spineIndex] = spineItem
-          currentSpineIndex = spineItem.spineIndex
-          observeHighlights()
-          Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
-          _uiState.value =
-            ReaderUiState.Reading(
-              spineIndex = spineItem.spineIndex,
-              document = spineItem.document,
-              diagnostics = spineItem.diagnostics,
+        if (bookLifecycle != opening) return@launch
+        when (result) {
+          is ReaderResult.Success -> {
+            val session =
+              BookSession(
+                seriesId = seriesId,
+                bookId = BookIds.forKavitaSeries(seriesId),
+                file = result.file,
+                publication = result.publication,
+                resourceLoader = PublicationResourceLoader(result.publication),
+                stylesheets = PublicationStylesheets(result.publication),
+              )
+            Log.d(
+              TAG,
+              "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
             )
+            val restored = restoredPosition(session.bookId)
+            anchorCharOffset = restored?.charOffset
+            val spineItem =
+              withContext(ioDispatcher) {
+                val stored =
+                  restored?.spineIndex?.let {
+                    session.publication.readSpineItemAt(it, session.stylesheets)
+                  }
+                // An unreadable stored chapter (book replaced, spine reordered) falls back to the
+                // start rather than refusing to open the book.
+                //
+                // TODO: this fallback is silent, and the first layout then reports the book start,
+                // which overwrites the stored position. Acceptable for now because the case that
+                // reaches here is almost always a changed spine, where the stored offset no longer
+                // means anything. The fix is to surface the failed resume instead of guessing: show
+                // "couldn't open where you left off", and let the user's choice create the
+                // position.
+                stored
+                  ?: session.publication.readNextSpineItem(
+                    afterSpineIndex = -1,
+                    session.stylesheets,
+                  )
+              }
+            if (bookLifecycle != opening) {
+              return@launch
+            }
+            if (spineItem == null) {
+              bookLifecycle = BookLifecycle.Empty
+              failOpen("open($seriesId): no spine item → OpenFailed")
+              return@launch
+            }
+            if (spineItem.spineIndex != restored?.spineIndex) {
+              anchorCharOffset = null
+            }
+            session.spineItems[spineItem.spineIndex] = spineItem
+            bookLifecycle = BookLifecycle.Open(session)
+            unownedPublication.set(null)
+            _resourceLoader.value = session.resourceLoader
+            currentSpineIndex = spineItem.spineIndex
+            observeHighlights()
+            Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
+            _uiState.value =
+              ReaderUiState.Reading(
+                spineIndex = spineItem.spineIndex,
+                document = spineItem.document,
+                diagnostics = spineItem.diagnostics,
+              )
+          }
+          ReaderResult.Error.NotFound -> {
+            bookLifecycle = BookLifecycle.Empty
+            Log.d(TAG, "open($seriesId): NotFound")
+            _uiState.value = ReaderUiState.Error.NotFound
+          }
+          ReaderResult.Error.ParseFailed -> {
+            bookLifecycle = BookLifecycle.Empty
+            failOpen("open($seriesId): ParseFailed → OpenFailed")
+          }
+          ReaderResult.Error.ReadFailed -> {
+            bookLifecycle = BookLifecycle.Empty
+            failOpen("open($seriesId): ReadFailed → OpenFailed")
+          }
         }
-        ReaderResult.Error.NotFound -> {
-          Log.d(TAG, "open($seriesId): NotFound")
-          _uiState.value = ReaderUiState.Error.NotFound
-        }
-        ReaderResult.Error.ParseFailed -> {
-          failOpen("open($seriesId): ParseFailed → OpenFailed")
-        }
-        ReaderResult.Error.ReadFailed -> {
-          failOpen("open($seriesId): ReadFailed → OpenFailed")
-        }
+      } finally {
+        unownedPublication.getAndSet(null)?.close()
       }
     }
   }
@@ -293,7 +344,7 @@ class ReaderViewModel(
     selection: ReaderSelectionInfo,
     color: ReaderHighlightColor = ReaderHighlightColor.default,
   ) {
-    val id = bookId ?: return
+    val id = openSession?.bookId ?: return
     if (!selection.hasRange) return
     val spineIndex = currentSpineIndex
     viewModelScope.launch {
@@ -317,7 +368,7 @@ class ReaderViewModel(
   }
 
   private fun observeHighlights() {
-    val id = bookId ?: return
+    val id = openSession?.bookId ?: return
     val spineIndex = currentSpineIndex
     highlightsJob?.cancel()
     _highlights.value = emptyList()
@@ -350,9 +401,8 @@ class ReaderViewModel(
    * (device)?" prompt, and consulting the server here would put an HTTP timeout in front of the
    * first page on a device that is regularly offline.
    */
-  private suspend fun restoredPosition(): ReaderPosition? = bookId?.let {
-    syncRepository.localPosition(it)
-  }
+  private suspend fun restoredPosition(bookId: String): ReaderPosition? =
+    syncRepository.localPosition(bookId)
 
   /**
    * Reports the current page's character offset to the sync layer, which persists locally at once
@@ -363,9 +413,7 @@ class ReaderViewModel(
    * writing and what would overwrite a further-along remote is the sync layer's job.
    */
   private fun persistProgress() {
-    val id = bookId ?: return
-    val file = bookFile ?: return
-    val currentPublication = publication ?: return
+    val session = openSession ?: return
     if (pagePositions.pageCount == 0 || currentSpineIndex < 0) return
     val page = _currentPage.value.coerceIn(0, pagePositions.pageCount - 1)
     val position =
@@ -375,10 +423,10 @@ class ReaderViewModel(
         progressInSpine = pagePositions.progressInSpine(page),
       )
     syncRepository.setProgress(
-      bookId = id,
-      file = file,
+      bookId = session.bookId,
+      file = session.file,
       position = position,
-      publication = currentPublication,
+      publication = session.publication,
     )
   }
 
@@ -436,7 +484,7 @@ class ReaderViewModel(
    */
   fun openLink(href: String) {
     val path = href.substringBefore('#')
-    val currentPublication = publication ?: return
+    val currentPublication = openSession?.publication ?: return
     val target =
       currentPublication.readingOrder.indexOfFirst { link ->
         link.url().path?.trimStart('/') == path
@@ -454,16 +502,16 @@ class ReaderViewModel(
 
   private fun openSpineItem(targetSpineIndex: Int, landing: LandingPage) {
     if (spineJob?.isActive == true) return
-    val currentPublication = publication ?: return
+    val session = openSession ?: return
     val startingSpineIndex = currentSpineIndex
     spineJob = viewModelScope.launch {
       try {
         val item =
-          spineItemCache[targetSpineIndex]
+          session.spineItems[targetSpineIndex]
             ?: withContext(ioDispatcher) {
-              currentPublication.readSpineItemAt(targetSpineIndex, stylesheets)
+              session.publication.readSpineItemAt(targetSpineIndex, session.stylesheets)
             }
-        if (publication !== currentPublication || currentSpineIndex != startingSpineIndex) {
+        if (openSession !== session || currentSpineIndex != startingSpineIndex) {
           Log.d(TAG, "openSpineItem: ignored stale open of spine[$targetSpineIndex]")
           return@launch
         }
@@ -471,7 +519,7 @@ class ReaderViewModel(
           Log.d(TAG, "openSpineItem: spine[$targetSpineIndex] unavailable")
           return@launch
         }
-        spineItemCache[item.spineIndex] = item
+        session.spineItems[item.spineIndex] = item
         currentSpineIndex = item.spineIndex
         _pageCount.value = 0
         // Cleared before the new chapter reports its own table, so no offset from the previous
@@ -500,7 +548,7 @@ class ReaderViewModel(
     highlightsJob?.cancel()
     openJob?.cancel()
     spineJob?.cancel()
-    publication?.close()
+    openSession?.publication?.close()
   }
 
   private companion object {

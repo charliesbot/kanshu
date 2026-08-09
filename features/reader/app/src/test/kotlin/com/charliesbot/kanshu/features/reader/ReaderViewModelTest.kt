@@ -32,6 +32,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -42,6 +44,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -220,6 +223,82 @@ class ReaderViewModelTest {
 
       verify(exactly = 1) { first.close() }
       verify(exactly = 0) { second.close() }
+    }
+
+  @Test
+  fun `failed open can retry the same series`() =
+    runTest(testDispatcher) {
+      val publication = testPublication()
+      var attempts = 0
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int): ReaderResult {
+            attempts++
+            return if (attempts == 1) {
+              ReaderResult.Error.NotFound
+            } else {
+              ReaderResult.Success(publication, File("test.epub"))
+            }
+          }
+        }
+      val viewModel = viewModel(source)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(2, attempts)
+      assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
+    }
+
+  @Test
+  fun `publication without a readable spine is closed and not exposed`() =
+    runTest(testDispatcher) {
+      val publication =
+        mockk<Publication>(relaxUnitFun = true) { every { readingOrder } returns emptyList() }
+      val viewModel = viewModel(FakeReaderSource(1 to publication))
+
+      viewModel.open(1)
+      advanceUntilIdle()
+
+      assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
+      assertNull(viewModel.resourceLoader.value)
+      verify(exactly = 1) { publication.close() }
+    }
+
+  @Test
+  fun `late result from replaced open is ignored`() =
+    runTest(testDispatcher) {
+      val ioDispatcher = StandardTestDispatcher(testScheduler, name = "reader-io")
+      val stalePublication = testPublication("<html><body><p>Stale</p></body></html>")
+      val freshPublication = testPublication("<html><body><p>Fresh</p></body></html>")
+      val source =
+        object : ReaderSource {
+          override suspend fun openBook(seriesId: Int): ReaderResult {
+            if (seriesId == 1) {
+              try {
+                delay(1_000)
+              } catch (_: CancellationException) {
+                // Simulates a source that completes despite cancellation.
+              }
+              return ReaderResult.Success(stalePublication, File("stale.epub"))
+            }
+            return ReaderResult.Success(freshPublication, File("fresh.epub"))
+          }
+        }
+      val viewModel = viewModel(source, ioDispatcher = ioDispatcher)
+
+      viewModel.open(1)
+      runCurrent()
+      viewModel.open(2)
+      advanceUntilIdle()
+
+      assertEquals(listOf("Fresh"), viewModel.currentDocument().paragraphText())
+      verify(exactly = 1) { stalePublication.close() }
+      verify(exactly = 0) { freshPublication.close() }
     }
 
   @Test
@@ -1281,13 +1360,14 @@ class ReaderViewModelTest {
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
     syncRepository: SyncRepository = FakeSyncRepository(),
     annotationRepository: AnnotationRepository = FakeAnnotationRepository(),
+    ioDispatcher: CoroutineDispatcher = testDispatcher,
   ): ReaderViewModel =
     ReaderViewModel(
       OpenBookUseCase(source),
       preferencesRepository,
       syncRepository,
       annotationRepository,
-      ioDispatcher = testDispatcher,
+      ioDispatcher = ioDispatcher,
     )
 
   private fun testPublication(vararg xhtml: String): Publication {
