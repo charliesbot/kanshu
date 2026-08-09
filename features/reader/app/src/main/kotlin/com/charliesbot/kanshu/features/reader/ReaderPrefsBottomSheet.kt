@@ -23,11 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.charliesbot.kanshu.core.reader.ReaderAlignment
-import com.charliesbot.kanshu.core.reader.ReaderFont
-import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
@@ -37,25 +33,12 @@ import com.charliesbot.kanshu.navigator.ReaderLayoutDiagnostics
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.strings.R
 
-data class ReaderPrefsCallbacks(
-  val onFontChange: (ReaderFont) -> Unit,
-  val onFontScaleChange: (Float) -> Unit,
-  val onBoldnessChange: (Float) -> Unit,
-  val onMarginsChange: (ReaderMargins) -> Unit,
-  val onAlignmentChange: (ReaderAlignment) -> Unit,
-  val onLineSpacingChange: (Float) -> Unit,
-  val onParagraphSpacingChange: (Float) -> Unit,
-  val onWordSpacingChange: (Float) -> Unit,
-  val onLetterSpacingChange: (Float) -> Unit,
-  val onResetSpacing: () -> Unit,
-)
-
 @Composable
 fun ReaderPrefsBottomSheet(
   isOpen: Boolean,
   onDismiss: () -> Unit,
   prefs: ReaderPreferences,
-  callbacks: ReaderPrefsCallbacks,
+  viewModel: ReaderViewModel,
   parseDiagnostics: ParseDiagnostics = ParseDiagnostics(),
   layoutDiagnostics: ReaderLayoutDiagnostics? = null,
   modifier: Modifier = Modifier,
@@ -63,7 +46,7 @@ fun ReaderPrefsBottomSheet(
   KanshuBottomSheet(isOpen = isOpen, onDismiss = onDismiss) {
     ReaderPrefsContent(
       prefs = prefs,
-      callbacks = callbacks,
+      viewModel = viewModel,
       parseDiagnostics = parseDiagnostics,
       layoutDiagnostics = layoutDiagnostics,
       modifier = modifier,
@@ -74,7 +57,7 @@ fun ReaderPrefsBottomSheet(
 @Composable
 private fun ReaderPrefsContent(
   prefs: ReaderPreferences,
-  callbacks: ReaderPrefsCallbacks,
+  viewModel: ReaderViewModel,
   parseDiagnostics: ParseDiagnostics,
   layoutDiagnostics: ReaderLayoutDiagnostics?,
   modifier: Modifier,
@@ -87,25 +70,25 @@ private fun ReaderPrefsContent(
       PrefsTab.Font ->
         FontTab(
           prefs = prefs,
-          onFontChange = callbacks.onFontChange,
-          onFontScaleChange = callbacks.onFontScaleChange,
-          onBoldnessChange = callbacks.onBoldnessChange,
+          onFontChange = viewModel::setFont,
+          onFontScaleChange = viewModel::setFontScale,
+          onBoldnessChange = viewModel::setBoldness,
         )
       PrefsTab.Layout ->
         LayoutTab(
           margins = prefs.margins,
           alignment = prefs.alignment,
-          onMarginsChange = callbacks.onMarginsChange,
-          onAlignmentChange = callbacks.onAlignmentChange,
+          onMarginsChange = viewModel::setMargins,
+          onAlignmentChange = viewModel::setAlignment,
         )
       PrefsTab.Spacing ->
         SpacingTab(
           prefs = prefs,
-          onLineSpacingChange = callbacks.onLineSpacingChange,
-          onParagraphSpacingChange = callbacks.onParagraphSpacingChange,
-          onWordSpacingChange = callbacks.onWordSpacingChange,
-          onLetterSpacingChange = callbacks.onLetterSpacingChange,
-          onResetSpacing = callbacks.onResetSpacing,
+          onLineSpacingChange = viewModel::setLineSpacing,
+          onParagraphSpacingChange = viewModel::setParagraphSpacing,
+          onWordSpacingChange = viewModel::setWordSpacing,
+          onLetterSpacingChange = viewModel::setLetterSpacing,
+          onResetSpacing = viewModel::resetSpacing,
         )
       PrefsTab.Themes -> Box(Modifier.fillMaxWidth().height(96.dp))
       PrefsTab.More ->
@@ -149,30 +132,5 @@ private fun TabStrip(activeTab: PrefsTab, onSelect: (PrefsTab) -> Unit) {
         )
       }
     }
-  }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
-@Composable
-private fun ReaderPrefsBottomSheetPreview() {
-  KanshuTheme {
-    ReaderPrefsBottomSheet(
-      isOpen = true,
-      onDismiss = {},
-      prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
-      callbacks =
-        ReaderPrefsCallbacks(
-          onFontChange = {},
-          onFontScaleChange = {},
-          onBoldnessChange = {},
-          onMarginsChange = {},
-          onAlignmentChange = {},
-          onLineSpacingChange = {},
-          onParagraphSpacingChange = {},
-          onWordSpacingChange = {},
-          onLetterSpacingChange = {},
-          onResetSpacing = {},
-        ),
-    )
   }
 }
