@@ -800,13 +800,13 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 1)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.nextPage()
       advanceUntilIdle()
-      viewModel.onPageCount(1, 1)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.previousPage()
       advanceUntilIdle()
-      viewModel.onPageCount(0, 1)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.nextPage()
       advanceUntilIdle()
 
@@ -891,6 +891,84 @@ class ReaderViewModelTest {
       viewModel.onPageCount(firstSpineIndex, 99)
 
       assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `stale page count callback after returning to the same spine is ignored`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to
+              testPublication(
+                "<html><body><p>First</p></body></html>",
+                "<html><body><p>Second</p></body></html>",
+              )
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      val firstVisitToken = viewModel.currentChapterToken()
+      viewModel.onPageCount(firstVisitToken, 1)
+      viewModel.nextPage()
+      advanceUntilIdle()
+      viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
+      viewModel.previousPage()
+      advanceUntilIdle()
+
+      viewModel.onPageCount(firstVisitToken, 99)
+
+      assertEquals(0, viewModel.pageCount.value)
+    }
+
+  @Test
+  fun `stale page positions from another book with the same spine are ignored`() =
+    runTest(testDispatcher) {
+      val sync = FakeSyncRepository()
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to testPublication("<html><body><p>Old book</p></body></html>"),
+            2 to testPublication("<html><body><p>New book</p></body></html>"),
+          ),
+          syncRepository = sync,
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      val oldChapterToken = viewModel.currentChapterToken()
+      viewModel.open(2)
+      advanceUntilIdle()
+
+      viewModel.onPagePositions(
+        oldChapterToken,
+        ReaderPagePositions(pageStartCharOffsets = listOf(0), textStreamLength = 100),
+      )
+
+      assertTrue(sync.saved.isEmpty())
+    }
+
+  @Test
+  fun `stale layout failure does not replace the current book`() =
+    runTest(testDispatcher) {
+      val viewModel =
+        viewModel(
+          FakeReaderSource(
+            1 to testPublication("<html><body><p>Old book</p></body></html>"),
+            2 to testPublication("<html><body><p>New book</p></body></html>"),
+          )
+        )
+
+      viewModel.open(1)
+      advanceUntilIdle()
+      val oldChapterToken = viewModel.currentChapterToken()
+      viewModel.open(2)
+      advanceUntilIdle()
+
+      viewModel.onLayoutFailed(oldChapterToken)
+
+      assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
     }
 
   @Test
@@ -979,7 +1057,7 @@ class ReaderViewModelTest {
       assertEquals(1, viewModel.currentSpineIndex())
 
       viewModel.onPagePositions(
-        1,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
 
@@ -993,9 +1071,9 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
       viewModel.nextPage()
@@ -1003,9 +1081,9 @@ class ReaderViewModelTest {
 
       // Shrinking the font repaginates the chapter into more, smaller pages. Character offset
       // 100 now lives on page 2 — holding the old index would show different text.
-      viewModel.onPageCount(0, 6)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 6)
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(
           pageStartCharOffsets = listOf(0, 50, 100, 150, 200, 250),
           textStreamLength = 300,
@@ -1028,13 +1106,13 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
       assertEquals(2, viewModel.currentPage.value)
 
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.previousPage()
       assertEquals(1, viewModel.currentPage.value)
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
 
       assertEquals(1, viewModel.currentPage.value)
     }
@@ -1065,7 +1143,7 @@ class ReaderViewModelTest {
       assertEquals(0, viewModel.currentSpineIndex())
       // The offset belonged to the chapter we couldn't open; it must not seek within this one.
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
       assertEquals(0, viewModel.currentPage.value)
@@ -1086,9 +1164,9 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
       )
 
@@ -1110,9 +1188,9 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
       )
 
@@ -1143,12 +1221,12 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
       viewModel.nextPage()
 
       // A preference change repaginates the same chapter at the same position.
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
 
       // Two distinct positions total — the landing page and the page turned to. The repagination
       // re-reports the second rather than introducing a third, which is what lets the sync layer
@@ -1167,9 +1245,9 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
-        0,
+        viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400),
       )
       viewModel.nextPage()
@@ -1191,11 +1269,11 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 1)
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 1)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
       viewModel.nextPage()
       advanceUntilIdle()
-      viewModel.onPagePositions(0, positions)
+      viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
 
       assertEquals(1, sync.saved.distinct().size)
     }
@@ -1208,7 +1286,7 @@ class ReaderViewModelTest {
 
       viewModel.open(1)
       advanceUntilIdle()
-      viewModel.onPageCount(0, 3)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.nextPage()
 
       // Without offsets there is no stable position to write — a page index alone is the very
@@ -1332,7 +1410,7 @@ class ReaderViewModelTest {
         viewModel.highlights.value,
       )
 
-      viewModel.onPageCount(0, 1)
+      viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.nextPage()
       advanceUntilIdle()
 
@@ -1434,6 +1512,39 @@ class ReaderViewModelTest {
     val state = uiState.value
     assertTrue(state is ReaderUiState.Reading)
     return (state as ReaderUiState.Reading).spineIndex
+  }
+
+  private fun ReaderViewModel.currentChapterToken(): Long {
+    val state = uiState.value
+    assertTrue(state is ReaderUiState.Reading)
+    return (state as ReaderUiState.Reading).chapterToken
+  }
+
+  private fun ReaderViewModel.onPageCount(spineIndex: Int, count: Int) {
+    val reading = currentReading()
+    onPageCount(
+      chapterToken =
+        reading.chapterToken.takeIf { reading.spineIndex == spineIndex } ?: Long.MIN_VALUE,
+      count = count,
+    )
+  }
+
+  private fun ReaderViewModel.onPagePositions(
+    spineIndex: Int,
+    positions: ReaderPagePositions,
+  ) {
+    val reading = currentReading()
+    onPagePositions(
+      chapterToken =
+        reading.chapterToken.takeIf { reading.spineIndex == spineIndex } ?: Long.MIN_VALUE,
+      positions = positions,
+    )
+  }
+
+  private fun ReaderViewModel.currentReading(): ReaderUiState.Reading {
+    val state = uiState.value
+    assertTrue(state is ReaderUiState.Reading)
+    return state as ReaderUiState.Reading
   }
 
   private fun ReaderViewModel.currentDiagnostics(): ParseDiagnostics {

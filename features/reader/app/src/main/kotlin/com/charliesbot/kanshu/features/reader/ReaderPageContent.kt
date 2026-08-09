@@ -37,16 +37,18 @@ internal fun ReaderPageContent(
 ) {
   val context = LocalContext.current
 
-  key(state.spineIndex) {
+  key(state.chapterToken) {
     ReaderPageViewer(
       document = state.document,
       preferences = preferences,
       currentPage = currentPage,
-      onPageCount = { count -> viewModel.onPageCount(state.spineIndex, count) },
-      onPagePositions = { positions -> viewModel.onPagePositions(state.spineIndex, positions) },
+      onPageCount = { count -> viewModel.onPageCount(state.chapterToken, count) },
+      onPagePositions = { positions ->
+        viewModel.onPagePositions(state.chapterToken, positions)
+      },
       resourceLoader = resourceLoader,
       onLayoutDiagnostics = onLayoutDiagnostics,
-      onLayoutFailed = viewModel::onLayoutFailed,
+      onLayoutFailed = { viewModel.onLayoutFailed(state.chapterToken) },
       onPreviousPage = onPreviousPage,
       onCenterTap = onCenterTap,
       onNextPage = onNextPage,
