@@ -100,19 +100,16 @@ internal class CssStyleResolver(stylesheets: List<CssStylesheet>) {
 
     val inlineStyle = element.attr("style").trim()
     if (inlineStyle.isNotEmpty()) {
-      resolved = resolved.applying(parseInlineDeclarations(inlineStyle))
+      resolved = resolved.applying(resolveInlineDeclarations(inlineStyle))
     }
     return resolved
   }
 
-  private fun parseInlineDeclarations(styleAttr: String): List<CssDeclaration> =
-    styleAttr.split(';').flatMap { segment ->
-      val property = segment.substringBefore(':', "").trim().lowercase()
-      if (property.isEmpty() || !segment.contains(':') || property !in ALLOWLISTED_PROPERTIES) {
-        return@flatMap emptyList()
-      }
-      val value =
-        segment.substringAfter(':').removeSuffixIgnoreCase("!important").trim().lowercase()
+  private fun resolveInlineDeclarations(styleAttr: String): List<CssDeclaration> =
+    parseInlineDeclarations(styleAttr).flatMap { declaration ->
+      val property = declaration.property
+      if (property !in ALLOWLISTED_PROPERTIES) return@flatMap emptyList()
+      val value = declaration.value.removeSuffixIgnoreCase("!important").trim().lowercase()
       if (value.isEmpty()) emptyList() else expandCssDeclaration(property, value)
     }
 
