@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,19 +60,12 @@ fun ReaderOverlay(
 }
 
 @Composable
-private fun OverlayChromeBar(content: @Composable RowScope.() -> Unit) {
-  Row(
-    modifier = Modifier.height(60.dp).fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    content()
-  }
-}
-
-@Composable
 private fun OverlayTopBar(title: String, onOpenReaderPrefs: () -> Unit, onMoreOptions: () -> Unit) {
   Column(Modifier.background(KanshuTheme.colors.background)) {
-    OverlayChromeBar {
+    Row(
+      modifier = Modifier.height(60.dp).fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
       Row(modifier = Modifier.weight(1f)) {
         IconKanshuButton(onClick = {}, enabled = false) {
           KanshuIcon(
@@ -108,7 +100,10 @@ private fun OverlayTopBar(title: String, onOpenReaderPrefs: () -> Unit, onMoreOp
       }
     }
     KanshuDivider()
-    OverlayChromeBar {
+    Row(
+      modifier = Modifier.height(60.dp).fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
       KanshuText(
         text = title,
         modifier = Modifier.padding(horizontal = 16.dp),

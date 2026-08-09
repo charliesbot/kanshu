@@ -22,7 +22,6 @@ import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.model.ParseDiagnostics
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -199,13 +198,13 @@ class ReaderViewModel(
     _highlights.value = emptyList()
 
     openJob = viewModelScope.launch {
-      val unownedPublication = AtomicReference<Publication?>()
+      var unownedPublication: Publication? = null
       try {
         Log.d(TAG, "open($seriesId): loading")
         val result =
           withContext(ioDispatcher) {
             openBook(seriesId).also { opened ->
-              unownedPublication.set((opened as? ReaderResult.Success)?.publication)
+              unownedPublication = (opened as? ReaderResult.Success)?.publication
             }
           }
         if (bookLifecycle != opening) return@launch
@@ -244,9 +243,9 @@ class ReaderViewModel(
                 // "couldn't open where you left off", and let the user's choice create the
                 // position.
                 stored
-                  ?: session.publication.readNextSpineItem(
-                    afterSpineIndex = -1,
-                    session.stylesheets,
+                  ?: session.publication.readSpineItemAt(
+                    index = 0,
+                    stylesheets = session.stylesheets,
                   )
               }
             if (bookLifecycle != opening) {
@@ -261,7 +260,7 @@ class ReaderViewModel(
               _pagination.update { state -> state.copy(anchorCharOffset = null) }
             }
             bookLifecycle = BookLifecycle.Open(session)
-            unownedPublication.set(null)
+            unownedPublication = null
             _resourceLoader.value = session.resourceLoader
             Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
             activateSpineItem(session, spineItem)
@@ -281,7 +280,7 @@ class ReaderViewModel(
           }
         }
       } finally {
-        unownedPublication.getAndSet(null)?.close()
+        unownedPublication?.close()
       }
     }
   }
