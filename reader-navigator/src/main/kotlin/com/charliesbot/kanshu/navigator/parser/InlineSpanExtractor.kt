@@ -12,7 +12,7 @@ import org.jsoup.nodes.TextNode
 
 internal class InlineSpanExtractor(
   private val diagnostics: ParseDiagnosticsCollector,
-  private val styles: InheritedStyleResolver? = null,
+  private val styles: InheritedStyleResolver,
   private val baseHref: String? = null,
 ) {
   fun extract(nodes: List<Node>, inheritedStyle: InlineStyle = InlineStyle.Plain): List<TextSpan> =
@@ -86,7 +86,7 @@ internal class InlineSpanExtractor(
    * font-style: normal }` must not strip a nested `<em>`.
    */
   private fun styled(element: Element, tagStyle: InlineStyle): InlineStyle =
-    merge(tagStyle, styles?.resolveDeclared(element))
+    merge(tagStyle, styles.resolveDeclared(element))
 
   private fun styledForTag(element: Element, inheritedStyle: InlineStyle): InlineStyle =
     when (element.tagName().lowercase()) {
@@ -102,7 +102,7 @@ internal class InlineSpanExtractor(
    * paragraph's own text nodes.
    */
   fun effectiveCssEmphasis(element: Element): InlineStyle =
-    merge(InlineStyle.Plain, styles?.resolve(element))
+    merge(InlineStyle.Plain, styles.resolve(element))
 
   private fun merge(style: InlineStyle, css: ResolvedStyle?): InlineStyle {
     if (css == null) return style
