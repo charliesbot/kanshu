@@ -28,7 +28,6 @@ internal fun ReaderChrome(
       pageLabel =
         stringResource(
           R.string.reader_overlay_page_label,
-          // currentPage may hold the last-page sentinel until pagination reports a count.
           currentPage.coerceIn(0, pageCount.coerceAtLeast(1) - 1) + 1,
           pageCount.coerceAtLeast(1),
         ),

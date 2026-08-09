@@ -54,6 +54,19 @@ sealed interface ReaderUiState {
   }
 }
 
+internal enum class ReaderLandingPage {
+  Start,
+  End,
+}
+
+internal data class ReaderPaginationState(
+  val currentPage: Int = 0,
+  val pageCount: Int = 0,
+  val positions: ReaderPagePositions = ReaderPagePositions.Empty,
+  val anchorCharOffset: Int? = null,
+  val pendingLanding: ReaderLandingPage? = null,
+)
+
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
@@ -116,11 +129,8 @@ class ReaderViewModel(
     viewModelScope.launch { preferencesRepository.resetSpacing() }
   }
 
-  private val _currentPage = MutableStateFlow(0)
-  val currentPage: StateFlow<Int> = _currentPage.asStateFlow()
-
-  private val _pageCount = MutableStateFlow(0)
-  val pageCount: StateFlow<Int> = _pageCount.asStateFlow()
+  private val _pagination = MutableStateFlow(ReaderPaginationState())
+  internal val pagination: StateFlow<ReaderPaginationState> = _pagination.asStateFlow()
 
   private val _resourceLoader = MutableStateFlow<ReaderResourceLoader?>(null)
   val resourceLoader: StateFlow<ReaderResourceLoader?> = _resourceLoader.asStateFlow()
@@ -135,11 +145,6 @@ class ReaderViewModel(
    */
   val highlights: StateFlow<List<ReaderHighlight>> = _highlights.asStateFlow()
   private var highlightsJob: Job? = null
-
-  private enum class LandingPage {
-    Start,
-    End,
-  }
 
   private sealed interface BookLifecycle {
     data object Empty : BookLifecycle
@@ -165,17 +170,10 @@ class ReaderViewModel(
   private var nextBookToken = 0L
   private var nextChapterToken = 0L
   private var currentSpineIndex = -1
-  // Char offsets of the current chapter's pages. Empty until its layout reports them, which is
-  // why progress is only written once positions arrive rather than on every page-index change.
-  private var pagePositions = ReaderPagePositions.Empty
-  // The character offset the reader is holding in the current chapter. Seeded from the restored
-  // position, re-resolved to a page on every pagination, and updated on every page turn. Null
-  // only between opening a chapter and its first layout.
-  private var anchorCharOffset: Int? = null
   private val openSession: BookSession?
     get() = (bookLifecycle as? BookLifecycle.Open)?.session
 
-  private fun lastPageIndex(): Int = (_pageCount.value - 1).coerceAtLeast(0)
+  private fun lastPageIndex(): Int = (_pagination.value.pageCount - 1).coerceAtLeast(0)
 
   fun open(seriesId: Int) {
     val activeSeriesId =
@@ -192,13 +190,10 @@ class ReaderViewModel(
     openSession?.publication?.close()
     bookLifecycle = opening
     _uiState.value = ReaderUiState.Loading
-    _currentPage.value = 0
-    _pageCount.value = 0
+    _pagination.value = ReaderPaginationState()
     spineJob = null
     _resourceLoader.value = null
     currentSpineIndex = -1
-    pagePositions = ReaderPagePositions.Empty
-    anchorCharOffset = null
     highlightsJob?.cancel()
     highlightsJob = null
     _highlights.value = emptyList()
@@ -230,7 +225,9 @@ class ReaderViewModel(
               "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
             )
             val restored = restoredPosition(session.bookId)
-            anchorCharOffset = restored?.charOffset
+            _pagination.update { state ->
+              state.copy(anchorCharOffset = restored?.charOffset)
+            }
             val spineItem =
               withContext(ioDispatcher) {
                 val stored =
@@ -261,7 +258,7 @@ class ReaderViewModel(
               return@launch
             }
             if (spineItem.spineIndex != restored?.spineIndex) {
-              anchorCharOffset = null
+              _pagination.update { state -> state.copy(anchorCharOffset = null) }
             }
             bookLifecycle = BookLifecycle.Open(session)
             unownedPublication.set(null)
@@ -295,35 +292,47 @@ class ReaderViewModel(
       return
     }
     Log.d(TAG, "onPageCount($count)")
-    _pageCount.value = count
-    _currentPage.update { page -> page.coerceIn(0, lastPageIndex()) }
+    _pagination.update { state ->
+      val lastPage = (count - 1).coerceAtLeast(0)
+      val currentPage =
+        when (state.pendingLanding) {
+          ReaderLandingPage.End -> lastPage
+          ReaderLandingPage.Start,
+          null -> state.currentPage.coerceIn(0, lastPage)
+        }
+      state.copy(currentPage = currentPage, pageCount = count, pendingLanding = null)
+    }
   }
 
   /**
    * Receives the chapter's page-to-character-offset table once layout completes.
    *
-   * Every pagination re-resolves [anchorCharOffset] to a page, not just the first one after a
+   * Every pagination re-resolves the character anchor to a page, not just the first one after a
    * restore. A preference change repaginates the chapter, and holding the old page *index* against
-   * a new pagination would land the reader on different text — the exact failure character offsets
-   * exist to prevent. Once anchored, the reader keeps its place across font size, margins, and
-   * spacing.
+   * a new pagination would land the reader on different text.
    */
   fun onPagePositions(chapterToken: Long, positions: ReaderPagePositions) {
     if (!isCurrentChapter(chapterToken)) {
       Log.d(TAG, "onPagePositions ignored for stale chapter[$chapterToken]")
       return
     }
-    pagePositions = positions
-    val anchor = anchorCharOffset
-    if (anchor != null) {
-      val page = positions.pageIndexOf(anchor)
-      Log.d(TAG, "anchor charOffset=$anchor → page $page")
-      _currentPage.value = page
-    } else if (positions.pageCount > 0) {
-      // First pagination of a freshly opened chapter with nothing to restore: adopt the page we
-      // landed on (0, or the last page when paging backward across a boundary) as the anchor.
-      anchorCharOffset =
-        positions.charOffsetOf(_currentPage.value.coerceIn(0, positions.pageCount - 1))
+    _pagination.update { state ->
+      val page =
+        when {
+          state.anchorCharOffset != null -> positions.pageIndexOf(state.anchorCharOffset)
+          state.pendingLanding == ReaderLandingPage.End ->
+            (positions.pageCount - 1).coerceAtLeast(0)
+          else -> state.currentPage.coerceIn(0, (positions.pageCount - 1).coerceAtLeast(0))
+        }
+      if (state.anchorCharOffset != null) {
+        Log.d(TAG, "anchor charOffset=${state.anchorCharOffset} → page $page")
+      }
+      state.copy(
+        currentPage = page,
+        positions = positions,
+        anchorCharOffset =
+          state.anchorCharOffset ?: positions.takeIf { it.pageCount > 0 }?.charOffsetOf(page),
+      )
     }
     persistProgress()
   }
@@ -381,9 +390,10 @@ class ReaderViewModel(
 
   /** Re-anchors to the page the reader just moved to, then persists it. */
   private fun onPageChanged() {
-    if (pagePositions.pageCount == 0) return
-    val page = _currentPage.value.coerceIn(0, pagePositions.pageCount - 1)
-    anchorCharOffset = pagePositions.charOffsetOf(page)
+    val pagination = _pagination.value
+    if (pagination.positions.pageCount == 0) return
+    val page = pagination.currentPage.coerceIn(0, pagination.positions.pageCount - 1)
+    _pagination.value = pagination.copy(anchorCharOffset = pagination.positions.charOffsetOf(page))
     persistProgress()
   }
 
@@ -407,13 +417,14 @@ class ReaderViewModel(
    */
   private fun persistProgress() {
     val session = openSession ?: return
-    if (pagePositions.pageCount == 0 || currentSpineIndex < 0) return
-    val page = _currentPage.value.coerceIn(0, pagePositions.pageCount - 1)
+    val pagination = _pagination.value
+    if (pagination.positions.pageCount == 0 || currentSpineIndex < 0) return
+    val page = pagination.currentPage.coerceIn(0, pagination.positions.pageCount - 1)
     val position =
       ReaderPosition(
         spineIndex = currentSpineIndex,
-        charOffset = pagePositions.charOffsetOf(page),
-        progressInSpine = pagePositions.progressInSpine(page),
+        charOffset = pagination.positions.charOffsetOf(page),
+        progressInSpine = pagination.positions.progressInSpine(page),
       )
     syncRepository.setProgress(
       bookId = session.bookId,
@@ -437,39 +448,41 @@ class ReaderViewModel(
   }
 
   fun nextPage() {
-    if (_pageCount.value == 0) {
+    val pagination = _pagination.value
+    if (pagination.pageCount == 0) {
       Log.d(TAG, "nextPage ignored while page count is unknown")
       return
     }
-    if (_currentPage.value >= lastPageIndex()) {
-      openSpineItem(currentSpineIndex + 1, LandingPage.Start)
+    if (pagination.currentPage >= lastPageIndex()) {
+      openSpineItem(currentSpineIndex + 1, ReaderLandingPage.Start)
       return
     }
-    _currentPage.update { page ->
-      val next = (page + 1).coerceAtMost(lastPageIndex())
-      Log.d(TAG, "nextPage: $page → $next (of ${_pageCount.value})")
-      next
+    _pagination.update { state ->
+      val next = (state.currentPage + 1).coerceAtMost(lastPageIndex())
+      Log.d(TAG, "nextPage: ${state.currentPage} → $next (of ${state.pageCount})")
+      state.copy(currentPage = next)
     }
     onPageChanged()
   }
 
   fun previousPage() {
-    if (_pageCount.value == 0) {
+    val pagination = _pagination.value
+    if (pagination.pageCount == 0) {
       Log.d(TAG, "previousPage ignored while page count is unknown")
       return
     }
-    if (_currentPage.value <= 0) {
+    if (pagination.currentPage <= 0) {
       if (currentSpineIndex > 0) {
-        openSpineItem(currentSpineIndex - 1, LandingPage.End)
+        openSpineItem(currentSpineIndex - 1, ReaderLandingPage.End)
       } else {
         Log.d(TAG, "previousPage: already at first spine item")
       }
       return
     }
-    _currentPage.update { page ->
-      val previous = page - 1
-      Log.d(TAG, "previousPage: $page → $previous (of ${_pageCount.value})")
-      previous
+    _pagination.update { state ->
+      val previous = state.currentPage - 1
+      Log.d(TAG, "previousPage: ${state.currentPage} → $previous (of ${state.pageCount})")
+      state.copy(currentPage = previous)
     }
     onPageChanged()
   }
@@ -494,10 +507,10 @@ class ReaderViewModel(
       Log.d(TAG, "openLink: already on spine[$target], fragment navigation not yet supported")
       return
     }
-    openSpineItem(target, LandingPage.Start)
+    openSpineItem(target, ReaderLandingPage.Start)
   }
 
-  private fun openSpineItem(targetSpineIndex: Int, landing: LandingPage) {
+  private fun openSpineItem(targetSpineIndex: Int, landing: ReaderLandingPage) {
     if (spineJob?.isActive == true) return
     val session = openSession ?: return
     val startingSpineIndex = currentSpineIndex
@@ -516,12 +529,7 @@ class ReaderViewModel(
           Log.d(TAG, "openSpineItem: spine[$targetSpineIndex] unavailable")
           return@launch
         }
-        _pageCount.value = 0
-        // Cleared before the new chapter reports its own table, so no offset from the previous
-        // chapter can be persisted or re-anchored against this spine index.
-        pagePositions = ReaderPagePositions.Empty
-        anchorCharOffset = null
-        _currentPage.value = if (landing == LandingPage.End) LAST_PAGE_SENTINEL else 0
+        _pagination.value = ReaderPaginationState(pendingLanding = landing)
         Log.d(TAG, "openSpineItem: opened spine[${item.spineIndex}] landing=$landing")
         activateSpineItem(session, item)
       } finally {
@@ -556,9 +564,5 @@ class ReaderViewModel(
 
   private companion object {
     const val TAG = "ReaderViewModel"
-    // Placeholder page index meaning "last page of the chapter". Set when navigating backward
-    // into a chapter whose page count is not known yet; onPageCount clamps it to the real last
-    // page.
-    const val LAST_PAGE_SENTINEL = Int.MAX_VALUE
   }
 }
