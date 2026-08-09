@@ -370,8 +370,8 @@ class ReaderViewModelTest {
         listOf("Second chapter ".repeat(6).trim()),
         (secondState as ReaderUiState.Reading).document.paragraphText(),
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -443,8 +443,8 @@ class ReaderViewModelTest {
         listOf("Second chapter ".repeat(6).trim()),
         (state as ReaderUiState.Reading).document.paragraphText(),
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -470,8 +470,8 @@ class ReaderViewModelTest {
         listOf(ImageBlock(resourceHref = "cover.jpg", alt = "image")),
         viewModel.currentDocument().blocks,
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -492,8 +492,8 @@ class ReaderViewModelTest {
         listOf("Hello ".repeat(10).trim()),
         (state as ReaderUiState.Reading).document.paragraphText(),
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(1, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(1, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -524,8 +524,8 @@ class ReaderViewModelTest {
         listOf("First chapter ".repeat(6).trim()),
         viewModel.currentDocument().paragraphText(),
       )
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(1, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(1, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -540,7 +540,7 @@ class ReaderViewModelTest {
 
       viewModel.previousPage()
 
-      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
     }
 
   @Test
@@ -573,12 +573,13 @@ class ReaderViewModelTest {
         listOf("First chapter ".repeat(6).trim()),
         viewModel.currentDocument().paragraphText(),
       )
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.pageCount)
+      assertEquals(0, viewModel.pagination.value.currentPage)
 
       viewModel.onPageCount(viewModel.currentSpineIndex(), 4)
 
-      assertEquals(3, viewModel.currentPage.value)
-      assertEquals(4, viewModel.pageCount.value)
+      assertEquals(3, viewModel.pagination.value.currentPage)
+      assertEquals(4, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -594,8 +595,8 @@ class ReaderViewModelTest {
       advanceUntilIdle()
 
       assertEquals(0, viewModel.currentSpineIndex())
-      assertEquals(0, viewModel.currentPage.value)
-      assertEquals(1, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
+      assertEquals(1, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -623,7 +624,7 @@ class ReaderViewModelTest {
       advanceUntilIdle()
 
       assertEquals(1, viewModel.currentSpineIndex())
-      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
     }
 
   @Test
@@ -864,7 +865,7 @@ class ReaderViewModelTest {
         listOf("First chapter ".repeat(6).trim()),
         viewModel.currentDocument().paragraphText(),
       )
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -890,7 +891,7 @@ class ReaderViewModelTest {
       advanceUntilIdle()
       viewModel.onPageCount(firstSpineIndex, 99)
 
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -919,7 +920,7 @@ class ReaderViewModelTest {
 
       viewModel.onPageCount(firstVisitToken, 99)
 
-      assertEquals(0, viewModel.pageCount.value)
+      assertEquals(0, viewModel.pagination.value.pageCount)
     }
 
   @Test
@@ -1061,7 +1062,7 @@ class ReaderViewModelTest {
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
 
-      assertEquals(1, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pagination.value.currentPage)
     }
 
   @Test
@@ -1077,7 +1078,7 @@ class ReaderViewModelTest {
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
       viewModel.nextPage()
-      assertEquals(1, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pagination.value.currentPage)
 
       // Shrinking the font repaginates the chapter into more, smaller pages. Character offset
       // 100 now lives on page 2 — holding the old index would show different text.
@@ -1090,7 +1091,7 @@ class ReaderViewModelTest {
         ),
       )
 
-      assertEquals(2, viewModel.currentPage.value)
+      assertEquals(2, viewModel.pagination.value.currentPage)
     }
 
   @Test
@@ -1107,14 +1108,14 @@ class ReaderViewModelTest {
       viewModel.open(1)
       advanceUntilIdle()
       viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
-      assertEquals(2, viewModel.currentPage.value)
+      assertEquals(2, viewModel.pagination.value.currentPage)
 
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.previousPage()
-      assertEquals(1, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pagination.value.currentPage)
       viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
 
-      assertEquals(1, viewModel.currentPage.value)
+      assertEquals(1, viewModel.pagination.value.currentPage)
     }
 
   @Test
@@ -1146,7 +1147,7 @@ class ReaderViewModelTest {
         viewModel.currentChapterToken(),
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300),
       )
-      assertEquals(0, viewModel.currentPage.value)
+      assertEquals(0, viewModel.pagination.value.currentPage)
     }
 
   @Test

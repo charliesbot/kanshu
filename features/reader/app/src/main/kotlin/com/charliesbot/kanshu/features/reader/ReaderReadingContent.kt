@@ -22,8 +22,7 @@ internal fun ReaderReadingContent(
   state: ReaderUiState.Reading,
   viewModel: ReaderViewModel,
 ) {
-  val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
-  val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
+  val pagination by viewModel.pagination.collectAsStateWithLifecycle()
   val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
   // Hoisted above key(chapterToken) so decoded images survive chapter changes.
   val imageCache = remember(seriesId) { ReaderImageCache() }
@@ -41,7 +40,7 @@ internal fun ReaderReadingContent(
       state = state,
       viewModel = viewModel,
       preferences = preferences,
-      currentPage = currentPage,
+      currentPage = pagination.currentPage,
       resourceLoader = resourceLoader,
       highlights = highlights,
       clearSelectionToken = clearSelectionToken,
@@ -92,8 +91,8 @@ internal fun ReaderReadingContent(
     )
     ReaderChrome(
       title = title,
-      currentPage = currentPage,
-      pageCount = pageCount,
+      currentPage = pagination.currentPage,
+      pageCount = pagination.pageCount,
       overlayVisible = transientUi is ReaderTransientUi.Overlay,
       readerPrefsVisible = transientUi is ReaderTransientUi.Preferences,
       preferences = preferences,
