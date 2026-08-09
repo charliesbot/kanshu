@@ -72,6 +72,7 @@
     <string name="reader_diagnostics_class_names">Class names</string>
     <string name="reader_diagnostics_inline_properties">Inline style properties</string>
     <string name="reader_diagnostics_stylesheet_properties">Stylesheet properties</string>
+    <string name="reader_diagnostics_block_display_contexts">Block-styled inline elements</string>
     <string name="reader_diagnostics_unsupported_selectors">Unsupported selectors: %1$d</string>
     <string name="reader_diagnostics_at_rules">At-rules</string>
     <string name="reader_diagnostics_important_count">!important declarations: %1$d</string>

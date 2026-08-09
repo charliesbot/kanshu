@@ -211,6 +211,24 @@ Cascade note: unlike every v1 property, **margins do not inherit** in CSS — th
 - `text-decoration: underline` — rare in books outside links.
 - Relative `font-size` on headings/front matter — deferred indefinitely; touches pagination budgets for marginal gain.
 
+### Admitted structural subset: stacked heading components
+
+`display: block | inline` is honored only to preserve stacked inline descendants inside semantic
+headings (`h1`–`h6`). This covers publisher markup that keeps one accessible heading while styling
+its chapter number, chapter title, part number, or part title spans as separate visual blocks. The
+rule is class-agnostic and uses the computed cascade value; class names such as `CN` and `CT` are
+fixtures, never parser behavior.
+
+The admission is evidence-based: the observed Hachette title uses block-styled `CN`/`CT` spans, and
+Scribe's December 2025 EPUB pipeline explicitly moved stacked title components into spans inside a
+larger heading and requires `display:block` across its book/chapter/part/unit title classes
+(https://scribenet.com/wfdw/updates/2025/december-01-digital-hub-update.html).
+
+This is not general CSS box layout. Block-styled descendants inside paragraphs, lists, quotes, and
+generic containers remain diagnostic-only until corpus evidence justifies modeling CSS anonymous
+block boxes, including correct ownership of outer margins and first-line indentation. `display` is
+non-inheriting, and unsupported values remain no signal.
+
 ### Never (tripwire territory, not backlog)
 
 Color (B&W panel), publisher `font-family`/`font-size` on body text (reader-owned), floats, tables-as-layout, absolute/relative positioning, `@font-face`.

@@ -49,6 +49,7 @@ internal val ALLOWLISTED_PROPERTIES =
     "margin-left",
     "margin-right",
     "text-indent",
+    "display",
   )
 
 /**

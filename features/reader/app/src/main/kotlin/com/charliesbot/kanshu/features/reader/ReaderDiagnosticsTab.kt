@@ -107,6 +107,10 @@ private fun ReaderStylingCensusSection(census: StylingCensus) {
     counts = census.stylesheetPropertyCounts,
   )
   ReaderDiagnosticTagSection(
+    title = stringResource(R.string.reader_diagnostics_block_display_contexts),
+    counts = census.blockDisplayContextCounts,
+  )
+  ReaderDiagnosticTagSection(
     title = stringResource(R.string.reader_diagnostics_at_rules),
     counts = census.atRuleCounts,
   )

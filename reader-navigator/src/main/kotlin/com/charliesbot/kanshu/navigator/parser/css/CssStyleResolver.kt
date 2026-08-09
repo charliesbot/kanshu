@@ -21,10 +21,18 @@ internal data class ResolvedStyle(
   val marginStartEm: Float? = null,
   val marginEndEm: Float? = null,
   val textIndentEm: Float? = null,
+  // `display` changes box generation but never inherits (CSS Display §2).
+  val display: CssDisplay? = null,
 ) {
   /** The subset that flows to children during the DOM walk — margins are non-inheriting. */
   fun inheritable(): ResolvedStyle =
-    copy(marginTopEm = null, marginBottomEm = null, marginStartEm = null, marginEndEm = null)
+    copy(
+      marginTopEm = null,
+      marginBottomEm = null,
+      marginStartEm = null,
+      marginEndEm = null,
+      display = null,
+    )
 
   /**
    * Publisher block alignment for rendering. `Justify` maps to null — the reader's default already
@@ -61,6 +69,11 @@ internal enum class CssTextAlign {
   Center,
   End,
   Justify,
+}
+
+internal enum class CssDisplay {
+  Inline,
+  Block,
 }
 
 /**
@@ -200,6 +213,12 @@ internal fun ResolvedStyle.applying(declarations: List<CssDeclaration>): Resolve
         "text-indent" ->
           resolved.applyingLength(declaration.value, MAX_TEXT_INDENT_EM) {
             copy(textIndentEm = it)
+          }
+        "display" ->
+          when (declaration.value) {
+            "inline" -> resolved.copy(display = CssDisplay.Inline)
+            "block" -> resolved.copy(display = CssDisplay.Block)
+            else -> resolved
           }
         else -> resolved
       }

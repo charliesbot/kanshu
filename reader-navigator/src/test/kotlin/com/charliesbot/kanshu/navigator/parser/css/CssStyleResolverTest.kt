@@ -155,6 +155,22 @@ class CssStyleResolverTest {
   }
 
   @Test
+  fun inheritedResolver_displayDoesNotInheritAndCanBeOverridden() {
+    val inherited =
+      InheritedStyleResolver(
+        resolverOf("div.wrap { display: block } span.child { display: inline }")
+      )
+    val document =
+      Jsoup.parse(
+        "<div class=\"wrap\"><span id=\"plain\">a</span><span id=\"child\" class=\"child\">b</span></div>"
+      )
+
+    assertEquals(CssDisplay.Block, inherited.resolve(document.selectFirst("div")!!).display)
+    assertNull(inherited.resolve(document.selectFirst("#plain")!!).display)
+    assertEquals(CssDisplay.Inline, inherited.resolve(document.selectFirst("#child")!!).display)
+  }
+
+  @Test
   fun blockSpacing_isNullWhenNothingDeclared() {
     assertNull(ResolvedStyle.None.blockSpacing())
     assertEquals(0f, checkNotNull(ResolvedStyle(textIndentEm = 0f).blockSpacing()?.textIndentEm))

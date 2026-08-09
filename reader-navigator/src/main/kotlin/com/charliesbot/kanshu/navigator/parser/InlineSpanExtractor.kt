@@ -18,6 +18,31 @@ internal class InlineSpanExtractor(
   fun extract(nodes: List<Node>, inheritedStyle: InlineStyle = InlineStyle.Plain): List<TextSpan> =
     trimEdgeBlankSpans(extractInternal(nodes, inheritedStyle))
 
+  /**
+   * Extracts one descendant that CSS promoted to a block while retaining the semantic inline
+   * context between [owner] and [element]. This is what keeps a stacked title's enclosing link,
+   * `<strong>`, and `<em>` wrappers after the block parser splits it into separate headings.
+   */
+  fun extractPromoted(element: Element, owner: Element): List<TextSpan> {
+    val ancestors =
+      generateSequence(element.parent()) { it.parent() }
+        .takeWhile { it !== owner }
+        .toList()
+        .asReversed()
+
+    var inheritedStyle = effectiveCssEmphasis(owner)
+    (ancestors + element).forEach { inheritedStyle = styledForTag(it, inheritedStyle) }
+
+    var spans = trimEdgeBlankSpans(extractInternal(element.childNodes(), inheritedStyle))
+    (ancestors + element)
+      .asReversed()
+      .filter { it.tagName().equals("a", true) }
+      .forEach { link ->
+        spans = wrapLink(link, spans)
+      }
+    return spans
+  }
+
   private fun extractInternal(nodes: List<Node>, inheritedStyle: InlineStyle): List<TextSpan> =
     nodes.flatMap { node ->
       when (node) {
@@ -62,6 +87,15 @@ internal class InlineSpanExtractor(
    */
   private fun styled(element: Element, tagStyle: InlineStyle): InlineStyle =
     merge(tagStyle, styles?.resolveDeclared(element))
+
+  private fun styledForTag(element: Element, inheritedStyle: InlineStyle): InlineStyle =
+    when (element.tagName().lowercase()) {
+      "strong",
+      "b" -> styled(element, mergeBold(inheritedStyle))
+      "em",
+      "i" -> styled(element, mergeItalic(inheritedStyle))
+      else -> styled(element, inheritedStyle)
+    }
 
   /**
    * Effective (inherited) emphasis for text directly inside a block element — the base style for a
@@ -109,6 +143,10 @@ internal class InlineSpanExtractor(
 
   private fun extractLink(node: Element, inheritedStyle: InlineStyle): List<TextSpan> {
     val children = extractInternal(node.childNodes(), inheritedStyle)
+    return wrapLink(node, children)
+  }
+
+  private fun wrapLink(node: Element, children: List<TextSpan>): List<TextSpan> {
     if (children.isEmpty()) return emptyList()
     val href = node.attr("href")
     return if (href.isBlank()) children

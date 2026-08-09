@@ -1,7 +1,10 @@
 package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.StylingCensus
+import com.charliesbot.kanshu.navigator.parser.css.CssDisplay
+import com.charliesbot.kanshu.navigator.parser.css.CssStyleResolver
 import com.charliesbot.kanshu.navigator.parser.css.CssStylesheet
+import com.charliesbot.kanshu.navigator.parser.css.InheritedStyleResolver
 import org.jsoup.nodes.Document
 
 /**
@@ -18,6 +21,8 @@ internal object StylingCensusCollector {
     var styleAttributeCount = 0
     val classNameCounts = linkedMapOf<String, Int>()
     val inlinePropertyCounts = linkedMapOf<String, Int>()
+    val blockDisplayContextCounts = linkedMapOf<String, Int>()
+    val styleResolver = InheritedStyleResolver(CssStyleResolver(stylesheets))
 
     document.body().select("*").forEach { element ->
       val classAttr = element.attr("class").trim()
@@ -33,6 +38,25 @@ internal object StylingCensusCollector {
         parseDeclarationProperties(styleAttr).forEach { property ->
           inlinePropertyCounts.merge(property, 1, Int::plus)
         }
+      }
+      if (
+        element.tagName().lowercase() in HtmlTagSets.TEXT_INLINE_TAGS &&
+          styleResolver.resolve(element).display == CssDisplay.Block
+      ) {
+        val owner =
+          element.parents().firstOrNull {
+            it.tagName().lowercase() in HtmlTagSets.BLOCK_TAGS
+          }
+        val classes =
+          element
+            .classNames()
+            .takeIf { it.isNotEmpty() }
+            ?.sorted()
+            ?.joinToString(".", prefix = ".")
+            .orEmpty()
+        val context =
+          "${element.tagName().lowercase()}$classes inside ${owner?.tagName() ?: "root"}"
+        blockDisplayContextCounts.merge(context, 1, Int::plus)
       }
     }
 
@@ -60,6 +84,7 @@ internal object StylingCensusCollector {
       unsupportedSelectorCount = stylesheets.sumOf { it.stats.unsupportedSelectorCount },
       atRuleCounts = atRuleCounts,
       importantCount = stylesheets.sumOf { it.stats.importantCount },
+      blockDisplayContextCounts = blockDisplayContextCounts,
     )
   }
 
