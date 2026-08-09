@@ -22,6 +22,8 @@ data class StylingCensus(
   val unsupportedSelectorCount: Int = 0,
   val atRuleCounts: Map<String, Int> = emptyMap(),
   val importantCount: Int = 0,
+  /** Computed block-styled inline elements grouped by element/class and semantic block owner. */
+  val blockDisplayContextCounts: Map<String, Int> = emptyMap(),
 )
 
 data class ParseResult(val document: ReaderDocument, val diagnostics: ParseDiagnostics)
