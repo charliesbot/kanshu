@@ -9,26 +9,26 @@ import org.jsoup.nodes.Element
 /** Parses heading elements, including the admitted CSS block-promotion subset. */
 internal class HeadingParser(
   private val spans: InlineSpanExtractor,
-  private val styles: InheritedStyleResolver?,
+  private val styles: InheritedStyleResolver,
 ) {
   fun parse(element: Element): List<HeadingBlock> {
     val level = element.tagName().removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
     val promoted = promotedDescendants(element)
     if (promoted.isNotEmpty()) {
-      val outerSpacing = styles?.resolve(element)?.blockSpacing()
+      val outerSpacing = styles.resolve(element).blockSpacing()
       val promotedContent = promoted.mapNotNull { child ->
         spans.extractPromoted(child, element).takeIf { it.isNotEmpty() }?.let { child to it }
       }
       return promotedContent.mapIndexed { index, (child, content) ->
-        val childStyle = styles?.resolve(child)
+        val childStyle = styles.resolve(child)
         HeadingBlock(
           level = level,
           spans = content,
-          alignment = childStyle?.blockAlignment(),
+          alignment = childStyle.blockAlignment(),
           spacing =
             promotedSpacing(
               outer = outerSpacing,
-              child = childStyle?.blockSpacing(),
+              child = childStyle.blockSpacing(),
               index = index,
               lastIndex = promotedContent.lastIndex,
             ),
@@ -43,8 +43,8 @@ internal class HeadingParser(
         HeadingBlock(
           level = level,
           spans = content,
-          alignment = styles?.resolve(element)?.blockAlignment(),
-          spacing = styles?.resolve(element)?.blockSpacing(),
+          alignment = styles.resolve(element).blockAlignment(),
+          spacing = styles.resolve(element).blockSpacing(),
         )
       )
   }
@@ -55,14 +55,13 @@ internal class HeadingParser(
    * or reordering text while Kanshu deliberately lacks general CSS anonymous boxes.
    */
   private fun promotedDescendants(heading: Element): List<Element> {
-    val resolver = styles ?: return emptyList()
     val blockDescendants =
-      heading.allElements.drop(1).filter { resolver.resolve(it).display == CssDisplay.Block }
+      heading.allElements.drop(1).filter { styles.resolve(it).display == CssDisplay.Block }
     val candidates = blockDescendants.filter { candidate ->
       candidate
         .parents()
         .takeWhile { it !== heading }
-        .none { ancestor -> resolver.resolve(ancestor).display == CssDisplay.Block }
+        .none { ancestor -> styles.resolve(ancestor).display == CssDisplay.Block }
     }
     if (candidates.isEmpty()) return emptyList()
     val hasNestedBlock = blockDescendants.any { descendant ->

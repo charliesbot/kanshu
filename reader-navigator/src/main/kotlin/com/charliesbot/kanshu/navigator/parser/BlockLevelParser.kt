@@ -25,7 +25,7 @@ import org.jsoup.nodes.TextNode
 internal class BlockLevelParser(
   private val diagnostics: ParseDiagnosticsCollector,
   private val baseHref: String? = null,
-  private val styles: InheritedStyleResolver? = null,
+  private val styles: InheritedStyleResolver,
 ) {
   private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles, baseHref)
   private val headingParser = HeadingParser(inlineSpanExtractor, styles)
@@ -55,11 +55,13 @@ internal class BlockLevelParser(
       in HtmlTagSets.TEXT_INLINE_TAGS ->
         // Anchors (TOC/nav pages) and other inline tags sometimes wrap whole paragraphs;
         // promote the blocks instead of flattening them into one line.
-        if (element.hasBlockDescendant()) {
-          appendParsed(element.childNodes(), blocks)
-        } else {
-          paragraphFromInline(listOf(element), element)?.let(blocks::add)
-        }
+        blocks.addAll(
+          blocksFromContainer(
+            element = element,
+            inlineNodes = listOf(element),
+            recognizeImageOnly = false,
+          )
+        )
 
       "h1",
       "h2",
@@ -68,7 +70,7 @@ internal class BlockLevelParser(
       "h5",
       "h6" -> blocks.addAll(headingParser.parse(element))
 
-      "div" -> parseInlineOrChildren(element, blocks)
+      "div" -> blocks.addAll(blocksFromContainer(element))
 
       "nav" -> appendParsed(element.childNodes(), blocks)
 
@@ -77,7 +79,7 @@ internal class BlockLevelParser(
       "section",
       "article" -> appendParsed(element.childNodes(), blocks)
 
-      "li" -> parseInlineOrChildren(element, blocks)
+      "li" -> blocks.addAll(blocksFromContainer(element))
 
       "ul",
       "ol" -> listFromChildren(ordered = tag == "ol", element = element)?.let(blocks::add)
@@ -98,20 +100,24 @@ internal class BlockLevelParser(
     }
   }
 
-  private fun parseInlineOrChildren(element: Element, blocks: MutableList<ReaderBlock>) {
-    imageOnlyBlock(element)?.let {
-      blocks.add(it)
-      return
-    }
-    if (element.hasBlockDescendant()) {
-      appendParsed(element.childNodes(), blocks)
-    } else {
-      paragraphFromInline(element.childNodes(), element)?.let(blocks::add)
-    }
-  }
-
   private fun appendParsed(nodes: List<Node>, blocks: MutableList<ReaderBlock>) {
     blocks.addAll(parse(nodes))
+  }
+
+  private fun blocksFromContainer(
+    element: Element,
+    inlineNodes: List<Node> = element.childNodes(),
+    recognizeImageOnly: Boolean = true,
+  ): List<ReaderBlock> {
+    if (recognizeImageOnly)
+      imageOnlyBlock(element)?.let {
+        return listOf(it)
+      }
+    return if (element.hasBlockDescendant()) {
+      parse(element.childNodes())
+    } else {
+      paragraphFromInline(inlineNodes, element)?.let(::listOf).orEmpty()
+    }
   }
 
   private fun paragraphFromInline(nodes: List<Node>, owner: Element? = null): ParagraphBlock? {
@@ -129,11 +135,11 @@ internal class BlockLevelParser(
     if (owner == null) InlineStyle.Plain else inlineSpanExtractor.effectiveCssEmphasis(owner)
 
   private fun publisherAlignment(owner: Element?): BlockAlignment? = owner?.let {
-    styles?.resolve(it)?.blockAlignment()
+    styles.resolve(it).blockAlignment()
   }
 
   private fun publisherSpacing(owner: Element?): BlockSpacing? = owner?.let {
-    styles?.resolve(it)?.blockSpacing()
+    styles.resolve(it).blockSpacing()
   }
 
   private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
@@ -144,12 +150,7 @@ internal class BlockLevelParser(
   private fun listFromChildren(ordered: Boolean, element: Element): ListBlock? {
     val items =
       element.select("> li").mapNotNull { listItem ->
-        val blocks =
-          if (listItem.hasBlockDescendant()) {
-            parse(listItem.childNodes())
-          } else {
-            paragraphFromInline(listItem.childNodes(), listItem)?.let(::listOf).orEmpty()
-          }
+        val blocks = blocksFromContainer(listItem, recognizeImageOnly = false)
         if (blocks.isEmpty()) null else ListItem(blocks)
       }
     return if (items.isEmpty()) null else ListBlock(ordered = ordered, items = items)
