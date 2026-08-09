@@ -19,30 +19,6 @@ internal data class SpineItem(
   val diagnostics: ParseDiagnostics,
 )
 
-internal suspend fun Publication.readSpineXhtml(spineIndex: Int = 0): String? {
-  val link = readingOrder.getOrNull(spineIndex)
-  if (link == null) {
-    Log.d(TAG, "spine[$spineIndex]: no link in readingOrder (size=${readingOrder.size})")
-    return null
-  }
-  val resource = get(link)
-  if (resource == null) {
-    Log.d(TAG, "spine[$spineIndex]: get(link) returned null href=${link.href}")
-    return null
-  }
-  val bytes = resource.read().getOrNull()
-  if (bytes == null) {
-    Log.d(TAG, "spine[$spineIndex]: resource.read() failed href=${link.href}")
-    return null
-  }
-  val xhtml = bytes.decodeToString()
-  Log.d(TAG, "spine[$spineIndex]: read ${xhtml.length} chars href=${link.href}")
-  return xhtml
-}
-
-internal suspend fun Publication.readFirstSpineItem(): ReaderDocument? =
-  readNextSpineItem(afterSpineIndex = -1)?.document
-
 internal suspend fun Publication.readNextSpineItem(
   afterSpineIndex: Int,
   stylesheets: PublicationStylesheets? = null,
@@ -58,7 +34,18 @@ internal suspend fun Publication.readSpineItemAt(
     Log.d(TAG, "spine[$index]: no link in readingOrder")
     return null
   }
-  val xhtml = readSpineXhtml(index) ?: return null
+  val resource = get(link)
+  if (resource == null) {
+    Log.d(TAG, "spine[$index]: get(link) returned null href=${link.href}")
+    return null
+  }
+  val bytes = resource.read().getOrNull()
+  if (bytes == null) {
+    Log.d(TAG, "spine[$index]: resource.read() failed href=${link.href}")
+    return null
+  }
+  val xhtml = bytes.decodeToString()
+  Log.d(TAG, "spine[$index]: read ${xhtml.length} chars href=${link.href}")
   val baseHref = link.url().path?.trimStart('/')
   val sheets = stylesheets?.forHrefs(EpubParser.stylesheetHrefs(xhtml, baseHref)) ?: emptyList()
   val parseResult = EpubParser.parse(xhtml, baseHref = baseHref, stylesheets = sheets)
