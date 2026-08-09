@@ -17,8 +17,7 @@ internal fun ReaderHighlightPopups(
     ReaderSelectionPopup(
       anchor = selection.anchor,
       currentColor = null,
-      canDelete = false,
-      onDelete = {},
+      onDelete = null,
       onColorSelected = { color -> onHighlightAdded(selection, color) },
     )
   }
@@ -26,7 +25,6 @@ internal fun ReaderHighlightPopups(
     ReaderSelectionPopup(
       anchor = tap.anchor,
       currentColor = tap.highlight.color,
-      canDelete = true,
       onDelete = { onHighlightRemoved(tap) },
       onColorSelected = { color -> onHighlightColorChanged(tap, color) },
     )
