@@ -7,6 +7,8 @@ import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import com.charliesbot.kanshu.navigator.ReaderHighlight
+import com.charliesbot.kanshu.navigator.ReaderHighlightTap
 import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
 import com.charliesbot.kanshu.navigator.engine.ReaderPage
 import com.charliesbot.kanshu.navigator.selection.ReaderSelector
@@ -15,13 +17,14 @@ import java.util.Locale
 
 internal class ReaderPageCanvasView(context: Context) : View(context) {
   private var page: ReaderPage? = null
-  private var highlightRanges: List<IntRange> = emptyList()
+  private var highlights: List<ReaderHighlight> = emptyList()
   private var clearSelectionToken = 0
   private var horizontalMarginPx = 0f
   private var verticalMarginPx = 0f
   private var imageBitmaps: Map<String, Bitmap> = emptyMap()
   private var onTapZone: ((ReaderPageTapZone) -> Unit)? = null
   private var onLinkTapped: ((String) -> Unit)? = null
+  private var onHighlightTapped: ((ReaderHighlightTap) -> Unit)? = null
   private var handledLongPress = false
   private var pendingClickZone = ReaderPageTapZone.Center
   private val selectionController =
@@ -48,6 +51,9 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
           if (selectionController.clearSelection()) {
             return true
           }
+          if (dispatchHighlightTap(event.x, event.y)) {
+            return true
+          }
           if (dispatchLinkTap(event.x, event.y)) {
             return true
           }
@@ -67,10 +73,11 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     horizontalMarginPx: Float,
     verticalMarginPx: Float,
     imageBitmaps: Map<String, Bitmap> = emptyMap(),
-    highlightRanges: List<IntRange> = emptyList(),
+    highlights: List<ReaderHighlight> = emptyList(),
     clearSelectionToken: Int = 0,
     onTapZone: ((ReaderPageTapZone) -> Unit)? = null,
     onLinkTapped: ((String) -> Unit)? = null,
+    onHighlightTapped: ((ReaderHighlightTap) -> Unit)? = null,
     onTextSelected: ((ReaderSelectionInfo) -> Unit)? = null,
     onSelectionCleared: (() -> Unit)? = null,
     onSelectionPageTurn: ((SelectionPageTurnDirection, String, String, TextSelection) -> Boolean)? =
@@ -86,9 +93,10 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     this.horizontalMarginPx = horizontalMarginPx
     this.verticalMarginPx = verticalMarginPx
     this.imageBitmaps = imageBitmaps
-    this.highlightRanges = highlightRanges
+    this.highlights = highlights
     this.onTapZone = onTapZone
     this.onLinkTapped = onLinkTapped
+    this.onHighlightTapped = onHighlightTapped
     if (
       selectionController.setPage(
         page = page,
@@ -148,6 +156,7 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
     selectionController.release()
     onTapZone = null
     onLinkTapped = null
+    onHighlightTapped = null
   }
 
   /** A tap on link text consumes the gesture; a miss falls through to the tap zones. */
@@ -158,6 +167,23 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
       ReaderSelector.linkHrefAt(currentPage, xPx, yPx, horizontalMarginPx, verticalMarginPx)
         ?: return false
     callback(href)
+    return true
+  }
+
+  /** A tap on highlighted text consumes the gesture before links and page tap zones. */
+  private fun dispatchHighlightTap(xPx: Float, yPx: Float): Boolean {
+    val currentPage = page ?: return false
+    val callback = onHighlightTapped ?: return false
+    val hit =
+      ReaderSelector.highlightAt(
+        page = currentPage,
+        highlights = highlights,
+        xPx = xPx,
+        yPx = yPx,
+        horizontalMarginPx = horizontalMarginPx,
+        verticalMarginPx = verticalMarginPx,
+      ) ?: return false
+    callback(hit)
     return true
   }
 
@@ -183,10 +209,10 @@ internal class ReaderPageCanvasView(context: Context) : View(context) {
       horizontalMarginPx = horizontalMarginPx,
       verticalMarginPx = verticalMarginPx,
       selectionRects = selectionController.selectionRects,
-      highlightRects =
-        ReaderSelector.highlightRects(
+      highlights =
+        ReaderSelector.renderedHighlights(
           page = page,
-          highlights = highlightRanges,
+          highlights = highlights,
           horizontalMarginPx = horizontalMarginPx,
           verticalMarginPx = verticalMarginPx,
         ),

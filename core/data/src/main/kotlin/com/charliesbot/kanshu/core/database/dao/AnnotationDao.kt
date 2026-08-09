@@ -20,5 +20,8 @@ interface AnnotationDao {
 
   @Upsert suspend fun upsert(annotation: AnnotationEntity)
 
+  @Query("UPDATE annotations SET color = :color, updated_at = :updatedAt WHERE id = :id")
+  suspend fun updateColor(id: String, color: String, updatedAt: Long)
+
   @Query("DELETE FROM annotations WHERE id = :id") suspend fun delete(id: String)
 }

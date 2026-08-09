@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 
 // Highlights and notes are one entity, matching Kavita's AnnotationDto wire shape. A pure
 // highlight has `noteBody == null`; a highlight + note has it set. Kavita requires xPath, so a
@@ -37,6 +38,7 @@ data class AnnotationEntity(
   @ColumnInfo(name = "start_char_offset") val startCharOffset: Int,
   @ColumnInfo(name = "end_char_offset") val endCharOffset: Int,
   @ColumnInfo(name = "selected_text") val selectedText: String,
+  @ColumnInfo(name = "color") val color: String = ReaderHighlightColor.default.key,
   @ColumnInfo(name = "created_at") val createdAt: Long,
   @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
