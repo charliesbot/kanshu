@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,15 +25,17 @@ internal fun ReaderReadingContent(
   val currentPage by viewModel.currentPage.collectAsStateWithLifecycle()
   val pageCount by viewModel.pageCount.collectAsStateWithLifecycle()
   val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
-  // Hoisted above key(spineIndex) so decoded images survive chapter changes.
+  // Hoisted above key(chapterToken) so decoded images survive chapter changes.
   val imageCache = remember(seriesId) { ReaderImageCache() }
   val preferences by viewModel.preferences.collectAsStateWithLifecycle()
   val highlights by viewModel.highlights.collectAsStateWithLifecycle()
   var transientUi by remember { mutableStateOf<ReaderTransientUi>(ReaderTransientUi.None) }
-  var layoutDiagnostics by remember { mutableStateOf<ReaderLayoutDiagnostics?>(null) }
+  var layoutDiagnostics by
+    remember(state.chapterToken) {
+      mutableStateOf<ReaderLayoutDiagnostics?>(null)
+    }
   var clearSelectionToken by remember { mutableStateOf(0) }
 
-  LaunchedEffect(state.spineIndex) { layoutDiagnostics = null }
   Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
     ReaderPageContent(
       state = state,

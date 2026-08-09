@@ -41,6 +41,7 @@ sealed interface ReaderUiState {
   data object Loading : ReaderUiState
 
   data class Reading(
+    val chapterToken: Long,
     val spineIndex: Int,
     val document: ReaderDocument,
     val diagnostics: ParseDiagnostics,
@@ -162,6 +163,7 @@ class ReaderViewModel(
   private var spineJob: Job? = null
   private var bookLifecycle: BookLifecycle = BookLifecycle.Empty
   private var nextBookToken = 0L
+  private var nextChapterToken = 0L
   private var currentSpineIndex = -1
   // Char offsets of the current chapter's pages. Empty until its layout reports them, which is
   // why progress is only written once positions arrive rather than on every page-index change.
@@ -261,19 +263,11 @@ class ReaderViewModel(
             if (spineItem.spineIndex != restored?.spineIndex) {
               anchorCharOffset = null
             }
-            session.spineItems[spineItem.spineIndex] = spineItem
             bookLifecycle = BookLifecycle.Open(session)
             unownedPublication.set(null)
             _resourceLoader.value = session.resourceLoader
-            currentSpineIndex = spineItem.spineIndex
-            observeHighlights()
             Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
-            _uiState.value =
-              ReaderUiState.Reading(
-                spineIndex = spineItem.spineIndex,
-                document = spineItem.document,
-                diagnostics = spineItem.diagnostics,
-              )
+            activateSpineItem(session, spineItem)
           }
           ReaderResult.Error.NotFound -> {
             bookLifecycle = BookLifecycle.Empty
@@ -295,10 +289,9 @@ class ReaderViewModel(
     }
   }
 
-  fun onPageCount(spineIndex: Int, count: Int) {
-    val reading = _uiState.value as? ReaderUiState.Reading
-    if (reading?.spineIndex != spineIndex) {
-      Log.d(TAG, "onPageCount($count) ignored for stale spine[$spineIndex]")
+  fun onPageCount(chapterToken: Long, count: Int) {
+    if (!isCurrentChapter(chapterToken)) {
+      Log.d(TAG, "onPageCount($count) ignored for stale chapter[$chapterToken]")
       return
     }
     Log.d(TAG, "onPageCount($count)")
@@ -315,10 +308,9 @@ class ReaderViewModel(
    * exist to prevent. Once anchored, the reader keeps its place across font size, margins, and
    * spacing.
    */
-  fun onPagePositions(spineIndex: Int, positions: ReaderPagePositions) {
-    val reading = _uiState.value as? ReaderUiState.Reading
-    if (reading?.spineIndex != spineIndex) {
-      Log.d(TAG, "onPagePositions ignored for stale spine[$spineIndex]")
+  fun onPagePositions(chapterToken: Long, positions: ReaderPagePositions) {
+    if (!isCurrentChapter(chapterToken)) {
+      Log.d(TAG, "onPagePositions ignored for stale chapter[$chapterToken]")
       return
     }
     pagePositions = positions
@@ -367,13 +359,14 @@ class ReaderViewModel(
     viewModelScope.launch { annotationRepository.updateHighlightColor(id, color) }
   }
 
-  private fun observeHighlights() {
+  private fun observeHighlights(chapterToken: Long) {
     val id = openSession?.bookId ?: return
     val spineIndex = currentSpineIndex
     highlightsJob?.cancel()
     _highlights.value = emptyList()
     highlightsJob = viewModelScope.launch {
       annotationRepository.observeForSpine(id, spineIndex).collect { annotations ->
+        if (!isCurrentChapter(chapterToken)) return@collect
         _highlights.value = annotations.map {
           ReaderHighlight(
             startCharOffset = it.startCharOffset,
@@ -430,9 +423,13 @@ class ReaderViewModel(
     )
   }
 
-  fun onLayoutFailed() {
+  fun onLayoutFailed(chapterToken: Long) {
+    if (!isCurrentChapter(chapterToken)) return
     failOpen("onLayoutFailed → OpenFailed")
   }
+
+  private fun isCurrentChapter(chapterToken: Long): Boolean =
+    (_uiState.value as? ReaderUiState.Reading)?.chapterToken == chapterToken
 
   private fun failOpen(message: String) {
     Log.d(TAG, message)
@@ -519,22 +516,14 @@ class ReaderViewModel(
           Log.d(TAG, "openSpineItem: spine[$targetSpineIndex] unavailable")
           return@launch
         }
-        session.spineItems[item.spineIndex] = item
-        currentSpineIndex = item.spineIndex
         _pageCount.value = 0
         // Cleared before the new chapter reports its own table, so no offset from the previous
         // chapter can be persisted or re-anchored against this spine index.
         pagePositions = ReaderPagePositions.Empty
         anchorCharOffset = null
-        observeHighlights()
         _currentPage.value = if (landing == LandingPage.End) LAST_PAGE_SENTINEL else 0
         Log.d(TAG, "openSpineItem: opened spine[${item.spineIndex}] landing=$landing")
-        _uiState.value =
-          ReaderUiState.Reading(
-            spineIndex = item.spineIndex,
-            document = item.document,
-            diagnostics = item.diagnostics,
-          )
+        activateSpineItem(session, item)
       } finally {
         val runningJob = currentCoroutineContext()[Job]
         if (spineJob === runningJob) {
@@ -542,6 +531,20 @@ class ReaderViewModel(
         }
       }
     }
+  }
+
+  private fun activateSpineItem(session: BookSession, item: SpineItem) {
+    session.spineItems[item.spineIndex] = item
+    currentSpineIndex = item.spineIndex
+    val chapterToken = ++nextChapterToken
+    _uiState.value =
+      ReaderUiState.Reading(
+        chapterToken = chapterToken,
+        spineIndex = item.spineIndex,
+        document = item.document,
+        diagnostics = item.diagnostics,
+      )
+    observeHighlights(chapterToken)
   }
 
   override fun onCleared() {
