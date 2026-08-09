@@ -220,6 +220,7 @@ class SyncRepositoryImpl(
         Result.failure(e)
       }
     result.exceptionOrNull()?.let { Log.w(TAG, "Push failed (will retry on next save): $it") }
+      ?: Log.d(TAG, "Progress push succeeded")
   }
 
   private fun decodePosition(json: String): ReaderPosition =
