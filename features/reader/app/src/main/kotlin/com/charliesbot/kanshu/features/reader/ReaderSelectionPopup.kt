@@ -42,8 +42,7 @@ import com.charliesbot.kanshu.strings.R
 internal fun ReaderSelectionPopup(
   anchor: RectF,
   currentColor: ReaderHighlightColor?,
-  canDelete: Boolean,
-  onDelete: () -> Unit,
+  onDelete: (() -> Unit)?,
   onColorSelected: (ReaderHighlightColor) -> Unit,
 ) {
   var showingPalette by remember(anchor, currentColor) { mutableStateOf(false) }
@@ -86,7 +85,7 @@ internal fun ReaderSelectionPopup(
         )
       } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          if (canDelete) {
+          if (onDelete != null) {
             PopupAction(
               label = stringResource(R.string.reader_highlight_delete),
               onClick = onDelete,

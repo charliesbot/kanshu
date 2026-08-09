@@ -90,20 +90,10 @@ private fun MarginChip(option: ReaderMargins, selected: Boolean, onClick: () -> 
       ReaderMargins.Wide -> stringResource(R.string.reader_prefs_margins_wide)
     }
 
-  val shape = RoundedCornerShape(4.dp)
-  Box(
-    modifier =
-      Modifier.width(74.dp)
-        .height(48.dp)
-        .background(Color.Transparent, shape)
-        .border(if (selected) 3.dp else 1.dp, KanshuTheme.colors.onBackground, shape)
-        .clickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-          onClick = onClick,
-        )
-        .clearAndSetSemantics { this.contentDescription = contentDescription },
-    contentAlignment = Alignment.Center,
+  LayoutChip(
+    selected = selected,
+    onClick = onClick,
+    contentDescription = contentDescription,
   ) {
     val horizontalPadding =
       when (option) {
@@ -131,20 +121,10 @@ private fun AlignmentChip(option: ReaderAlignment, selected: Boolean, onClick: (
       ReaderAlignment.Left -> stringResource(R.string.reader_prefs_alignment_left)
     }
 
-  val shape = RoundedCornerShape(4.dp)
-  Box(
-    modifier =
-      Modifier.width(74.dp)
-        .height(48.dp)
-        .background(Color.Transparent, shape)
-        .border(if (selected) 3.dp else 1.dp, KanshuTheme.colors.onBackground, shape)
-        .clickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-          onClick = onClick,
-        )
-        .clearAndSetSemantics { this.contentDescription = contentDescription },
-    contentAlignment = Alignment.Center,
+  LayoutChip(
+    selected = selected,
+    onClick = onClick,
+    contentDescription = contentDescription,
   ) {
     Column(
       modifier = Modifier.fillMaxWidth().padding(3.dp).padding(horizontal = 12.dp),
@@ -167,6 +147,34 @@ private fun AlignmentChip(option: ReaderAlignment, selected: Boolean, onClick: (
         }
       }
     }
+  }
+}
+
+@Composable
+private fun LayoutChip(
+  selected: Boolean,
+  onClick: () -> Unit,
+  contentDescription: String,
+  modifier: Modifier = Modifier,
+  content: @Composable () -> Unit,
+) {
+  val shape = RoundedCornerShape(4.dp)
+  Box(
+    modifier =
+      modifier
+        .width(74.dp)
+        .height(48.dp)
+        .background(Color.Transparent, shape)
+        .border(if (selected) 3.dp else 1.dp, KanshuTheme.colors.onBackground, shape)
+        .clickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+          onClick = onClick,
+        )
+        .clearAndSetSemantics { this.contentDescription = contentDescription },
+    contentAlignment = Alignment.Center,
+  ) {
+    content()
   }
 }
 
