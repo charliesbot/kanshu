@@ -5,6 +5,7 @@ import com.charliesbot.kanshu.navigator.parser.css.CssDisplay
 import com.charliesbot.kanshu.navigator.parser.css.CssStyleResolver
 import com.charliesbot.kanshu.navigator.parser.css.CssStylesheet
 import com.charliesbot.kanshu.navigator.parser.css.InheritedStyleResolver
+import com.charliesbot.kanshu.navigator.parser.css.parseInlineDeclarations
 import org.jsoup.nodes.Document
 
 /**
@@ -35,8 +36,8 @@ internal object StylingCensusCollector {
       val styleAttr = element.attr("style").trim()
       if (styleAttr.isNotEmpty()) {
         styleAttributeCount++
-        parseDeclarationProperties(styleAttr).forEach { property ->
-          inlinePropertyCounts.merge(property, 1, Int::plus)
+        parseInlineDeclarations(styleAttr).forEach { declaration ->
+          inlinePropertyCounts.merge(declaration.property, 1, Int::plus)
         }
       }
       if (
@@ -87,13 +88,6 @@ internal object StylingCensusCollector {
       blockDisplayContextCounts = blockDisplayContextCounts,
     )
   }
-
-  /** Property names from a `style=""` declaration list; tolerant of malformed segments. */
-  private fun parseDeclarationProperties(styleAttr: String): List<String> =
-    styleAttr.split(';').mapNotNull { declaration ->
-      val property = declaration.substringBefore(':', "").trim().lowercase()
-      property.takeIf { it.isNotEmpty() && declaration.contains(':') }
-    }
 
   private val WHITESPACE = Regex("\\s+")
 }
