@@ -29,6 +29,7 @@ import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
+import com.charliesbot.kanshu.core.ui.components.KanshuBottomSheet
 import com.charliesbot.kanshu.core.ui.components.KanshuDivider
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
@@ -51,11 +52,32 @@ data class ReaderPrefsCallbacks(
 
 @Composable
 fun ReaderPrefsBottomSheet(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
   prefs: ReaderPreferences,
   callbacks: ReaderPrefsCallbacks,
   parseDiagnostics: ParseDiagnostics = ParseDiagnostics(),
   layoutDiagnostics: ReaderLayoutDiagnostics? = null,
   modifier: Modifier = Modifier,
+) {
+  KanshuBottomSheet(isOpen = isOpen, onDismiss = onDismiss) {
+    ReaderPrefsContent(
+      prefs = prefs,
+      callbacks = callbacks,
+      parseDiagnostics = parseDiagnostics,
+      layoutDiagnostics = layoutDiagnostics,
+      modifier = modifier,
+    )
+  }
+}
+
+@Composable
+private fun ReaderPrefsContent(
+  prefs: ReaderPreferences,
+  callbacks: ReaderPrefsCallbacks,
+  parseDiagnostics: ParseDiagnostics,
+  layoutDiagnostics: ReaderLayoutDiagnostics?,
+  modifier: Modifier,
 ) {
   var activeTab by remember { mutableStateOf(PrefsTab.Font) }
   Column(modifier.fillMaxWidth().heightIn(min = 500.dp)) {
@@ -135,6 +157,8 @@ private fun TabStrip(activeTab: PrefsTab, onSelect: (PrefsTab) -> Unit) {
 private fun ReaderPrefsBottomSheetPreview() {
   KanshuTheme {
     ReaderPrefsBottomSheet(
+      isOpen = true,
+      onDismiss = {},
       prefs = ReaderPreferences(font = ReaderFont.Literata, fontScale = 1.2f),
       callbacks =
         ReaderPrefsCallbacks(
