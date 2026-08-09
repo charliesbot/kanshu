@@ -2,7 +2,6 @@ package com.charliesbot.kanshu.navigator.parser
 
 import com.charliesbot.kanshu.navigator.model.BlockAlignment
 import com.charliesbot.kanshu.navigator.model.BlockSpacing
-import com.charliesbot.kanshu.navigator.model.HeadingBlock
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.InlineStyle
@@ -12,7 +11,6 @@ import com.charliesbot.kanshu.navigator.model.ParagraphBlock
 import com.charliesbot.kanshu.navigator.model.QuoteBlock
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.TextLeaf
-import com.charliesbot.kanshu.navigator.parser.css.CssDisplay
 import com.charliesbot.kanshu.navigator.parser.css.InheritedStyleResolver
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -30,6 +28,7 @@ internal class BlockLevelParser(
   private val styles: InheritedStyleResolver? = null,
 ) {
   private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles, baseHref)
+  private val headingParser = HeadingParser(inlineSpanExtractor, styles)
 
   fun parse(nodes: List<Node>): List<ReaderBlock> {
     val blocks = mutableListOf<ReaderBlock>()
@@ -67,7 +66,7 @@ internal class BlockLevelParser(
       "h3",
       "h4",
       "h5",
-      "h6" -> blocks.addAll(headingsFrom(tag, element))
+      "h6" -> blocks.addAll(headingParser.parse(element))
 
       "div" -> parseInlineOrChildren(element, blocks)
 
@@ -126,135 +125,6 @@ internal class BlockLevelParser(
       )
   }
 
-  private fun headingsFrom(tag: String, element: Element): List<HeadingBlock> {
-    val level = tag.removePrefix("h").toIntOrNull()?.coerceIn(1, 6) ?: 1
-    val promoted = promotedHeadingDescendants(element)
-    if (promoted.isNotEmpty()) {
-      val outerSpacing = publisherSpacing(element)
-      val promotedContent = promoted.mapNotNull { child ->
-        inlineSpanExtractor
-          .extractPromoted(child, element)
-          .takeIf { it.isNotEmpty() }
-          ?.let {
-            child to it
-          }
-      }
-      return promotedContent.mapIndexed { index, (child, spans) ->
-        HeadingBlock(
-          level = level,
-          spans = spans,
-          alignment = publisherAlignment(child),
-          spacing =
-            promotedHeadingSpacing(
-              outer = outerSpacing,
-              child = publisherSpacing(child),
-              index = index,
-              lastIndex = promotedContent.lastIndex,
-            ),
-        )
-      }
-    }
-
-    val spans = inlineSpanExtractor.extract(element.childNodes(), baseStyleFor(element))
-    return if (spans.isEmpty()) emptyList()
-    else
-      listOf(
-        HeadingBlock(
-          level = level,
-          spans = spans,
-          alignment = publisherAlignment(element),
-          spacing = publisherSpacing(element),
-        )
-      )
-  }
-
-  /**
-   * Returns maximal `display:block` descendants only when they cover every meaningful heading leaf.
-   * Mixed inline/block headings keep the existing single-block fallback rather than risk dropping
-   * or reordering text while Kanshu deliberately lacks general CSS anonymous boxes.
-   */
-  private fun promotedHeadingDescendants(heading: Element): List<Element> {
-    val resolver = styles ?: return emptyList()
-    val blockDescendants =
-      heading.allElements.drop(1).filter { resolver.resolve(it).display == CssDisplay.Block }
-    val candidates = blockDescendants.filter { candidate ->
-      candidate
-        .parents()
-        .takeWhile { it !== heading }
-        .none { ancestor ->
-          resolver.resolve(ancestor).display == CssDisplay.Block
-        }
-    }
-    if (candidates.isEmpty()) return emptyList()
-    val hasNestedBlock = blockDescendants.any { descendant ->
-      candidates.any { candidate ->
-        candidate !== descendant && candidate.isAncestorOf(descendant)
-      }
-    }
-    if (hasNestedBlock) return emptyList()
-
-    val uncoveredText =
-      heading.allElements
-        .flatMap(Element::textNodes)
-        .filterNot { it.text().isBlank() }
-        .any { text ->
-          candidates.none { candidate ->
-            candidate === text.parent() || candidate.isAncestorOf(text.parent())
-          }
-        }
-    val uncoveredImages =
-      heading.select("img").any { image ->
-        candidates.none { candidate -> candidate === image || candidate.isAncestorOf(image) }
-      }
-    val uncoveredBreaks =
-      heading.select("br").any { lineBreak ->
-        candidates.none { candidate ->
-          candidate === lineBreak || candidate.isAncestorOf(lineBreak)
-        }
-      }
-    return if (uncoveredText || uncoveredImages || uncoveredBreaks) emptyList() else candidates
-  }
-
-  private fun Element.isAncestorOf(descendant: Element?): Boolean =
-    generateSequence(descendant?.parent()) { it.parent() }.any { it === this }
-
-  /**
-   * Projects nested heading spacing onto Kanshu's flat block list. Outer vertical margins wrap the
-   * group once; missing internal margins become zero so renderer defaults are not repeated between
-   * title components. Nested horizontal margins are cumulative and retain the PRD's 6em clamp.
-   */
-  private fun promotedHeadingSpacing(
-    outer: BlockSpacing?,
-    child: BlockSpacing?,
-    index: Int,
-    lastIndex: Int,
-  ): BlockSpacing {
-    val first = index == 0
-    val last = index == lastIndex
-    return BlockSpacing(
-      marginTopEm =
-        if (first) collapsedMargin(outer?.marginTopEm, child?.marginTopEm)
-        else child?.marginTopEm ?: 0f,
-      marginBottomEm =
-        if (last) collapsedMargin(outer?.marginBottomEm, child?.marginBottomEm)
-        else child?.marginBottomEm ?: 0f,
-      marginStartEm = cumulativeInset(outer?.marginStartEm, child?.marginStartEm),
-      marginEndEm = cumulativeInset(outer?.marginEndEm, child?.marginEndEm),
-      textIndentEm = child?.textIndentEm,
-    )
-  }
-
-  private fun collapsedMargin(outer: Float?, child: Float?): Float? =
-    when {
-      outer == null -> child
-      child == null -> outer
-      else -> maxOf(outer, child)
-    }
-
-  private fun cumulativeInset(outer: Float?, child: Float?): Float? =
-    if (outer == null && child == null) null
-    else ((outer ?: 0f) + (child ?: 0f)).coerceAtMost(MAX_HORIZONTAL_INSET_EM)
-
   private fun baseStyleFor(owner: Element?): InlineStyle =
     if (owner == null) InlineStyle.Plain else inlineSpanExtractor.effectiveCssEmphasis(owner)
 
@@ -264,10 +134,6 @@ internal class BlockLevelParser(
 
   private fun publisherSpacing(owner: Element?): BlockSpacing? = owner?.let {
     styles?.resolve(it)?.blockSpacing()
-  }
-
-  private companion object {
-    const val MAX_HORIZONTAL_INSET_EM = 6f
   }
 
   private fun quoteFromChildren(nodes: List<Node>): QuoteBlock? {
