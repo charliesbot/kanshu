@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.provider
 
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import java.io.File
 import org.readium.r2.shared.publication.Publication
@@ -24,6 +25,15 @@ interface Provider {
     context: ProviderBookContext,
     position: ReaderPosition,
   ): ProviderResult<Unit> = ProviderResult.Success(Unit)
+
+  suspend fun pullHighlights(
+    context: ProviderBookContext
+  ): ProviderResult<List<ProviderHighlight>> = ProviderResult.Success(emptyList())
+
+  suspend fun pushHighlights(
+    context: ProviderBookContext,
+    changes: List<HighlightChange>,
+  ): ProviderResult<Unit> = ProviderResult.Success(Unit)
 }
 
 data class AcquiredBook(val byteSize: Long)
@@ -45,3 +55,27 @@ data class RemoteProgress(
   val percentage: Double,
   val timestampMillis: Long,
 )
+
+/** Provider-neutral highlight representation used only at the remote adapter boundary. */
+data class ProviderHighlight(
+  val localId: String?,
+  val remoteId: String?,
+  val spineIndex: Int,
+  val startCharOffset: Int,
+  val endCharOffset: Int,
+  val selectedText: String,
+  val color: ReaderHighlightColor,
+  val createdAt: Long,
+  val updatedAt: Long,
+  val remoteRevision: String?,
+)
+
+sealed interface HighlightChange {
+  data class Upsert(val highlight: ProviderHighlight) : HighlightChange
+
+  data class Delete(
+    val localId: String,
+    val remoteId: String?,
+    val remoteRevision: String?,
+  ) : HighlightChange
+}
