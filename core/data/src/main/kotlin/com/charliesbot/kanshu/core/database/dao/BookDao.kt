@@ -33,7 +33,11 @@ interface BookDao {
   @Query("DELETE FROM books WHERE id = :id") suspend fun delete(id: String)
 
   @Transaction
-  suspend fun syncBooks(source: String, remoteBooks: List<BookEntity>, fetchedIds: Set<String>) {
+  suspend fun syncBooks(
+    providerInstanceId: String,
+    remoteBooks: List<BookEntity>,
+    fetchedIds: Set<String>,
+  ) {
     val localBooks = getAll()
     val localBooksMap = localBooks.associateBy { it.id }
 
@@ -49,7 +53,7 @@ interface BookDao {
     toUpsert.forEach { upsert(it) }
 
     val toDelete = localBooks.filter {
-      it.source == source && it.id !in fetchedIds && it.localPath == null
+      it.providerInstanceId == providerInstanceId && it.id !in fetchedIds && it.localPath == null
     }
     toDelete.forEach { delete(it.id) }
   }

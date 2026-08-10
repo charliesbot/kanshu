@@ -78,8 +78,8 @@ class BookRepositoryImplTest {
             "kavita:$seriesId" to
               BookEntity(
                 id = "kavita:$seriesId",
-                source = "kavita",
-                sourceItemId = seriesId.toString(),
+                providerInstanceId = "kavita",
+                providerItemId = seriesId.toString(),
                 title = title,
                 localPath = file.absolutePath,
                 byteSize = file.length(),
@@ -127,8 +127,8 @@ class BookRepositoryImplTest {
             "kavita:42" to
               BookEntity(
                 id = "kavita:42",
-                source = "kavita",
-                sourceItemId = "42",
+                providerInstanceId = "kavita",
+                providerItemId = "42",
                 title = "Title",
                 localPath = "/nonexistent/42.epub",
                 byteSize = 1L,
@@ -241,8 +241,8 @@ class BookRepositoryImplTest {
             "kavita:7" to
               BookEntity(
                 id = "kavita:7",
-                source = "kavita",
-                sourceItemId = "7",
+                providerInstanceId = "kavita",
+                providerItemId = "7",
                 title = "Ghost",
                 localPath = File(booksDir, "ghost.epub").absolutePath,
                 byteSize = 1L,
@@ -382,8 +382,8 @@ class BookRepositoryImplTest {
   ) =
     BookEntity(
       id = id,
-      source = "kavita",
-      sourceItemId = id.removePrefix("kavita:"),
+      providerInstanceId = "kavita",
+      providerItemId = id.removePrefix("kavita:"),
       title = title,
       localPath = localPath,
       byteSize = if (localPath != null) 100L else null,

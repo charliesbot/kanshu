@@ -7,6 +7,7 @@ import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.KavitaException
+import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
@@ -79,8 +80,8 @@ class BookRepositoryImpl(
         val bookId = bookIdFor(s.id)
         BookEntity(
           id = bookId,
-          source = SOURCE_KAVITA,
-          sourceItemId = s.id.toString(),
+          providerInstanceId = KAVITA_PROVIDER_ID,
+          providerItemId = s.id.toString(),
           title = s.name,
           localPath = null,
           byteSize = null,
@@ -90,7 +91,7 @@ class BookRepositoryImpl(
         )
       }
 
-      bookDao.syncBooks(SOURCE_KAVITA, remoteBooks, fetchedIds)
+      bookDao.syncBooks(KAVITA_PROVIDER_ID, remoteBooks, fetchedIds)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
@@ -108,7 +109,7 @@ class BookRepositoryImpl(
       bookDao.observeAll().combine(_inFlight) { dbBooks, inFlight ->
         val items =
           dbBooks
-            .filter { it.source == SOURCE_KAVITA }
+            .filter { it.providerInstanceId == KAVITA_PROVIDER_ID }
             .map { entity ->
               val seriesId = seriesIdFromBookId(entity.id) ?: 0
               val coverUrl =
@@ -223,8 +224,8 @@ class BookRepositoryImpl(
       bookDao.upsert(
         BookEntity(
           id = bookIdFor(seriesId),
-          source = SOURCE_KAVITA,
-          sourceItemId = seriesId.toString(),
+          providerInstanceId = KAVITA_PROVIDER_ID,
+          providerItemId = seriesId.toString(),
           title = item.title,
           localPath = finalFile.absolutePath,
           byteSize = finalFile.length(),
@@ -289,7 +290,7 @@ class BookRepositoryImpl(
   private companion object {
     const val TAG = "BookRepository"
     const val DEFAULT_PAGE_SIZE = 100
-    const val SOURCE_KAVITA = BookIds.SOURCE_KAVITA
+    val KAVITA_PROVIDER_ID = KavitaProvider.ID.value
   }
 }
 

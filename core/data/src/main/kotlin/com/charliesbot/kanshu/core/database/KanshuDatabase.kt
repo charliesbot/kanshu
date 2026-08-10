@@ -11,9 +11,7 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 
 @Database(
   entities = [BookEntity::class, ReadingProgressEntity::class, AnnotationEntity::class],
-  version = 5,
-  // No exported schemas and no migrations: a bump rebuilds the database (see CoreDataModule). The
-  // entity classes are the schema, so a checked-in JSON copy of them has no reader.
+  version = 6,
   exportSchema = false,
 )
 abstract class KanshuDatabase : RoomDatabase() {

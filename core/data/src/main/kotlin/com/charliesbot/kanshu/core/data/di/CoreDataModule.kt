@@ -17,6 +17,9 @@ import com.charliesbot.kanshu.core.library.usecase.DeleteDownloadUseCase
 import com.charliesbot.kanshu.core.library.usecase.DownloadBookUseCase
 import com.charliesbot.kanshu.core.library.usecase.LoadLibraryUseCase
 import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
+import com.charliesbot.kanshu.core.provider.ProviderRegistry
+import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
+import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import com.charliesbot.kanshu.core.reader.KavitaReaderSource
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderSource
@@ -45,15 +48,15 @@ val coreDataModule = module {
   single<CredentialsRepository> { CredentialsRepositoryImpl(get(), get()) }
   single {
     Room.databaseBuilder(androidContext(), KanshuDatabase::class.java, KanshuDatabase.NAME)
-      // Personal app: a schema bump rebuilds the database rather than carrying hand-written SQL
-      // that has to byte-match Room's generated schema. `books` re-syncs from Kavita and progress
-      // is pushed there too, so the only local-only loss is highlights.
+      // Early-stage personal app: incompatible schemas reset instead of carrying migrations.
       .fallbackToDestructiveMigration(dropAllTables = true)
       .build()
   }
   single { get<KanshuDatabase>().bookDao() }
   single { get<KanshuDatabase>().readingProgressDao() }
   single { get<KanshuDatabase>().annotationDao() }
+  single { KavitaProvider() }
+  single<ProviderRegistry> { ProviderRegistryImpl(listOf(get<KavitaProvider>())) }
   single<BookRepository> {
     BookRepositoryImpl(
       credentialsRepository = get(),
