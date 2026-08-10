@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.provider
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -41,5 +42,19 @@ class ProviderRegistryTest {
           enabled = enabled,
           capabilities = ProviderCapabilities(progressSync = false, highlightSync = false),
         )
+
+      override suspend fun fetchCatalog(): ProviderResult<List<ProviderBook>> =
+        ProviderResult.Success(emptyList())
+
+      override suspend fun resolveCover(
+        book: ProviderBookKey,
+        revisionToken: String?,
+      ): ProviderCover? = null
+
+      override suspend fun acquire(
+        book: ProviderBookKey,
+        target: File,
+        onProgress: (downloaded: Long, total: Long?) -> Unit,
+      ): ProviderResult<AcquiredBook> = ProviderResult.Success(AcquiredBook(0))
     }
 }

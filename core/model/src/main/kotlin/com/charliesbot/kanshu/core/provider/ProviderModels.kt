@@ -9,6 +9,20 @@ data class ProviderBookKey(
   val providerItemId: String,
 )
 
+data class ProviderBook(
+  val key: ProviderBookKey,
+  val title: String,
+  val cover: ProviderCover?,
+  val mediaType: String,
+  val revisionToken: String?,
+)
+
+sealed interface ProviderCover {
+  data object Available : ProviderCover
+
+  data class RemoteUrl(val value: String) : ProviderCover
+}
+
 enum class ProviderType {
   KAVITA,
   LOCAL,
@@ -35,6 +49,8 @@ sealed interface ProviderResult<out T> {
 }
 
 sealed interface ProviderError {
+  data object NoCredentials : ProviderError
+
   data object Unauthorized : ProviderError
 
   data object Network : ProviderError
