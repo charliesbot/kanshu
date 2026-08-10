@@ -54,12 +54,12 @@ fun AppNavigation(start: NavKey) {
         entry<LibraryRoute> {
           LibraryScreen(
             onItemClick = { item ->
-              val next = ReaderRoute(item.id, item.title)
+              val next = ReaderRoute(item.bookId, item.title)
               if (backStack.lastOrNull() != next) backStack.add(next)
             }
           )
         }
-        entry<ReaderRoute> { route -> ReaderScreen(seriesId = route.seriesId, title = route.title) }
+        entry<ReaderRoute> { route -> ReaderScreen(bookId = route.bookId, title = route.title) }
       },
   )
 }

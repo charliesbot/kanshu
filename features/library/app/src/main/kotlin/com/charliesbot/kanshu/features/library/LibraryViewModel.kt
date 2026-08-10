@@ -78,7 +78,7 @@ class LibraryViewModel(
 
   fun confirmDeleteDownload() {
     val item = _options.value ?: return
-    deleteDownload(item.id)
+    deleteDownload(item.bookId)
     _options.value = null
   }
 }

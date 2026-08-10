@@ -2,6 +2,8 @@ package com.charliesbot.kanshu.features.reader
 
 import android.graphics.RectF
 import androidx.lifecycle.ViewModelStore
+import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.reader.EpubOpener
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
@@ -9,7 +11,6 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
-import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
 import com.charliesbot.kanshu.core.reader.annotation.ReaderAnnotation
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
@@ -76,9 +77,9 @@ class ReaderViewModelTest {
   fun `successful open transitions to Reading`() =
     runTest(testDispatcher) {
       val publication = testPublication()
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       val state = viewModel.uiState.value
@@ -90,11 +91,32 @@ class ReaderViewModelTest {
     }
 
   @Test
+  fun `open passes an arbitrary book id to the shared opener unchanged`() =
+    runTest(testDispatcher) {
+      val expected = BookId("archive:item-42")
+      var opened: BookId? = null
+      val opener =
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId): ReaderResult {
+            opened = bookId
+            return ReaderResult.Success(testPublication(), File("test.epub"))
+          }
+        }
+      val viewModel = viewModel(opener)
+
+      viewModel.open(expected)
+      advanceUntilIdle()
+
+      assertEquals(expected, opened)
+      assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
+    }
+
+  @Test
   fun `preferences reflect the repository not hardcoded defaults`() =
     runTest(testDispatcher) {
       val stored = ReaderPreferences(fontScale = 1.4f, alignment = ReaderAlignment.Left)
       val repository = FakeReaderPreferencesRepository(stored)
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), repository)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), repository)
 
       advanceUntilIdle()
 
@@ -104,7 +126,7 @@ class ReaderViewModelTest {
   @Test
   fun `preferences start from defaults before the repository emits`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
       assertEquals(ReaderPreferences(), viewModel.preferences.value)
     }
@@ -113,7 +135,7 @@ class ReaderViewModelTest {
   fun `preference setters delegate to the repository`() =
     runTest(testDispatcher) {
       val repository = FakeReaderPreferencesRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), repository)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), repository)
 
       viewModel.setFontScale(1.2f)
       viewModel.setAlignment(ReaderAlignment.Left)
@@ -128,9 +150,9 @@ class ReaderViewModelTest {
   @Test
   fun `successful open exposes resource loader`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertNotNull(viewModel.resourceLoader.value)
@@ -140,12 +162,12 @@ class ReaderViewModelTest {
   fun `failed open leaves resource loader null`() =
     runTest(testDispatcher) {
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.NotFound
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId) = ReaderResult.Error.NotFound
         }
       val viewModel = viewModel(source)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertNull(viewModel.resourceLoader.value)
@@ -155,12 +177,12 @@ class ReaderViewModelTest {
   fun `not found transitions to Error`() =
     runTest(testDispatcher) {
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.NotFound
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId) = ReaderResult.Error.NotFound
         }
       val viewModel = viewModel(source)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
@@ -170,12 +192,12 @@ class ReaderViewModelTest {
   fun `parse failed transitions to OpenFailed`() =
     runTest(testDispatcher) {
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.ParseFailed
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId) = ReaderResult.Error.ParseFailed
         }
       val viewModel = viewModel(source)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
@@ -185,12 +207,12 @@ class ReaderViewModelTest {
   fun `read failed transitions to OpenFailed`() =
     runTest(testDispatcher) {
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int) = ReaderResult.Error.ReadFailed
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId) = ReaderResult.Error.ReadFailed
         }
       val viewModel = viewModel(source)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
@@ -200,9 +222,9 @@ class ReaderViewModelTest {
   fun `successful publication closes on clear`() =
     runTest(testDispatcher) {
       val publication = testPublication()
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.closeThroughStore()
 
@@ -214,11 +236,11 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val first = testPublication()
       val second = testPublication()
-      val viewModel = viewModel(FakeReaderSource(1 to first, 2 to second))
+      val viewModel = viewModel(FakeEpubOpener(1 to first, 2 to second))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
-      viewModel.open(2)
+      viewModel.open(kavitaBookId(2))
       advanceUntilIdle()
 
       verify(exactly = 1) { first.close() }
@@ -231,8 +253,8 @@ class ReaderViewModelTest {
       val publication = testPublication()
       var attempts = 0
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int): ReaderResult {
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId): ReaderResult {
             attempts++
             return if (attempts == 1) {
               ReaderResult.Error.NotFound
@@ -243,11 +265,11 @@ class ReaderViewModelTest {
         }
       val viewModel = viewModel(source)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       assertEquals(ReaderUiState.Error.NotFound, viewModel.uiState.value)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(2, attempts)
@@ -259,9 +281,9 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val publication =
         mockk<Publication>(relaxUnitFun = true) { every { readingOrder } returns emptyList() }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(ReaderUiState.Error.OpenFailed, viewModel.uiState.value)
@@ -276,9 +298,9 @@ class ReaderViewModelTest {
       val stalePublication = testPublication("<html><body><p>Stale</p></body></html>")
       val freshPublication = testPublication("<html><body><p>Fresh</p></body></html>")
       val source =
-        object : ReaderSource {
-          override suspend fun openBook(seriesId: Int): ReaderResult {
-            if (seriesId == 1) {
+        object : EpubOpener {
+          override suspend fun openBook(bookId: BookId): ReaderResult {
+            if (bookId == kavitaBookId(1)) {
               try {
                 delay(1_000)
               } catch (_: CancellationException) {
@@ -291,9 +313,9 @@ class ReaderViewModelTest {
         }
       val viewModel = viewModel(source, ioDispatcher = ioDispatcher)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       runCurrent()
-      viewModel.open(2)
+      viewModel.open(kavitaBookId(2))
       advanceUntilIdle()
 
       assertEquals(listOf("Fresh"), viewModel.currentDocument().paragraphText())
@@ -329,9 +351,9 @@ class ReaderViewModelTest {
           every { get(coverLink) } returns coverResource
           every { get(chapterLink) } returns chapterResource
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(
@@ -345,7 +367,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body></body></html>",
@@ -354,7 +376,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       val firstDocument = viewModel.currentDocument()
@@ -381,9 +403,9 @@ class ReaderViewModelTest {
         testPublication(
           "<html><body><p><strong>${"Bold text ".repeat(8)}</strong></p></body></html>"
         )
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
@@ -405,9 +427,9 @@ class ReaderViewModelTest {
           """
             .trimIndent()
         )
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(
@@ -421,7 +443,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -430,7 +452,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -451,9 +473,9 @@ class ReaderViewModelTest {
   fun `nextPage emits Reading state for adjacent identical spine documents`() =
     runTest(testDispatcher) {
       val imageOnly = "<html><body><p><img alt=\"image\" src=\"cover.jpg\"/></p></body></html>"
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication(imageOnly, imageOnly)))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication(imageOnly, imageOnly)))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       assertEquals(0, viewModel.currentSpineIndex())
       assertEquals(
@@ -477,9 +499,9 @@ class ReaderViewModelTest {
   @Test
   fun `nextPage on last page stays put when there is no next spine item`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -501,7 +523,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublicationWithMissingResource(
                 missingResourceIndex = 1,
@@ -512,7 +534,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -531,9 +553,9 @@ class ReaderViewModelTest {
   @Test
   fun `previousPage moves back within chapter`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 3)
       viewModel.nextPage()
@@ -548,7 +570,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -557,7 +579,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
       viewModel.nextPage()
@@ -585,9 +607,9 @@ class ReaderViewModelTest {
   @Test
   fun `previousPage on first page of first spine item stays put`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -604,7 +626,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -613,7 +635,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
       viewModel.nextPage()
@@ -653,9 +675,9 @@ class ReaderViewModelTest {
           every { get(links[0]) } returns firstResource
           every { get(links[1]) } returns secondResource
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
       viewModel.nextPage()
@@ -708,9 +730,9 @@ class ReaderViewModelTest {
               if (url.toString().endsWith("main.css")) cssResource else null
             }
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       val spans = (viewModel.currentDocument().blocks.first() as ParagraphBlock).spans
@@ -746,9 +768,9 @@ class ReaderViewModelTest {
           links.forEachIndexed { index, link -> every { get(link) } returns resources[index] }
           every { get(any<Url>()) } returns null
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -761,9 +783,9 @@ class ReaderViewModelTest {
   @Test
   fun `openLink with unresolvable href stays put`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -797,9 +819,9 @@ class ReaderViewModelTest {
           every { get(links[0]) } returns firstResource
           every { get(links[1]) } returns secondResource
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.nextPage()
@@ -845,9 +867,9 @@ class ReaderViewModelTest {
             }
           every { get(links[1]) } returns secondResource
         }
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
       viewModel.nextPage()
@@ -873,7 +895,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -882,7 +904,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       val firstSpineIndex = viewModel.currentSpineIndex()
       viewModel.onPageCount(firstSpineIndex, 1)
@@ -899,7 +921,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>First</p></body></html>",
@@ -908,7 +930,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       val firstVisitToken = viewModel.currentChapterToken()
       viewModel.onPageCount(firstVisitToken, 1)
@@ -929,17 +951,17 @@ class ReaderViewModelTest {
       val sync = FakeSyncRepository()
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to testPublication("<html><body><p>Old book</p></body></html>"),
             2 to testPublication("<html><body><p>New book</p></body></html>"),
           ),
           syncRepository = sync,
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       val oldChapterToken = viewModel.currentChapterToken()
-      viewModel.open(2)
+      viewModel.open(kavitaBookId(2))
       advanceUntilIdle()
 
       viewModel.onPagePositions(
@@ -955,16 +977,16 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to testPublication("<html><body><p>Old book</p></body></html>"),
             2 to testPublication("<html><body><p>New book</p></body></html>"),
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       val oldChapterToken = viewModel.currentChapterToken()
-      viewModel.open(2)
+      viewModel.open(kavitaBookId(2))
       advanceUntilIdle()
 
       viewModel.onLayoutFailed(oldChapterToken)
@@ -977,7 +999,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublicationWithReadDelays(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>" to 0,
@@ -987,7 +1009,7 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
@@ -1008,7 +1030,7 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublicationWithReadDelays(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>" to 0,
@@ -1018,12 +1040,12 @@ class ReaderViewModelTest {
           )
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentSpineIndex(), 1)
 
       viewModel.nextPage()
-      viewModel.open(2)
+      viewModel.open(kavitaBookId(2))
       advanceUntilIdle()
 
       val state = viewModel.uiState.value
@@ -1043,7 +1065,7 @@ class ReaderViewModelTest {
         )
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -1053,7 +1075,7 @@ class ReaderViewModelTest {
           syncRepository = sync,
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       assertEquals(1, viewModel.currentSpineIndex())
 
@@ -1068,9 +1090,9 @@ class ReaderViewModelTest {
   @Test
   fun `repagination keeps the reader on the same text, not the same page index`() =
     runTest(testDispatcher) {
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()))
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
@@ -1101,11 +1123,11 @@ class ReaderViewModelTest {
         FakeSyncRepository(
           stored = ReaderPosition(spineIndex = 0, charOffset = 200, progressInSpine = 0.6f)
         )
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
       val positions =
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
       assertEquals(2, viewModel.pagination.value.currentPage)
@@ -1127,7 +1149,7 @@ class ReaderViewModelTest {
         )
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublicationWithMissingResource(
                 missingResourceIndex = 1,
@@ -1138,7 +1160,7 @@ class ReaderViewModelTest {
           syncRepository = sync,
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(0, viewModel.currentSpineIndex())
@@ -1161,9 +1183,9 @@ class ReaderViewModelTest {
         FakeSyncRepository(
           stored = ReaderPosition(spineIndex = 0, charOffset = 150, progressInSpine = 0.375f)
         )
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
@@ -1185,9 +1207,9 @@ class ReaderViewModelTest {
       // reports the resumed position exactly rather than something near it.
       val resumed = ReaderPosition(spineIndex = 0, charOffset = 100, progressInSpine = 0.25f)
       val sync = FakeSyncRepository(stored = resumed)
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
@@ -1204,9 +1226,9 @@ class ReaderViewModelTest {
       // The open path must stay local-only: a slow or unreachable host would otherwise sit in
       // front of the first page.
       val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertEquals(false, sync.remoteConsulted)
@@ -1216,11 +1238,11 @@ class ReaderViewModelTest {
   fun `repagination re-reports the current position, not a shifted one`() =
     runTest(testDispatcher) {
       val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
       val positions =
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
@@ -1242,9 +1264,9 @@ class ReaderViewModelTest {
   fun `page turns persist the char offset of the page landed on`() =
     runTest(testDispatcher) {
       val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.onPagePositions(
@@ -1265,10 +1287,10 @@ class ReaderViewModelTest {
       // Last page of the last chapter: nextPage has nowhere to go, so every report is the position
       // the reader was already at and the sync layer drops all but the first.
       val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
       val positions = ReaderPagePositions(pageStartCharOffsets = listOf(0), textStreamLength = 100)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 1)
       viewModel.onPagePositions(viewModel.currentChapterToken(), positions)
@@ -1283,9 +1305,9 @@ class ReaderViewModelTest {
   fun `progress is not persisted before the offsets table arrives`() =
     runTest(testDispatcher) {
       val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeReaderSource(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.onPageCount(viewModel.currentChapterToken(), 3)
       viewModel.nextPage()
@@ -1300,9 +1322,9 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val annotations = FakeAnnotationRepository()
       val viewModel =
-        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
         ReaderSelectionInfo(
@@ -1330,8 +1352,8 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val annotations = FakeAnnotationRepository()
       val viewModel =
-        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
-      viewModel.open(1)
+        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
         ReaderSelectionInfo("words", RectF(), startCharOffset = 4, endCharOffset = 9),
@@ -1351,8 +1373,8 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val annotations = FakeAnnotationRepository()
       val viewModel =
-        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
-      viewModel.open(1)
+        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
         ReaderSelectionInfo("words", RectF(), startCharOffset = 4, endCharOffset = 9),
@@ -1372,9 +1394,9 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       val annotations = FakeAnnotationRepository()
       val viewModel =
-        viewModel(FakeReaderSource(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
         ReaderSelectionInfo(text = "", anchor = RectF(), startCharOffset = 5, endCharOffset = 5)
@@ -1390,7 +1412,7 @@ class ReaderViewModelTest {
       val annotations = FakeAnnotationRepository()
       val viewModel =
         viewModel(
-          FakeReaderSource(
+          FakeEpubOpener(
             1 to
               testPublication(
                 "<html><body><p>${"First chapter ".repeat(6)}</p></body></html>",
@@ -1400,7 +1422,7 @@ class ReaderViewModelTest {
           annotationRepository = annotations,
         )
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
         ReaderSelectionInfo(text = "one", anchor = RectF(), startCharOffset = 1, endCharOffset = 4)
@@ -1421,21 +1443,21 @@ class ReaderViewModelTest {
     }
 
   @Test
-  fun `duplicate open with same seriesId is no-op`() =
+  fun `duplicate open with same book id is no-op`() =
     runTest(testDispatcher) {
       val publication = testPublication()
-      val viewModel = viewModel(FakeReaderSource(1 to publication))
+      val viewModel = viewModel(FakeEpubOpener(1 to publication))
 
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
-      viewModel.open(1)
+      viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
 
       assertTrue(viewModel.uiState.value is ReaderUiState.Reading)
     }
 
   private fun viewModel(
-    source: ReaderSource,
+    source: EpubOpener,
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
     syncRepository: SyncRepository = FakeSyncRepository(),
     annotationRepository: AnnotationRepository = FakeAnnotationRepository(),
@@ -1676,14 +1698,18 @@ private class FakeSyncRepository(private val stored: ReaderPosition? = null) : S
   ): RemoteProgress? = null
 }
 
-private class FakeReaderSource(vararg publications: Pair<Int, Publication>) : ReaderSource {
-  private val publications = publications.toMap()
+private class FakeEpubOpener(vararg publications: Pair<Int, Publication>) : EpubOpener {
+  private val publications = publications.associate { (id, publication) ->
+    kavitaBookId(id) to publication
+  }
 
-  override suspend fun openBook(seriesId: Int): ReaderResult =
-    ReaderResult.Success(publications.getValue(seriesId), File("test.epub"))
+  override suspend fun openBook(bookId: BookId): ReaderResult =
+    ReaderResult.Success(publications.getValue(bookId), File("test.epub"))
 }
 
 private fun ReaderDocument.paragraphText(): List<String> =
   blocks.filterIsInstance<ParagraphBlock>().map { block ->
     block.spans.filterIsInstance<TextLeaf>().joinToString("") { it.text }.trim()
   }
+
+private fun kavitaBookId(id: Int) = BookId("kavita:$id")

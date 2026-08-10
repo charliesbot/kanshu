@@ -24,7 +24,7 @@ import com.charliesbot.kanshu.strings.R
 
 @Composable
 internal fun ReaderReadingContent(
-  seriesId: Int,
+  bookId: String,
   title: String,
   state: ReaderUiState.Reading,
   viewModel: ReaderViewModel,
@@ -33,7 +33,7 @@ internal fun ReaderReadingContent(
   val pagination by viewModel.pagination.collectAsStateWithLifecycle()
   val resourceLoader by viewModel.resourceLoader.collectAsStateWithLifecycle()
   // Hoisted above key(chapterToken) so decoded images survive chapter changes.
-  val imageCache = remember(seriesId) { ReaderImageCache() }
+  val imageCache = remember(bookId) { ReaderImageCache() }
   val preferences by viewModel.preferences.collectAsStateWithLifecycle()
   val highlights by viewModel.highlights.collectAsStateWithLifecycle()
   var transientUi by remember { mutableStateOf<ReaderTransientUi>(ReaderTransientUi.None) }

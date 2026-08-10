@@ -6,6 +6,7 @@ import com.charliesbot.kanshu.core.library.LibraryResult
 import com.charliesbot.kanshu.core.library.usecase.DeleteDownloadUseCase
 import com.charliesbot.kanshu.core.library.usecase.DownloadBookUseCase
 import com.charliesbot.kanshu.core.library.usecase.LoadLibraryUseCase
+import com.charliesbot.kanshu.core.provider.BookId
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -43,7 +44,7 @@ class LibraryViewModelTest {
 
   @Test
   fun `success result becomes Loaded state`() = runTest {
-    val items = listOf(LibraryItem(id = 1, title = "Dune", coverUrl = "url"))
+    val items = listOf(LibraryItem(bookId = BookId("kavita:1"), title = "Dune", coverUrl = "url"))
     every { loadLibrary() } returns flowOf(LibraryResult.Success(items))
 
     val viewModel = viewModel()
@@ -110,7 +111,7 @@ class LibraryViewModelTest {
     advanceUntilIdle()
     assertEquals(LibraryUiState.Empty, viewModel.uiState.value)
 
-    val items = listOf(LibraryItem(1, "A", null))
+    val items = listOf(LibraryItem(BookId("kavita:1"), "A", null))
     flow.tryEmit(LibraryResult.Success(items))
     advanceUntilIdle()
     assertEquals(LibraryUiState.Loaded(items), viewModel.uiState.value)
@@ -122,7 +123,7 @@ class LibraryViewModelTest {
     val viewModel = viewModel()
     advanceUntilIdle()
 
-    val item = LibraryItem(id = 5, title = "X", coverUrl = null)
+    val item = LibraryItem(bookId = BookId("kavita:5"), title = "X", coverUrl = null)
     viewModel.onItemTap(item)
 
     verify { downloadBook(item) }
@@ -134,7 +135,9 @@ class LibraryViewModelTest {
     val viewModel = viewModel()
     advanceUntilIdle()
 
-    viewModel.onItemTap(LibraryItem(5, "X", null, downloadState = DownloadState.Downloading(10)))
+    viewModel.onItemTap(
+      LibraryItem(BookId("kavita:5"), "X", null, downloadState = DownloadState.Downloading(10))
+    )
 
     verify(exactly = 0) { downloadBook(any()) }
   }
@@ -149,7 +152,7 @@ class LibraryViewModelTest {
     val job = launch { viewModel.navigate.collect { collected += it } }
     runCurrent()
 
-    val item = LibraryItem(5, "X", null, downloadState = DownloadState.Downloaded)
+    val item = LibraryItem(BookId("kavita:5"), "X", null, downloadState = DownloadState.Downloaded)
     viewModel.onItemTap(item)
     advanceUntilIdle()
 
@@ -163,15 +166,16 @@ class LibraryViewModelTest {
     val viewModel = viewModel()
     advanceUntilIdle()
 
-    viewModel.onItemLongPress(LibraryItem(1, "A", null))
+    viewModel.onItemLongPress(LibraryItem(BookId("kavita:1"), "A", null))
     assertNull(viewModel.options.value)
 
     viewModel.onItemLongPress(
-      LibraryItem(2, "B", null, downloadState = DownloadState.Downloading(50))
+      LibraryItem(BookId("kavita:2"), "B", null, downloadState = DownloadState.Downloading(50))
     )
     assertNull(viewModel.options.value)
 
-    val downloaded = LibraryItem(3, "C", null, downloadState = DownloadState.Downloaded)
+    val downloaded =
+      LibraryItem(BookId("kavita:3"), "C", null, downloadState = DownloadState.Downloaded)
     viewModel.onItemLongPress(downloaded)
     assertEquals(downloaded, viewModel.options.value)
   }
@@ -181,12 +185,12 @@ class LibraryViewModelTest {
     every { loadLibrary() } returns flowOf(LibraryResult.Empty)
     val viewModel = viewModel()
     advanceUntilIdle()
-    val item = LibraryItem(7, "X", null, downloadState = DownloadState.Downloaded)
+    val item = LibraryItem(BookId("kavita:7"), "X", null, downloadState = DownloadState.Downloaded)
     viewModel.onItemLongPress(item)
 
     viewModel.confirmDeleteDownload()
 
-    verify { deleteDownload(7) }
+    verify { deleteDownload(item.bookId) }
     assertNull(viewModel.options.value)
   }
 
@@ -195,7 +199,9 @@ class LibraryViewModelTest {
     every { loadLibrary() } returns flowOf(LibraryResult.Empty)
     val viewModel = viewModel()
     advanceUntilIdle()
-    viewModel.onItemLongPress(LibraryItem(7, "X", null, downloadState = DownloadState.Downloaded))
+    viewModel.onItemLongPress(
+      LibraryItem(BookId("kavita:7"), "X", null, downloadState = DownloadState.Downloaded)
+    )
 
     viewModel.dismissOptions()
 

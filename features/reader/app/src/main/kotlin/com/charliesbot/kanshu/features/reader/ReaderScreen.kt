@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
 import com.charliesbot.kanshu.core.ui.components.KanshuText
 import com.charliesbot.kanshu.core.ui.theme.KanshuTheme
@@ -18,8 +19,8 @@ import com.charliesbot.kanshu.strings.R
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
-fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koinViewModel()) {
-  LaunchedEffect(seriesId) { viewModel.open(seriesId) }
+fun ReaderScreen(bookId: BookId, title: String, viewModel: ReaderViewModel = koinViewModel()) {
+  LaunchedEffect(bookId) { viewModel.open(bookId) }
 
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -33,7 +34,7 @@ fun ReaderScreen(seriesId: Int, title: String, viewModel: ReaderViewModel = koin
 
     is ReaderUiState.Reading ->
       ReaderReadingContent(
-        seriesId = seriesId,
+        bookId = bookId.value,
         title = title,
         state = state,
         viewModel = viewModel,
