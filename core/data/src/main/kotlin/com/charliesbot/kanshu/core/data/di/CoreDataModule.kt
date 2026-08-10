@@ -1,7 +1,5 @@
 package com.charliesbot.kanshu.core.data.di
 
-import android.os.Build
-import android.provider.Settings
 import androidx.room.Room
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
@@ -30,11 +28,8 @@ import com.charliesbot.kanshu.core.reader.preferences.readerPreferencesDataStore
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.security.KavitaApiKeyCipher
 import com.charliesbot.kanshu.core.security.KeyCipher
-import com.charliesbot.kanshu.core.sync.DeviceIdentity
-import com.charliesbot.kanshu.core.sync.KavitaProgressSync
-import com.charliesbot.kanshu.core.sync.ProgressSync
-import com.charliesbot.kanshu.core.sync.SyncRepository
-import com.charliesbot.kanshu.core.sync.SyncRepositoryImpl
+import com.charliesbot.kanshu.core.sync.ProgressRepository
+import com.charliesbot.kanshu.core.sync.ProgressRepositoryImpl
 import java.io.File
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
@@ -76,15 +71,8 @@ val coreDataModule = module {
     ReaderPreferencesRepositoryImpl(androidContext().readerPreferencesDataStore)
   }
 
-  single {
-    DeviceIdentity(
-      id =
-        Settings.Secure.getString(androidContext().contentResolver, Settings.Secure.ANDROID_ID)
-          ?: "unknown",
-      name = Build.MODEL ?: "Android",
-    )
+  single<ProgressRepository> {
+    ProgressRepositoryImpl(providers = get(), books = get(), progressDao = get())
   }
-  single<ProgressSync> { KavitaProgressSync(api = get(), credentials = get(), device = get()) }
-  single<SyncRepository> { SyncRepositoryImpl(progressSync = get(), progressDao = get()) }
   single<AnnotationRepository> { AnnotationRepositoryImpl(annotationDao = get()) }
 }

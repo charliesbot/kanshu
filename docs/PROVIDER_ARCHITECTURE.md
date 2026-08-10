@@ -313,7 +313,7 @@ wire formats.
 
 ### 4. Route progress through providers
 
-- Move the existing `KavitaProgressSync` protocol adapter behind `KavitaProvider` methods.
+- Move the existing `KavitaProgressAdapter` behind `KavitaProvider` methods.
 - Keep `SyncRepository` responsible for Room, debounce, retry, and remote comparison.
 
 ### 5. Route highlights through providers

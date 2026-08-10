@@ -1,7 +1,10 @@
 package com.charliesbot.kanshu.core.sync
 
+import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
+import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -14,13 +17,13 @@ import org.junit.Test
  * Covers the reader's resume lookup: the stored JSON is what the reader actually reopens from, so
  * decoding is exercised against real row content rather than in-memory objects.
  */
-class SyncRepositoryLocalPositionTest {
+class ProgressRepositoryLocalPositionTest {
 
   @Test
   fun `decodes a stored row`() = runTest {
     val repository = repositoryWith("""{"spineIndex":3,"charOffset":512,"progressInSpine":0.25}""")
 
-    val position = repository.localPosition("kavita:1")
+    val position = repository.localPosition(BookId("kavita:1"))
 
     assertEquals(
       ReaderPosition(spineIndex = 3, charOffset = 512, progressInSpine = 0.25f),
@@ -34,7 +37,7 @@ class SyncRepositoryLocalPositionTest {
     val repository =
       repositoryWith("""{"schemaVersion":1,"spineIndex":7,"pageIndex":12,"progressInSpine":0.4}""")
 
-    val position = repository.localPosition("kavita:1")
+    val position = repository.localPosition(BookId("kavita:1"))
 
     assertEquals(7, position?.spineIndex)
     assertEquals(0, position?.charOffset)
@@ -45,20 +48,20 @@ class SyncRepositoryLocalPositionTest {
   fun `missing row resumes from the beginning`() = runTest {
     val repository = repositoryWith(null)
 
-    assertNull(repository.localPosition("kavita:1"))
+    assertNull(repository.localPosition(BookId("kavita:1")))
   }
 
   @Test
   fun `corrupt row falls back to the book start instead of failing the open`() = runTest {
     val repository = repositoryWith("not json at all")
 
-    val position = repository.localPosition("kavita:1")
+    val position = repository.localPosition(BookId("kavita:1"))
 
     assertEquals(0, position?.spineIndex)
     assertEquals(0, position?.charOffset)
   }
 
-  private fun repositoryWith(locatorJson: String?): SyncRepository {
+  private fun repositoryWith(locatorJson: String?): ProgressRepository {
     val dao =
       mockk<ReadingProgressDao> {
         coEvery { find(any()) } returns
@@ -72,6 +75,10 @@ class SyncRepositoryLocalPositionTest {
             )
           }
       }
-    return SyncRepositoryImpl(progressSync = mockk(), progressDao = dao)
+    return ProgressRepositoryImpl(
+      providers = mockk<ProviderRegistry>(),
+      books = mockk<BookDao>(),
+      progressDao = dao,
+    )
   }
 }

@@ -6,6 +6,7 @@ import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.provider.AcquiredBook
 import com.charliesbot.kanshu.core.provider.Provider
 import com.charliesbot.kanshu.core.provider.ProviderBook
+import com.charliesbot.kanshu.core.provider.ProviderBookContext
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderCapabilities
 import com.charliesbot.kanshu.core.provider.ProviderCover
@@ -14,6 +15,8 @@ import com.charliesbot.kanshu.core.provider.ProviderError
 import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderResult
 import com.charliesbot.kanshu.core.provider.ProviderType
+import com.charliesbot.kanshu.core.provider.RemoteProgress
+import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import java.io.File
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -24,6 +27,7 @@ class KavitaProvider(
   private val credentials: CredentialsRepository,
   private val api: KavitaApi,
 ) : Provider {
+  private val progress = KavitaProgressAdapter(api, credentials)
   override val descriptor =
     ProviderDescriptor(
       id = ID,
@@ -95,6 +99,21 @@ class KavitaProvider(
     }
   }
 
+  override suspend fun pullProgress(context: ProviderBookContext): ProviderResult<RemoteProgress?> {
+    require(context.book.providerId == ID)
+    return progress.pull(context.file, context.publication).toProviderResult()
+  }
+
+  override suspend fun pushProgress(
+    context: ProviderBookContext,
+    position: ReaderPosition,
+  ): ProviderResult<Unit> {
+    require(context.book.providerId == ID)
+    return progress
+      .push(context.file, position, context.publication, System.currentTimeMillis())
+      .toProviderResult()
+  }
+
   override suspend fun resolveCover(
     book: ProviderBookKey,
     revisionToken: String?,
@@ -114,6 +133,20 @@ class KavitaProvider(
     private const val EPUB_MEDIA_TYPE = "application/epub+zip"
   }
 }
+
+private fun <T> Result<T>.toProviderResult(): ProviderResult<T> =
+  fold(
+    onSuccess = ProviderResult<T>::Success,
+    onFailure = {
+      ProviderResult.Failure(
+        when (it) {
+          is KavitaException -> it.toProviderError()
+          NoCredentialsException -> ProviderError.NoCredentials
+          else -> ProviderError.Unknown(it.message)
+        }
+      )
+    },
+  )
 
 private suspend fun <T> providerCall(block: suspend () -> T): ProviderResult<T> =
   try {

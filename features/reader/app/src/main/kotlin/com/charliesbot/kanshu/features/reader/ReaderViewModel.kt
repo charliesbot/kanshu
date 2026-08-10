@@ -14,7 +14,7 @@ import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
-import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.core.sync.ProgressRepository
 import com.charliesbot.kanshu.navigator.ReaderHighlight
 import com.charliesbot.kanshu.navigator.ReaderPagePositions
 import com.charliesbot.kanshu.navigator.ReaderResourceLoader
@@ -69,7 +69,7 @@ internal data class ReaderPaginationState(
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
-  private val syncRepository: SyncRepository,
+  private val progressRepository: ProgressRepository,
   private val annotationRepository: AnnotationRepository,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -154,7 +154,7 @@ class ReaderViewModel(
   }
 
   private data class BookSession(
-    val bookId: String,
+    val bookId: BookId,
     val file: File,
     val publication: Publication,
     val resourceLoader: ReaderResourceLoader,
@@ -178,7 +178,7 @@ class ReaderViewModel(
       when (val lifecycle = bookLifecycle) {
         BookLifecycle.Empty -> null
         is BookLifecycle.Opening -> lifecycle.bookId.value
-        is BookLifecycle.Open -> lifecycle.session.bookId
+        is BookLifecycle.Open -> lifecycle.session.bookId.value
       }
     if (activeBookId == bookId.value) return
 
@@ -211,7 +211,7 @@ class ReaderViewModel(
           is ReaderResult.Success -> {
             val session =
               BookSession(
-                bookId = bookId.value,
+                bookId = bookId,
                 file = result.file,
                 publication = result.publication,
                 resourceLoader = PublicationResourceLoader(result.publication),
@@ -350,7 +350,7 @@ class ReaderViewModel(
     val spineIndex = currentSpineIndex
     viewModelScope.launch {
       annotationRepository.addHighlight(
-        bookId = id,
+        bookId = id.value,
         spineIndex = spineIndex,
         startCharOffset = selection.startCharOffset,
         endCharOffset = selection.endCharOffset,
@@ -374,7 +374,7 @@ class ReaderViewModel(
     highlightsJob?.cancel()
     _highlights.value = emptyList()
     highlightsJob = viewModelScope.launch {
-      annotationRepository.observeForSpine(id, spineIndex).collect { annotations ->
+      annotationRepository.observeForSpine(id.value, spineIndex).collect { annotations ->
         if (!isCurrentChapter(chapterToken)) return@collect
         _highlights.value = annotations.map {
           ReaderHighlight(
@@ -404,8 +404,8 @@ class ReaderViewModel(
    * (device)?" prompt, and consulting the server here would put an HTTP timeout in front of the
    * first page on a device that is regularly offline.
    */
-  private suspend fun restoredPosition(bookId: String): ReaderPosition? =
-    syncRepository.localPosition(bookId)
+  private suspend fun restoredPosition(bookId: BookId): ReaderPosition? =
+    progressRepository.localPosition(bookId)
 
   /**
    * Reports the current page's character offset to the sync layer, which persists locally at once
@@ -426,7 +426,7 @@ class ReaderViewModel(
         charOffset = pagination.positions.charOffsetOf(page),
         progressInSpine = pagination.positions.progressInSpine(page),
       )
-    syncRepository.setProgress(
+    progressRepository.setProgress(
       bookId = session.bookId,
       file = session.file,
       position = position,

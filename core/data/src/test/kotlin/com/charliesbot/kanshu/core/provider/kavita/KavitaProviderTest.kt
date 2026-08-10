@@ -7,6 +7,7 @@ import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.ChapterDto
 import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.VolumeDto
+import com.charliesbot.kanshu.core.provider.ProviderBookContext
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderCover
 import com.charliesbot.kanshu.core.provider.ProviderError
@@ -21,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.readium.r2.shared.publication.Publication
 
 class KavitaProviderTest {
   private val api: KavitaApi = mockk()
@@ -117,5 +119,21 @@ class KavitaProviderTest {
         .exceptionOrNull()
 
     assertTrue(failure is IllegalArgumentException)
+  }
+
+  @Test
+  fun `progress reports missing credentials through provider result`() = runTest {
+    coEvery { credentials.credentials } returns flowOf(null)
+    val context =
+      ProviderBookContext(
+        book = ProviderBookKey(KavitaProvider.ID, "42"),
+        file = File("missing.epub"),
+        publication = mockk<Publication>(),
+      )
+
+    assertEquals(
+      ProviderResult.Failure(ProviderError.NoCredentials),
+      provider.pullProgress(context),
+    )
   }
 }

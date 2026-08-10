@@ -1,7 +1,24 @@
 package com.charliesbot.kanshu.core.sync
 
+import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
+import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
+import com.charliesbot.kanshu.core.provider.AcquiredBook
+import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.Provider
+import com.charliesbot.kanshu.core.provider.ProviderBook
+import com.charliesbot.kanshu.core.provider.ProviderBookContext
+import com.charliesbot.kanshu.core.provider.ProviderBookKey
+import com.charliesbot.kanshu.core.provider.ProviderCapabilities
+import com.charliesbot.kanshu.core.provider.ProviderCover
+import com.charliesbot.kanshu.core.provider.ProviderDescriptor
+import com.charliesbot.kanshu.core.provider.ProviderError
+import com.charliesbot.kanshu.core.provider.ProviderInstanceId
+import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
+import com.charliesbot.kanshu.core.provider.ProviderResult
+import com.charliesbot.kanshu.core.provider.ProviderType
+import com.charliesbot.kanshu.core.provider.RemoteProgress
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -9,6 +26,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -22,9 +40,10 @@ import org.readium.r2.shared.publication.Publication
  * Covers what the sync layer decides to push: the reader reports where it is, and a push that would
  * overwrite a further-along remote is skipped.
  */
-class SyncRepositoryWritePolicyTest {
+@OptIn(ExperimentalCoroutinesApi::class)
+class ProgressRepositoryWritePolicyTest {
 
-  private val bookId = "kavita:1"
+  private val bookId = BookId("test:1")
   private val file = File("book.epub")
 
   // Four spine items, so progressionIn is (spineIndex + progressInSpine) / 4.
@@ -37,10 +56,9 @@ class SyncRepositoryWritePolicyTest {
 
   @Test
   fun `a moved position is written and pushed`() = runTest {
-    val sync = FakeProgressSync()
+    val sync = FakeProgressProvider()
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
     val moved = resumed.copy(charOffset = 900, progressInSpine = 0.75f)
 
     repository.localPosition(bookId)
@@ -49,15 +67,32 @@ class SyncRepositoryWritePolicyTest {
 
     coVerify(exactly = 1) { dao.upsert(any()) }
     assertEquals(listOf(moved), sync.pushed)
+    assertEquals(ProviderBookKey(ProviderInstanceId("test"), "1"), sync.contexts.last().book)
+  }
+
+  @Test
+  fun `provider-defined no-op keeps progress local`() = runTest {
+    val provider = FakeProgressProvider(progressSync = false)
+    val dao = daoWith(resumed)
+    val repository =
+      repository(provider, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+
+    repository.setProgress(bookId, file, resumed, publication)
+    advanceUntilIdle()
+
+    coVerify(exactly = 1) { dao.upsert(any()) }
+    assertEquals(1, provider.pullCalls)
+    assertEquals(1, provider.pushCalls)
+    assertTrue(provider.contexts.isEmpty())
+    assertTrue(provider.pushed.isEmpty())
   }
 
   @Test
   fun `a push that would overwrite a further-along remote is skipped`() = runTest {
     // Remote at 80% of the book against a local position at (1 + 0.75) / 4 = 43.75%.
-    val sync = FakeProgressSync(remote = remoteAt(0.8))
+    val sync = FakeProgressProvider(remote = remoteAt(0.8))
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
 
     repository.localPosition(bookId)
     repository.setProgress(
@@ -76,10 +111,9 @@ class SyncRepositoryWritePolicyTest {
 
   @Test
   fun `a push proceeds when the remote is behind`() = runTest {
-    val sync = FakeProgressSync(remote = remoteAt(0.1))
+    val sync = FakeProgressProvider(remote = remoteAt(0.1))
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
     val moved = resumed.copy(charOffset = 900, progressInSpine = 0.75f)
 
     repository.localPosition(bookId)
@@ -91,10 +125,9 @@ class SyncRepositoryWritePolicyTest {
 
   @Test
   fun `a push proceeds when the remote cannot be read`() = runTest {
-    val sync = FakeProgressSync(pullResult = Result.failure(RuntimeException("offline")))
+    val sync = FakeProgressProvider(pullResult = Result.failure(RuntimeException("offline")))
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
     val moved = resumed.copy(charOffset = 900, progressInSpine = 0.75f)
 
     repository.localPosition(bookId)
@@ -110,10 +143,9 @@ class SyncRepositoryWritePolicyTest {
     // Typography changed between sessions, so the reader lands on the page containing the stored
     // offset, which starts before it. That is a genuinely different place, so the dedup cannot
     // catch it — the remote check is what stops the regression reaching the server.
-    val sync = FakeProgressSync(remote = remoteAt(0.8))
+    val sync = FakeProgressProvider(remote = remoteAt(0.8))
     val dao = daoWith(ReaderPosition(spineIndex = 1, charOffset = 150, progressInSpine = 0.375f))
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
 
     repository.localPosition(bookId)
     repository.setProgress(
@@ -130,12 +162,11 @@ class SyncRepositoryWritePolicyTest {
 
   @Test
   fun `a push proceeds when the remote check throws`() = runTest {
-    // ProgressSync implementations do work outside their Result boundary — credential reads, file
-    // hashing — so pull can throw rather than return a failed Result.
-    val sync = FakeProgressSync(pullThrows = true)
+    // Provider implementations do work outside their ProviderResult boundary — credential reads
+    // and file hashing — so pull can throw rather than return a failure.
+    val sync = FakeProgressProvider(pullThrows = true)
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
     val moved = resumed.copy(charOffset = 900)
 
     repository.localPosition(bookId)
@@ -150,10 +181,9 @@ class SyncRepositoryWritePolicyTest {
     // Another kosync client's XPointer, or Kavita's numeric-only PDF form: the position cannot be
     // mapped to our spine model, but the percentage is perfectly usable and says the remote is
     // further along.
-    val sync = FakeProgressSync(remote = remoteAt(0.8).copy(position = null))
+    val sync = FakeProgressProvider(remote = remoteAt(0.8).copy(position = null))
     val dao = daoWith(resumed)
-    val repository =
-      SyncRepositoryImpl(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
+    val repository = repository(sync, dao, CoroutineScope(StandardTestDispatcher(testScheduler)))
 
     repository.localPosition(bookId)
     repository.setProgress(bookId, file, resumed.copy(charOffset = 900), publication)
@@ -167,7 +197,6 @@ class SyncRepositoryWritePolicyTest {
       position = ReaderPosition(spineIndex = 3, charOffset = 0, progressInSpine = 0f),
       percentage = percentage,
       timestampMillis = 0L,
-      deviceName = "other device",
     )
 
   private fun daoWith(position: ReaderPosition?): ReadingProgressDao =
@@ -183,7 +212,7 @@ class SyncRepositoryWritePolicyTest {
       coEvery { find(any()) } returns
         locatorJson?.let {
           ReadingProgressEntity(
-            bookId = bookId,
+            bookId = bookId.value,
             locatorJson = it,
             progression = 0.0,
             updatedAt = 0L,
@@ -191,27 +220,83 @@ class SyncRepositoryWritePolicyTest {
           )
         }
     }
+
+  private fun repository(
+    provider: Provider,
+    progressDao: ReadingProgressDao,
+    scope: CoroutineScope,
+  ): ProgressRepositoryImpl {
+    val books =
+      mockk<BookDao> {
+        coEvery { find(bookId.value) } returns
+          BookEntity(
+            id = bookId.value,
+            providerInstanceId = "test",
+            providerItemId = "1",
+            title = "Book",
+            localPath = file.path,
+            byteSize = 1,
+            downloadedAt = 1,
+            lastOpenedAt = null,
+          )
+      }
+    return ProgressRepositoryImpl(ProviderRegistryImpl(listOf(provider)), books, progressDao, scope)
+  }
 }
 
-private class FakeProgressSync(
+private class FakeProgressProvider(
   private val remote: RemoteProgress? = null,
   private val pullResult: Result<RemoteProgress?>? = null,
   private val pullThrows: Boolean = false,
-) : ProgressSync {
+  private val progressSync: Boolean = true,
+) : Provider {
   val pushed = mutableListOf<ReaderPosition>()
+  val contexts = mutableListOf<ProviderBookContext>()
+  var pullCalls = 0
+  var pushCalls = 0
 
-  override suspend fun push(
-    file: File,
+  override val descriptor =
+    ProviderDescriptor(
+      id = ProviderInstanceId("test"),
+      type = ProviderType.LOCAL,
+      displayName = "Test",
+      enabled = true,
+      capabilities = ProviderCapabilities(progressSync = progressSync, highlightSync = false),
+    )
+
+  override suspend fun fetchCatalog(): ProviderResult<List<ProviderBook>> =
+    ProviderResult.Success(emptyList())
+
+  override suspend fun resolveCover(
+    book: ProviderBookKey,
+    revisionToken: String?,
+  ): ProviderCover? = null
+
+  override suspend fun acquire(
+    book: ProviderBookKey,
+    target: File,
+    onProgress: (downloaded: Long, total: Long?) -> Unit,
+  ): ProviderResult<AcquiredBook> = ProviderResult.Failure(ProviderError.Network)
+
+  override suspend fun pushProgress(
+    context: ProviderBookContext,
     position: ReaderPosition,
-    publication: Publication,
-    timestampMillis: Long,
-  ): Result<Unit> {
+  ): ProviderResult<Unit> {
+    pushCalls += 1
+    if (!progressSync) return super.pushProgress(context, position)
+    contexts += context
     pushed += position
-    return Result.success(Unit)
+    return ProviderResult.Success(Unit)
   }
 
-  override suspend fun pull(file: File, publication: Publication): Result<RemoteProgress?> {
+  override suspend fun pullProgress(context: ProviderBookContext): ProviderResult<RemoteProgress?> {
+    pullCalls += 1
+    if (!progressSync) return super.pullProgress(context)
+    contexts += context
     if (pullThrows) throw IllegalStateException("credentials unavailable")
-    return pullResult ?: Result.success(remote)
+    return (pullResult ?: Result.success(remote)).fold(
+      onSuccess = { ProviderResult.Success(it) },
+      onFailure = { ProviderResult.Failure(ProviderError.Unknown(it.message)) },
+    )
   }
 }
