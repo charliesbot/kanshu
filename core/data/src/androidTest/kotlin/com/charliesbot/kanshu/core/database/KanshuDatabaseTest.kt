@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.core.database
 
+import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -67,6 +69,30 @@ class KanshuDatabaseTest {
   }
 
   @Test
+  fun providerBookKeyIsUniqueWithinAnInstance() = runTest {
+    bookDao.upsert(sampleBook("kavita:1"))
+
+    assertThrows(SQLiteConstraintException::class.java) {
+      db.openHelper.writableDatabase.execSQL(
+        """
+        INSERT INTO books (
+          id, provider_instance_id, provider_item_id, title
+        ) VALUES ('another-id', 'kavita', '1', 'Duplicate')
+        """
+          .trimIndent()
+      )
+    }
+  }
+
+  @Test
+  fun providerItemIdsMayRepeatAcrossInstances() = runTest {
+    bookDao.upsert(sampleBook("kavita:1"))
+    bookDao.upsert(sampleBook("other:1", providerInstanceId = "other"))
+
+    assertEquals(2, bookDao.getAll().size)
+  }
+
+  @Test
   fun deletingBookCascadesToProgress() = runTest {
     bookDao.upsert(sampleBook("kavita:1"))
     progressDao.upsert(sampleProgress("kavita:1"))
@@ -107,11 +133,13 @@ class KanshuDatabaseTest {
     id: String,
     localPath: String? = null,
     byteSize: Long? = null,
+    providerInstanceId: String = "kavita",
+    providerItemId: String = id.substringAfter(":"),
   ): BookEntity =
     BookEntity(
       id = id,
-      source = "kavita",
-      sourceItemId = id.substringAfter(":"),
+      providerInstanceId = providerInstanceId,
+      providerItemId = providerItemId,
       title = "Foo",
       localPath = localPath,
       byteSize = byteSize,

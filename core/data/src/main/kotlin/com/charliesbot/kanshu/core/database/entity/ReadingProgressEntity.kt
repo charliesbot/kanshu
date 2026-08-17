@@ -11,8 +11,9 @@ import androidx.room.PrimaryKey
 // from the position (0..1 book-level) for cheap "% read" queries without parsing the JSON.
 //
 // `syncMetadata` is an opaque JSON blob written by whichever provider owns the book (see
-// books.source). The reader doesn't read or interpret it; the sync layer parses it based on
-// the source discriminator. This is how we keep the schema provider-agnostic — Kavita writes
+// books.provider_instance_id). The reader doesn't read or interpret it; the sync layer parses it
+// after resolving the owning provider. This is how we keep the schema provider-agnostic — Kavita
+// writes
 // {chapterId, seriesId, volumeId, libraryId, pageNum, bookScrollId}; another provider writes
 // its own shape; the table doesn't care. Adding a new provider doesn't require a migration.
 //

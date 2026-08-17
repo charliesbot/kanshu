@@ -1,7 +1,7 @@
 package com.charliesbot.kanshu.core.library
 
 /**
- * Builds the source-prefixed ids used as the `books.id` primary key.
+ * Builds the legacy-stable Kanshu IDs used as the `books.id` primary key.
  *
  * Reading state (progress, annotations) carries this id as a foreign key, so anything that writes
  * reading state has to derive it identically — a mismatch fails the FK constraint rather than
