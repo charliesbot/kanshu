@@ -8,6 +8,8 @@ import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.ChapterDto
 import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.VolumeDto
+import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
+import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.slot
@@ -56,8 +58,7 @@ class BookRepositoryImplTest {
 
   private fun repo(scope: CoroutineScope): BookRepositoryImpl =
     BookRepositoryImpl(
-      credentialsRepository = credentialsRepository,
-      api = api,
+      providers = ProviderRegistryImpl(listOf(KavitaProvider(credentialsRepository, api))),
       booksDir = booksDir,
       bookDao = bookDao,
       downloadScope = scope,

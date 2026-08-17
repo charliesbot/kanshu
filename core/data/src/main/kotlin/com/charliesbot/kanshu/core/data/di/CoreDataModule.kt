@@ -55,12 +55,11 @@ val coreDataModule = module {
   single { get<KanshuDatabase>().bookDao() }
   single { get<KanshuDatabase>().readingProgressDao() }
   single { get<KanshuDatabase>().annotationDao() }
-  single { KavitaProvider() }
+  single { KavitaProvider(credentials = get(), api = get()) }
   single<ProviderRegistry> { ProviderRegistryImpl(listOf(get<KavitaProvider>())) }
   single<BookRepository> {
     BookRepositoryImpl(
-      credentialsRepository = get(),
-      api = get(),
+      providers = get(),
       booksDir = File(androidContext().filesDir, "books"),
       bookDao = get(),
     )

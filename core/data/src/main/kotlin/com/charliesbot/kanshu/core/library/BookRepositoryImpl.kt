@@ -1,17 +1,17 @@
 package com.charliesbot.kanshu.core.library
 
 import android.util.Log
-import com.charliesbot.kanshu.core.connection.CredentialsRepository
-import com.charliesbot.kanshu.core.connection.KavitaCredentials
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
-import com.charliesbot.kanshu.core.kavita.KavitaApi
-import com.charliesbot.kanshu.core.kavita.KavitaException
+import com.charliesbot.kanshu.core.provider.ProviderBookKey
+import com.charliesbot.kanshu.core.provider.ProviderCover
+import com.charliesbot.kanshu.core.provider.ProviderError
+import com.charliesbot.kanshu.core.provider.ProviderInstanceId
+import com.charliesbot.kanshu.core.provider.ProviderRegistry
+import com.charliesbot.kanshu.core.provider.ProviderResult
 import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import java.io.File
 import java.io.IOException
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.CancellationException
@@ -22,14 +22,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class BookRepositoryImpl(
-  private val credentialsRepository: CredentialsRepository,
-  private val api: KavitaApi,
+  private val providers: ProviderRegistry,
   private val booksDir: File,
   private val bookDao: BookDao,
   // Long-lived. Default uses Dispatchers.IO + SupervisorJob so one failed download doesn't
@@ -51,12 +49,6 @@ class BookRepositoryImpl(
   private val _inFlight = MutableStateFlow<Map<Int, Int>>(emptyMap())
 
   override fun observeBooks(): Flow<LibraryResult> = flow {
-    val creds = credentialsRepository.credentials.first()
-    if (creds == null) {
-      emit(LibraryResult.NoCredentials)
-      return@flow
-    }
-
     val localBooksSnapshot =
       try {
         bookDao.getAll()
@@ -66,58 +58,58 @@ class BookRepositoryImpl(
         return@flow
       }
 
-    try {
-      val series =
-        api.listSeries(
-          baseUrl = creds.baseUrl,
-          apiKey = creds.apiKey,
-          pageNumber = 1,
-          pageSize = DEFAULT_PAGE_SIZE,
-        )
-      val fetchedIds = series.map { bookIdFor(it.id) }.toSet()
-
-      val remoteBooks = series.map { s ->
-        val bookId = bookIdFor(s.id)
-        BookEntity(
-          id = bookId,
-          providerInstanceId = KAVITA_PROVIDER_ID,
-          providerItemId = s.id.toString(),
-          title = s.name,
-          localPath = null,
-          byteSize = null,
-          downloadedAt = null,
-          lastOpenedAt = null,
-          coverToken = s.coverImage,
-        )
+    val enabledProviders = providers.enabledProviders()
+    val enabledProviderIds = enabledProviders.mapTo(mutableSetOf()) { it.descriptor.id.value }
+    val failures = mutableListOf<ProviderError>()
+    var hadSuccessfulRefresh = false
+    enabledProviders.forEach { provider ->
+      when (val result = provider.fetchCatalog()) {
+        is ProviderResult.Success -> {
+          hadSuccessfulRefresh = true
+          val remoteBooks =
+            result.value.map { book ->
+              BookEntity(
+                id = bookIdFor(book.key),
+                providerInstanceId = book.key.providerId.value,
+                providerItemId = book.key.providerItemId,
+                title = book.title,
+                localPath = null,
+                byteSize = null,
+                downloadedAt = null,
+                lastOpenedAt = null,
+                coverToken = book.revisionToken,
+              )
+            }
+          bookDao.syncBooks(
+            providerInstanceId = provider.descriptor.id.value,
+            remoteBooks = remoteBooks,
+            fetchedIds = remoteBooks.mapTo(mutableSetOf()) { it.id },
+          )
+        }
+        is ProviderResult.Failure -> {
+          failures += result.error
+          Log.w(TAG, "Failed to refresh provider ${provider.descriptor.id.value}: ${result.error}")
+        }
       }
-
-      bookDao.syncBooks(KAVITA_PROVIDER_ID, remoteBooks, fetchedIds)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
-      Log.w(TAG, "Failed to sync library with Kavita", e)
-      // Offline-first design choice: if the cache is populated, we silently fall back to it
-      // rather than presenting a network error to the user.
-      if (localBooksSnapshot.isEmpty()) {
-        val err = if (e is KavitaException) e.toLibraryError() else LibraryResult.Error.Unknown
-        emit(err)
-        return@flow
-      }
+    }
+    val hasUsableBooks = localBooksSnapshot.any { it.providerInstanceId in enabledProviderIds }
+    if (!hasUsableBooks && !hadSuccessfulRefresh && failures.isNotEmpty()) {
+      emit(failures.toLibraryError())
+      return@flow
     }
 
     emitAll(
       bookDao.observeAll().combine(_inFlight) { dbBooks, inFlight ->
         val items =
           dbBooks
-            .filter { it.providerInstanceId == KAVITA_PROVIDER_ID }
+            .filter { it.providerInstanceId in enabledProviderIds }
             .map { entity ->
               val seriesId = seriesIdFromBookId(entity.id) ?: 0
+              val provider = providers.provider(ProviderInstanceId(entity.providerInstanceId))
               val coverUrl =
-                if (entity.coverToken != null) {
-                  buildCoverUrl(creds.baseUrl, seriesId, creds.apiKey)
-                } else {
-                  null
-                }
+                (provider.resolveCover(entity.providerBookKey(), entity.coverToken)
+                    as? ProviderCover.RemoteUrl)
+                  ?.value
               LibraryItem(
                 id = seriesId,
                 title = entity.title,
@@ -178,11 +170,6 @@ class BookRepositoryImpl(
     // Clean any stale tmp from a previous failed attempt before we start writing.
     tmp.delete()
     try {
-      val creds = credentialsRepository.credentials.first()
-      if (creds == null) {
-        _inFlight.update { it - seriesId }
-        return
-      }
       // Defensive: if a row already claims the file is downloaded, skip. Handles a race between
       // the download() guard and a parallel reconciliation/sync writing the row.
       val existing = bookDao.find(bookIdFor(seriesId))
@@ -190,26 +177,26 @@ class BookRepositoryImpl(
         _inFlight.update { it - seriesId }
         return
       }
-      val chapterId = resolveFirstChapterId(creds, seriesId)
-      if (chapterId == null) {
+      val provider = providers.provider(KavitaProvider.ID)
+      val result =
+        provider.acquire(ProviderBookKey(KavitaProvider.ID, seriesId.toString()), tmp) {
+          bytesSoFar,
+          totalBytes ->
+          val pct =
+            if (totalBytes != null && totalBytes > 0) {
+              ((bytesSoFar * 100) / totalBytes).toInt().coerceIn(0, 100)
+            } else 0
+          // Throttle to integer-percent changes — e-ink can't keep up with per-chunk emissions.
+          _inFlight.update { current ->
+            val currentPct = current[seriesId] ?: return@update current
+            if (currentPct == pct) current else current + (seriesId to pct)
+          }
+        }
+      if (result is ProviderResult.Failure) {
+        Log.w(TAG, "Provider failed to acquire $seriesId: ${result.error}")
+        tmp.delete()
         _inFlight.update { it - seriesId }
         return
-      }
-      api.downloadChapter(
-        baseUrl = creds.baseUrl,
-        apiKey = creds.apiKey,
-        chapterId = chapterId,
-        target = tmp,
-      ) { bytesSoFar, totalBytes ->
-        val pct =
-          if (totalBytes != null && totalBytes > 0) {
-            ((bytesSoFar * 100) / totalBytes).toInt().coerceIn(0, 100)
-          } else 0
-        // Throttle to integer-percent changes — e-ink can't keep up with per-chunk emissions.
-        _inFlight.update { current ->
-          val currentPct = current[seriesId] ?: return@update current
-          if (currentPct == pct) current else current + (seriesId to pct)
-        }
       }
       // ATOMIC_MOVE + REPLACE_EXISTING gives a single-step replacement so fileFor() never
       // observes a missing file in the window between delete+rename. Same-filesystem move on
@@ -224,7 +211,7 @@ class BookRepositoryImpl(
       bookDao.upsert(
         BookEntity(
           id = bookIdFor(seriesId),
-          providerInstanceId = KAVITA_PROVIDER_ID,
+          providerInstanceId = KavitaProvider.ID.value,
           providerItemId = seriesId.toString(),
           title = item.title,
           localPath = finalFile.absolutePath,
@@ -239,10 +226,6 @@ class BookRepositoryImpl(
       tmp.delete()
       _inFlight.update { it - seriesId }
       throw e
-    } catch (e: KavitaException) {
-      Log.w(TAG, "Download failed for $seriesId: $e")
-      tmp.delete()
-      _inFlight.update { it - seriesId }
     } catch (e: IOException) {
       Log.w(TAG, "Download IO failed for $seriesId", e)
       tmp.delete()
@@ -252,20 +235,6 @@ class BookRepositoryImpl(
       tmp.delete()
       _inFlight.update { it - seriesId }
     }
-  }
-
-  // Kavita's model: Series → Volume → Chapter → file. EPUB libraries are typically one chapter
-  // per series (see docs/KAVITA_API.md), so taking the first chapter is the Phase 0 contract.
-  // We sort volumes by id so multi-volume series resolve deterministically rather than
-  // relying on server response order.
-  private suspend fun resolveFirstChapterId(creds: KavitaCredentials, seriesId: Int): Int? {
-    val volumes = api.listVolumes(creds.baseUrl, creds.apiKey, seriesId)
-    return volumes
-      .sortedBy { it.id }
-      .asSequence()
-      .flatMap { it.chapters.asSequence() }
-      .firstOrNull()
-      ?.id
   }
 
   private fun sweepOrphanTmpFiles() {
@@ -281,6 +250,14 @@ class BookRepositoryImpl(
 
   private fun bookIdFor(seriesId: Int): String = BookIds.forKavitaSeries(seriesId)
 
+  private fun bookIdFor(key: ProviderBookKey): String =
+    if (key.providerId == KavitaProvider.ID) {
+      key.providerItemId.toIntOrNull()?.let(BookIds::forKavitaSeries)
+        ?: "${key.providerId.value}:${key.providerItemId}"
+    } else {
+      "${key.providerId.value}:${key.providerItemId}"
+    }
+
   private fun seriesIdFromBookId(bookId: String): Int? = BookIds.kavitaSeriesId(bookId)
 
   private fun bookFile(seriesId: Int) = File(booksDir, "$seriesId.epub")
@@ -289,23 +266,17 @@ class BookRepositoryImpl(
 
   private companion object {
     const val TAG = "BookRepository"
-    const val DEFAULT_PAGE_SIZE = 100
-    val KAVITA_PROVIDER_ID = KavitaProvider.ID.value
   }
 }
 
-// Kavita's image endpoints take the api key as a query param so the URL is usable as an <img src>.
-// Encode both values: an api key may contain reserved characters (& + = #) that would otherwise
-// break the URL.
-private fun buildCoverUrl(baseUrl: String, seriesId: Int, apiKey: String): String {
-  val encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8.name())
-  return "${baseUrl.trimEnd('/')}/api/Image/series-cover?seriesId=$seriesId&apiKey=$encodedKey"
-}
+private fun BookEntity.providerBookKey() =
+  ProviderBookKey(ProviderInstanceId(providerInstanceId), providerItemId)
 
-private fun KavitaException.toLibraryError(): LibraryResult.Error =
-  when (this) {
-    KavitaException.Unauthorized -> LibraryResult.Error.Unauthorized
-    KavitaException.NetworkError -> LibraryResult.Error.Network
-    KavitaException.UnexpectedResponse -> LibraryResult.Error.UnexpectedResponse
-    is KavitaException.Unknown -> LibraryResult.Error.Unknown
+private fun List<ProviderError>.toLibraryError(): LibraryResult =
+  when {
+    any { it == ProviderError.NoCredentials } -> LibraryResult.NoCredentials
+    any { it == ProviderError.Unauthorized } -> LibraryResult.Error.Unauthorized
+    any { it == ProviderError.Network } -> LibraryResult.Error.Network
+    any { it == ProviderError.MalformedResponse } -> LibraryResult.Error.UnexpectedResponse
+    else -> LibraryResult.Error.Unknown
   }
