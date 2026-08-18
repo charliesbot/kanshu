@@ -8,6 +8,7 @@ import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.ChapterDto
 import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.VolumeDto
+import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
 import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import io.mockk.coEvery
@@ -65,12 +66,18 @@ class BookRepositoryImplTest {
     )
 
   private fun item(id: Int, title: String = "Title"): LibraryItem =
-    LibraryItem(id = id, title = title, coverUrl = null)
+    LibraryItem(bookId = BookId("kavita:$id"), title = title, coverUrl = null)
+
+  private fun managedFile(id: Int, temporary: Boolean = false): File {
+    val stem =
+      java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("kavita:$id".toByteArray())
+    return File(booksDir, "$stem.epub${if (temporary) ".tmp" else ""}")
+  }
 
   // Seeds a downloaded row in the fake DAO plus a real file on disk, the way a successful
   // download would have left things. Tests use this to set up "already downloaded" state.
   private fun seedDownloaded(seriesId: Int, title: String = "Title"): File {
-    val file = File(booksDir, "$seriesId.epub")
+    val file = managedFile(seriesId)
     file.writeBytes(byteArrayOf(0x1))
     bookDao =
       FakeBookDao(
@@ -104,9 +111,9 @@ class BookRepositoryImplTest {
     val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
 
     val result = repo.observeBooks().first() as LibraryResult.Success
-    val byId = result.items.associateBy { it.id }
-    assertEquals(DownloadState.Downloaded, byId.getValue(1).downloadState)
-    assertEquals(DownloadState.NotDownloaded, byId.getValue(2).downloadState)
+    val byId = result.items.associateBy { it.bookId }
+    assertEquals(DownloadState.Downloaded, byId.getValue(BookId("kavita:1")).downloadState)
+    assertEquals(DownloadState.NotDownloaded, byId.getValue(BookId("kavita:2")).downloadState)
   }
 
   @Test
@@ -114,8 +121,8 @@ class BookRepositoryImplTest {
     val target = seedDownloaded(42)
     val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
 
-    assertEquals(target.absolutePath, repo.fileFor(42)?.absolutePath)
-    assertNull(repo.fileFor(43))
+    assertEquals(target.absolutePath, repo.fileFor(BookId("kavita:42"))?.absolutePath)
+    assertNull(repo.fileFor(BookId("kavita:43")))
   }
 
   @Test
@@ -139,7 +146,7 @@ class BookRepositoryImplTest {
           )
       )
     val repo = repo(TestScope(StandardTestDispatcher(testScheduler)))
-    assertNull(repo.fileFor(42))
+    assertNull(repo.fileFor(BookId("kavita:42")))
   }
 
   @Test
@@ -164,18 +171,22 @@ class BookRepositoryImplTest {
       }
 
     val repo = repo(scope)
+    bookDao.upsert(bookEntity("kavita:9", "X"))
     repo.download(item(9, "X"))
     scope.advanceUntilIdle()
 
-    val finalFile = File(booksDir, "9.epub")
+    val finalFile = managedFile(9)
     assertTrue(finalFile.exists())
-    assertFalse(File(booksDir, "9.epub.tmp").exists())
+    assertFalse(managedFile(9, temporary = true).exists())
     val row = bookDao.snapshot()["kavita:9"]
     assertNotNull(row)
     assertEquals(finalFile.absolutePath, row?.localPath)
     assertEquals("X", row?.title)
     val result = repo.observeBooks().first() as LibraryResult.Success
-    assertEquals(DownloadState.Downloaded, result.items.single { it.id == 9 }.downloadState)
+    assertEquals(
+      DownloadState.Downloaded,
+      result.items.single { it.bookId == BookId("kavita:9") }.downloadState,
+    )
   }
 
   @Test
@@ -189,14 +200,18 @@ class BookRepositoryImplTest {
       KavitaException.NetworkError
 
     val repo = repo(scope)
+    bookDao.upsert(bookEntity("kavita:9", "Title"))
     repo.download(item(9))
     scope.advanceUntilIdle()
 
-    assertFalse(File(booksDir, "9.epub").exists())
-    assertFalse(File(booksDir, "9.epub.tmp").exists())
-    assertNull(bookDao.snapshot()["kavita:9"])
+    assertFalse(managedFile(9).exists())
+    assertFalse(managedFile(9, temporary = true).exists())
+    assertNull(bookDao.snapshot()["kavita:9"]?.localPath)
     val result = repo.observeBooks().first() as LibraryResult.Success
-    assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 9 }.downloadState)
+    assertEquals(
+      DownloadState.NotDownloaded,
+      result.items.single { it.bookId == BookId("kavita:9") }.downloadState,
+    )
   }
 
   @Test
@@ -221,7 +236,7 @@ class BookRepositoryImplTest {
       listOf(SeriesDto(id = 9, name = "X", coverImage = null))
 
     val repo = repo(scope)
-    repo.delete(9)
+    repo.delete(BookId("kavita:9"))
     scope.advanceUntilIdle()
 
     assertFalse(target.exists())
@@ -230,7 +245,10 @@ class BookRepositoryImplTest {
     assertNotNull(row)
     assertNull(row?.localPath)
     val result = repo.observeBooks().first() as LibraryResult.Success
-    assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 9 }.downloadState)
+    assertEquals(
+      DownloadState.NotDownloaded,
+      result.items.single { it.bookId == BookId("kavita:9") }.downloadState,
+    )
   }
 
   @Test
@@ -261,7 +279,10 @@ class BookRepositoryImplTest {
 
     assertNull(bookDao.snapshot()["kavita:7"]?.localPath)
     val result = repo.observeBooks().first() as LibraryResult.Success
-    assertEquals(DownloadState.NotDownloaded, result.items.single { it.id == 7 }.downloadState)
+    assertEquals(
+      DownloadState.NotDownloaded,
+      result.items.single { it.bookId == BookId("kavita:7") }.downloadState,
+    )
   }
 
   @Test
@@ -340,7 +361,7 @@ class BookRepositoryImplTest {
 
     // Not Downloaded Book (2) is deleted, Downloaded Book (1) is preserved.
     assertEquals(1, result.items.size)
-    assertEquals(1, result.items.single().id)
+    assertEquals(BookId("kavita:1"), result.items.single().bookId)
     assertNotNull(bookDao.snapshot()["kavita:1"])
     assertNull(bookDao.snapshot()["kavita:2"])
   }

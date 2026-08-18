@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.charliesbot.kanshu.core.library.DownloadState
 import com.charliesbot.kanshu.core.library.LibraryItem
+import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.ui.components.KanshuCheckBadge
 import com.charliesbot.kanshu.core.ui.components.KanshuCover
 import com.charliesbot.kanshu.core.ui.components.KanshuScaffold
@@ -102,7 +103,7 @@ private fun CoverGrid(
     verticalArrangement = Arrangement.spacedBy(16.dp),
     modifier = Modifier.fillMaxSize(),
   ) {
-    items(items = items, key = { it.id }) { item ->
+    items(items = items, key = { it.bookId.value }) { item ->
       val interactionSource = remember { MutableInteractionSource() }
       KanshuCover(
         imageUrl = item.coverUrl,
@@ -195,18 +196,18 @@ private fun LibraryScreenLoadedPreview() {
           items =
             listOf(
               LibraryItem(
-                id = 1,
+                bookId = BookId("kavita:1"),
                 title = "Downloaded",
                 coverUrl = null,
                 downloadState = DownloadState.Downloaded,
               ),
               LibraryItem(
-                id = 2,
+                bookId = BookId("kavita:2"),
                 title = "Downloading",
                 coverUrl = null,
                 downloadState = DownloadState.Downloading(progress = 42),
               ),
-              LibraryItem(id = 3, title = "Not yet", coverUrl = null),
+              LibraryItem(bookId = BookId("kavita:3"), title = "Not yet", coverUrl = null),
             )
         ),
       onItemTap = {},

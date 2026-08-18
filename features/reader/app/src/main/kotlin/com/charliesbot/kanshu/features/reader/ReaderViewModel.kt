@@ -3,7 +3,7 @@ package com.charliesbot.kanshu.features.reader
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.charliesbot.kanshu.core.library.BookIds
+import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
@@ -148,13 +148,12 @@ class ReaderViewModel(
   private sealed interface BookLifecycle {
     data object Empty : BookLifecycle
 
-    data class Opening(val token: Long, val seriesId: Int) : BookLifecycle
+    data class Opening(val token: Long, val bookId: BookId) : BookLifecycle
 
     data class Open(val session: BookSession) : BookLifecycle
   }
 
   private data class BookSession(
-    val seriesId: Int,
     val bookId: String,
     val file: File,
     val publication: Publication,
@@ -174,16 +173,16 @@ class ReaderViewModel(
 
   private fun lastPageIndex(): Int = (_pagination.value.pageCount - 1).coerceAtLeast(0)
 
-  fun open(seriesId: Int) {
-    val activeSeriesId =
+  fun open(bookId: BookId) {
+    val activeBookId =
       when (val lifecycle = bookLifecycle) {
         BookLifecycle.Empty -> null
-        is BookLifecycle.Opening -> lifecycle.seriesId
-        is BookLifecycle.Open -> lifecycle.session.seriesId
+        is BookLifecycle.Opening -> lifecycle.bookId.value
+        is BookLifecycle.Open -> lifecycle.session.bookId
       }
-    if (activeSeriesId == seriesId) return
+    if (activeBookId == bookId.value) return
 
-    val opening = BookLifecycle.Opening(token = ++nextBookToken, seriesId = seriesId)
+    val opening = BookLifecycle.Opening(token = ++nextBookToken, bookId = bookId)
     openJob?.cancel()
     spineJob?.cancel()
     openSession?.publication?.close()
@@ -200,10 +199,10 @@ class ReaderViewModel(
     openJob = viewModelScope.launch {
       var unownedPublication: Publication? = null
       try {
-        Log.d(TAG, "open($seriesId): loading")
+        Log.d(TAG, "open(${bookId.value}): loading")
         val result =
           withContext(ioDispatcher) {
-            openBook(seriesId).also { opened ->
+            openBook(bookId).also { opened ->
               unownedPublication = (opened as? ReaderResult.Success)?.publication
             }
           }
@@ -212,8 +211,7 @@ class ReaderViewModel(
           is ReaderResult.Success -> {
             val session =
               BookSession(
-                seriesId = seriesId,
-                bookId = BookIds.forKavitaSeries(seriesId),
+                bookId = bookId.value,
                 file = result.file,
                 publication = result.publication,
                 resourceLoader = PublicationResourceLoader(result.publication),
@@ -221,7 +219,7 @@ class ReaderViewModel(
               )
             Log.d(
               TAG,
-              "open($seriesId): publication opened, spine=${result.publication.readingOrder.size}",
+              "open(${bookId.value}): publication opened, spine=${result.publication.readingOrder.size}",
             )
             val restored = restoredPosition(session.bookId)
             _pagination.update { state ->
@@ -253,7 +251,7 @@ class ReaderViewModel(
             }
             if (spineItem == null) {
               bookLifecycle = BookLifecycle.Empty
-              failOpen("open($seriesId): no spine item → OpenFailed")
+              failOpen("open(${bookId.value}): no spine item → OpenFailed")
               return@launch
             }
             if (spineItem.spineIndex != restored?.spineIndex) {
@@ -262,21 +260,24 @@ class ReaderViewModel(
             bookLifecycle = BookLifecycle.Open(session)
             unownedPublication = null
             _resourceLoader.value = session.resourceLoader
-            Log.d(TAG, "open($seriesId): Reading with ${spineItem.document.blocks.size} blocks")
+            Log.d(
+              TAG,
+              "open(${bookId.value}): Reading with ${spineItem.document.blocks.size} blocks",
+            )
             activateSpineItem(session, spineItem)
           }
           ReaderResult.Error.NotFound -> {
             bookLifecycle = BookLifecycle.Empty
-            Log.d(TAG, "open($seriesId): NotFound")
+            Log.d(TAG, "open(${bookId.value}): NotFound")
             _uiState.value = ReaderUiState.Error.NotFound
           }
           ReaderResult.Error.ParseFailed -> {
             bookLifecycle = BookLifecycle.Empty
-            failOpen("open($seriesId): ParseFailed → OpenFailed")
+            failOpen("open(${bookId.value}): ParseFailed → OpenFailed")
           }
           ReaderResult.Error.ReadFailed -> {
             bookLifecycle = BookLifecycle.Empty
-            failOpen("open($seriesId): ReadFailed → OpenFailed")
+            failOpen("open(${bookId.value}): ReadFailed → OpenFailed")
           }
         }
       } finally {

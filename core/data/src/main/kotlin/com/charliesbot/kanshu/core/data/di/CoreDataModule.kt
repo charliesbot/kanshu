@@ -20,9 +20,9 @@ import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
 import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
-import com.charliesbot.kanshu.core.reader.KavitaReaderSource
+import com.charliesbot.kanshu.core.reader.EpubOpener
+import com.charliesbot.kanshu.core.reader.EpubOpenerImpl
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
-import com.charliesbot.kanshu.core.reader.ReaderSource
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.ReaderPreferencesRepositoryImpl
@@ -67,7 +67,7 @@ val coreDataModule = module {
   factory { LoadLibraryUseCase(get()) }
   factory { DownloadBookUseCase(get()) }
   factory { DeleteDownloadUseCase(get()) }
-  single<ReaderSource> { KavitaReaderSource(androidContext(), get()) }
+  single<EpubOpener> { EpubOpenerImpl(androidContext(), get()) }
   factory { OpenBookUseCase(get()) }
   // Construct the reader-prefs repo by handing it the context-bound DataStore directly so we
   // avoid registering a second DataStore<Preferences> singleton (would conflict with the

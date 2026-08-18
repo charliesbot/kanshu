@@ -3,13 +3,13 @@ package com.charliesbot.kanshu.core.library
 import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
+import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderCover
 import com.charliesbot.kanshu.core.provider.ProviderError
 import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderResult
-import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -44,9 +44,9 @@ class BookRepositoryImpl(
     downloadScope.launch { reconcileDownloads() }
   }
 
-  // Ephemeral runtime state: in-flight download progress, keyed by Kavita seriesId. Persists
+  // Ephemeral runtime state: in-flight download progress, keyed by stable book identity. Persists
   // nothing — completed downloads land in the DB; abandoned downloads disappear with the process.
-  private val _inFlight = MutableStateFlow<Map<Int, Int>>(emptyMap())
+  private val _inFlight = MutableStateFlow<Map<BookId, Int>>(emptyMap())
 
   override fun observeBooks(): Flow<LibraryResult> = flow {
     val localBooksSnapshot =
@@ -104,20 +104,19 @@ class BookRepositoryImpl(
           dbBooks
             .filter { it.providerInstanceId in enabledProviderIds }
             .map { entity ->
-              val seriesId = seriesIdFromBookId(entity.id) ?: 0
               val provider = providers.provider(ProviderInstanceId(entity.providerInstanceId))
               val coverUrl =
                 (provider.resolveCover(entity.providerBookKey(), entity.coverToken)
                     as? ProviderCover.RemoteUrl)
                   ?.value
               LibraryItem(
-                id = seriesId,
+                bookId = BookId(entity.id),
                 title = entity.title,
                 coverUrl = coverUrl,
                 downloadState =
                   when {
-                    inFlight.containsKey(seriesId) ->
-                      DownloadState.Downloading(progress = inFlight.getValue(seriesId))
+                    inFlight.containsKey(BookId(entity.id)) ->
+                      DownloadState.Downloading(progress = inFlight.getValue(BookId(entity.id)))
                     entity.localPath != null -> DownloadState.Downloaded
                     else -> DownloadState.NotDownloaded
                   },
@@ -129,79 +128,84 @@ class BookRepositoryImpl(
   }
 
   override fun download(item: LibraryItem) {
-    val seriesId = item.id
-    if (_inFlight.value.containsKey(seriesId)) return
+    val bookId = item.bookId
+    if (_inFlight.value.containsKey(bookId)) return
     // Atomic check-and-set on the in-flight map: two rapid taps must not both launch a download
-    // for the same series. The first one to flip _inFlight[seriesId] to 0 wins; the second
+    // for the same book. The first one to add _inFlight[bookId] wins; the second
     // returns above. We also gate on "already downloaded" by reading the DB inside the worker
     // before doing any network work — cheap and avoids a race with a near-simultaneous upsert.
     var shouldStart = false
     _inFlight.update { current ->
-      if (current.containsKey(seriesId)) current
+      if (current.containsKey(bookId)) current
       else {
         shouldStart = true
-        current + (seriesId to 0)
+        current + (bookId to 0)
       }
     }
     if (shouldStart) downloadScope.launch { runDownload(item) }
   }
 
-  override fun delete(seriesId: Int) {
-    if (_inFlight.value.containsKey(seriesId)) return
+  override fun delete(bookId: BookId) {
+    if (_inFlight.value.containsKey(bookId)) return
     downloadScope.launch {
       // Clear the DB row first so UI observers see NotDownloaded before the bytes are gone.
       // Avoids a window where the UI still says Downloaded but the file is already missing.
-      bookDao.clearDownload(bookIdFor(seriesId))
-      bookFile(seriesId).delete()
-      tmpFile(seriesId).delete()
+      bookDao.clearDownload(bookId.value)
+      bookFile(bookId).delete()
+      tmpFile(bookId).delete()
     }
   }
 
-  override suspend fun fileFor(seriesId: Int): File? {
-    val row = bookDao.find(bookIdFor(seriesId)) ?: return null
+  override suspend fun fileFor(bookId: BookId): File? {
+    val row = bookDao.find(bookId.value) ?: return null
     val path = row.localPath ?: return null
     val file = File(path)
     return file.takeIf { it.exists() && it.length() > 0 }
   }
 
   private suspend fun runDownload(item: LibraryItem) {
-    val seriesId = item.id
-    val tmp = tmpFile(seriesId)
+    val bookId = item.bookId
+    val tmp = tmpFile(bookId)
     // Clean any stale tmp from a previous failed attempt before we start writing.
     tmp.delete()
     try {
       // Defensive: if a row already claims the file is downloaded, skip. Handles a race between
       // the download() guard and a parallel reconciliation/sync writing the row.
-      val existing = bookDao.find(bookIdFor(seriesId))
+      val existing = bookDao.find(bookId.value)
       if (existing?.localPath != null && File(existing.localPath).exists()) {
-        _inFlight.update { it - seriesId }
+        _inFlight.update { it - bookId }
         return
       }
-      val provider = providers.provider(KavitaProvider.ID)
+      val existingBook =
+        existing
+          ?: run {
+            _inFlight.update { it - bookId }
+            return
+          }
+      val providerId = ProviderInstanceId(existingBook.providerInstanceId)
+      val provider = providers.provider(providerId)
       val result =
-        provider.acquire(ProviderBookKey(KavitaProvider.ID, seriesId.toString()), tmp) {
-          bytesSoFar,
-          totalBytes ->
+        provider.acquire(existingBook.providerBookKey(), tmp) { bytesSoFar, totalBytes ->
           val pct =
             if (totalBytes != null && totalBytes > 0) {
               ((bytesSoFar * 100) / totalBytes).toInt().coerceIn(0, 100)
             } else 0
           // Throttle to integer-percent changes — e-ink can't keep up with per-chunk emissions.
           _inFlight.update { current ->
-            val currentPct = current[seriesId] ?: return@update current
-            if (currentPct == pct) current else current + (seriesId to pct)
+            val currentPct = current[bookId] ?: return@update current
+            if (currentPct == pct) current else current + (bookId to pct)
           }
         }
       if (result is ProviderResult.Failure) {
-        Log.w(TAG, "Provider failed to acquire $seriesId: ${result.error}")
+        Log.w(TAG, "Provider failed to acquire ${bookId.value}: ${result.error}")
         tmp.delete()
-        _inFlight.update { it - seriesId }
+        _inFlight.update { it - bookId }
         return
       }
       // ATOMIC_MOVE + REPLACE_EXISTING gives a single-step replacement so fileFor() never
       // observes a missing file in the window between delete+rename. Same-filesystem move on
       // filesDir reduces to rename(2) which is atomic on the underlying FS.
-      val finalFile = bookFile(seriesId)
+      val finalFile = bookFile(bookId)
       Files.move(
         tmp.toPath(),
         finalFile.toPath(),
@@ -210,30 +214,30 @@ class BookRepositoryImpl(
       )
       bookDao.upsert(
         BookEntity(
-          id = bookIdFor(seriesId),
-          providerInstanceId = KavitaProvider.ID.value,
-          providerItemId = seriesId.toString(),
+          id = bookId.value,
+          providerInstanceId = existingBook.providerInstanceId,
+          providerItemId = existingBook.providerItemId,
           title = item.title,
           localPath = finalFile.absolutePath,
           byteSize = finalFile.length(),
           downloadedAt = System.currentTimeMillis(),
           lastOpenedAt = null,
-          coverToken = existing?.coverToken,
+          coverToken = existingBook.coverToken,
         )
       )
-      _inFlight.update { it - seriesId }
+      _inFlight.update { it - bookId }
     } catch (e: CancellationException) {
       tmp.delete()
-      _inFlight.update { it - seriesId }
+      _inFlight.update { it - bookId }
       throw e
     } catch (e: IOException) {
-      Log.w(TAG, "Download IO failed for $seriesId", e)
+      Log.w(TAG, "Download IO failed for ${bookId.value}", e)
       tmp.delete()
-      _inFlight.update { it - seriesId }
+      _inFlight.update { it - bookId }
     } catch (e: Exception) {
-      Log.w(TAG, "Download failed for $seriesId", e)
+      Log.w(TAG, "Download failed for ${bookId.value}", e)
       tmp.delete()
-      _inFlight.update { it - seriesId }
+      _inFlight.update { it - bookId }
     }
   }
 
@@ -248,21 +252,15 @@ class BookRepositoryImpl(
     }
   }
 
-  private fun bookIdFor(seriesId: Int): String = BookIds.forKavitaSeries(seriesId)
-
   private fun bookIdFor(key: ProviderBookKey): String =
-    if (key.providerId == KavitaProvider.ID) {
-      key.providerItemId.toIntOrNull()?.let(BookIds::forKavitaSeries)
-        ?: "${key.providerId.value}:${key.providerItemId}"
-    } else {
-      "${key.providerId.value}:${key.providerItemId}"
-    }
+    "${key.providerId.value}:${key.providerItemId}"
 
-  private fun seriesIdFromBookId(bookId: String): Int? = BookIds.kavitaSeriesId(bookId)
+  private fun bookFile(bookId: BookId) = File(booksDir, "${managedFileStem(bookId)}.epub")
 
-  private fun bookFile(seriesId: Int) = File(booksDir, "$seriesId.epub")
+  private fun tmpFile(bookId: BookId) = File(booksDir, "${managedFileStem(bookId)}.epub.tmp")
 
-  private fun tmpFile(seriesId: Int) = File(booksDir, "$seriesId.epub.tmp")
+  private fun managedFileStem(bookId: BookId): String =
+    java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bookId.value.toByteArray())
 
   private companion object {
     const val TAG = "BookRepository"

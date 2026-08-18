@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.core.reader
 import android.content.Context
 import android.util.Log
 import com.charliesbot.kanshu.core.library.BookRepository
+import com.charliesbot.kanshu.core.provider.BookId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,20 +12,18 @@ import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.shared.util.toUrl
 import org.readium.r2.streamer.parser.epub.EpubParser
 
-private const val TAG = "KavitaReaderSource"
+private const val TAG = "EpubOpener"
 
-// Opens an already-downloaded EPUB. Downloads are owned by BookRepository; the reader never
-// triggers a network fetch — by the time we navigate, the file is on disk (the library screen
-// gates tap-to-open on Downloaded state).
-class KavitaReaderSource(private val context: Context, private val books: BookRepository) :
-  ReaderSource {
+// Providers only materialize managed EPUB files. This shared opener owns Readium parsing for every
+// provider and never performs provider-specific network work.
+class EpubOpenerImpl(private val context: Context, private val books: BookRepository) : EpubOpener {
   private val httpClient by lazy { DefaultHttpClient() }
   private val retriever by lazy { AssetRetriever(context.contentResolver, httpClient) }
   private val parser by lazy { EpubParser() }
 
-  override suspend fun openBook(seriesId: Int): ReaderResult =
+  override suspend fun openBook(bookId: BookId): ReaderResult =
     withContext(Dispatchers.IO) {
-      val file = books.fileFor(seriesId) ?: return@withContext ReaderResult.Error.NotFound
+      val file = books.fileFor(bookId) ?: return@withContext ReaderResult.Error.NotFound
 
       val asset =
         try {

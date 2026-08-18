@@ -1,8 +1,10 @@
 package com.charliesbot.kanshu.core.provider
 
+import kotlinx.serialization.Serializable
+
 @JvmInline value class ProviderInstanceId(val value: String)
 
-@JvmInline value class BookId(val value: String)
+@Serializable @JvmInline value class BookId(val value: String)
 
 data class ProviderBookKey(
   val providerId: ProviderInstanceId,
