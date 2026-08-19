@@ -216,7 +216,6 @@ class ProgressRepositoryWritePolicyTest {
             locatorJson = it,
             progression = 0.0,
             updatedAt = 0L,
-            syncMetadata = null,
           )
         }
     }

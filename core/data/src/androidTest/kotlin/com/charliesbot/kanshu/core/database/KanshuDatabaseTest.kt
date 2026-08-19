@@ -153,7 +153,6 @@ class KanshuDatabaseTest {
       locatorJson = """{"href":"chapter1.xhtml"}""",
       progression = progression,
       updatedAt = 1000L,
-      syncMetadata = null,
     )
 
   private fun sampleAnnotation(

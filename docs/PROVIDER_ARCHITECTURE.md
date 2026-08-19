@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed target architecture. This document defines the provider boundary and the migration path
-from Kanshu's current Kavita-only implementation. It does not schedule the implementation.
+The provider foundation is implemented. Kavita is the only configured provider today; additional
+providers and remote highlight synchronization remain deferred until the product needs them.
 
 ## Goal
 
@@ -53,8 +53,9 @@ may be designed later, but they do not participate in provider discovery or acqu
    persistence, and sync policy.
 2. **Local state is canonical for interaction.** Page turns and highlight mutations are persisted
    immediately. Remote synchronization is asynchronous replication.
-3. **Capabilities are explicit.** Every provider has the same direct contract, but capability
-   metadata and explicit `LocalOnly` results distinguish intentional no-ops from failures.
+3. **Capabilities are descriptive.** Every provider has the same direct contract. Optional
+   operations have successful no-op defaults, while capability metadata describes what the
+   provider can replicate remotely for UI and diagnostics.
 4. **Provider identity follows every book.** Catalog, acquisition, progress, and highlight calls are
    routed through the provider instance that owns the book.
 5. **Remote metadata is opaque to shared storage.** Kavita chapter IDs, BookOrbit identifiers, and
@@ -118,41 +119,41 @@ interface Provider {
 
   suspend fun fetchCatalog(): ProviderResult<List<ProviderBook>>
 
+  suspend fun resolveCover(
+    book: ProviderBookKey,
+    revisionToken: String?,
+  ): ProviderCover?
+
   suspend fun acquire(
     book: ProviderBookKey,
     target: File,
     onProgress: (downloaded: Long, total: Long?) -> Unit,
   ): ProviderResult<AcquiredBook>
 
-  suspend fun pullProgress(context: ProviderBookContext): ProgressSyncResult
+  suspend fun pullProgress(
+    context: ProviderBookContext,
+  ): ProviderResult<RemoteProgress?>
 
   suspend fun pushProgress(
     context: ProviderBookContext,
     position: ReaderPosition,
-  ): ProgressSyncResult
+  ): ProviderResult<Unit>
 
-  suspend fun pullHighlights(context: ProviderBookContext): HighlightSyncResult
+  suspend fun pullHighlights(
+    context: ProviderBookContext,
+  ): ProviderResult<List<ProviderHighlight>>
 
   suspend fun pushHighlights(
     context: ProviderBookContext,
     changes: List<HighlightChange>,
-  ): HighlightSyncResult
+  ): ProviderResult<Unit>
 }
 ```
 
-The synchronization results make no-op behavior observable:
-
-```kotlin
-sealed interface ProviderSyncResult<out T> {
-  data class Success<T>(val value: T) : ProviderSyncResult<T>
-  data object LocalOnly : ProviderSyncResult<Nothing>
-  data class Failure(val error: ProviderError) : ProviderSyncResult<Nothing>
-}
-```
-
-`LocalOnly` means the provider intentionally has no remote store. It is not reported as an error
-and does not create retry work. A provider advertising a capability must return `Success` or
-`Failure`; returning `LocalOnly` would be a contract violation caught by provider tests.
+Providers use the same `ProviderResult` type for every fallible operation. The default progress
+and highlight implementations return successful empty/no-op results. Coordinators always delegate
+to the owning provider; they do not branch on capabilities or require feature-specific provider
+interfaces.
 
 Provider methods are remote/provenance adapters only. They do not write Room rows, schedule
 retries, choose conflict winners, or open publications.
@@ -215,7 +216,7 @@ unified library.
 
 ## Progress Synchronization
 
-`SyncRepository` remains the local-first coordinator:
+`ProgressRepository` is the local-first coordinator:
 
 ```text
 ReaderPosition
@@ -225,21 +226,20 @@ ReaderPosition
       v
 Owning Provider
       |
-      +--> LocalOnly
+      +--> successful no-op
       +--> provider wire translation and remote push
 ```
 
-The repository resolves the book's provider instance, checks `progressSync`, and invokes the
-provider when supported. It owns debounce behavior, retries, remote comparison, and user-facing
-conflict decisions. Providers translate the canonical `ReaderPosition` into their protocols.
+The repository resolves the book's provider instance and invokes it. It owns debounce behavior,
+retries, remote comparison, and user-facing conflict decisions. Providers translate the canonical
+`ReaderPosition` into their protocols.
 
 For Kavita, `KavitaProvider` retains the existing kosync hash and XPointer translation internally.
-Those types no longer appear in the shared progress contract. Provider-specific progress metadata
-is stored as opaque JSON associated with the local progress row.
+Those types no longer appear in the shared progress contract.
 
 ## Highlight Synchronization
 
-`AnnotationRepository` remains the local-first coordinator. Kanshu's canonical highlight is
+`AnnotationRepository` will remain the local-first coordinator. Kanshu's canonical highlight is
 addressed by spine index, flattened-text character offsets, selected text, color, and timestamps.
 Provider implementations translate that model into their remote representation.
 
@@ -251,7 +251,7 @@ Reader highlight mutation
       v
 Owning Provider
       |
-      +--> LocalOnly
+      +--> successful no-op
       +--> provider-specific annotation API
 ```
 
@@ -269,8 +269,8 @@ Default reconciliation rules are:
 - A remote anchor that cannot be mapped safely is skipped rather than attached to the wrong text.
 
 Kavita translates the canonical range to and from its XPath annotations. BookOrbit may use a
-different translation while sharing the same local queue and reconciliation policy. Local reports
-`LocalOnly` and retains highlights exclusively in Room.
+different translation while sharing the same local queue and reconciliation policy. Local uses the
+default successful no-op methods and retains highlights exclusively in Room.
 
 ## Responsibility Matrix
 
@@ -280,9 +280,9 @@ different translation while sharing the same local queue and reconciliation poli
 | Managed-file lifecycle       | Yes           | Download bytes    | Copy source    | Download bytes |
 | EPUB parsing and opening     | Yes           | No                | No             | No             |
 | Immediate progress storage   | Yes           | No                | No             | No             |
-| Remote progress translation  | No            | kosync            | `LocalOnly`    | Provider API   |
+| Remote progress translation  | No            | kosync            | No-op          | Provider API   |
 | Immediate highlight storage  | Yes           | No                | No             | No             |
-| Remote highlight translation | No            | XPath annotations | `LocalOnly`    | Provider API   |
+| Remote highlight translation | No            | XPath annotations | No-op          | Provider API   |
 | Retry and conflict policy    | Yes           | No                | No             | No             |
 
 BookOrbit is a valid future provider because it supplies a catalog and files and documents
@@ -290,49 +290,50 @@ bidirectional progress and annotation synchronization across its clients. Its co
 verified before implementing `BookOrbitProvider`; this design does not assume Kavita-compatible
 wire formats.
 
-## Migration Path
+## Implementation Status
 
-### 1. Establish provider identity
+### 1. Provider identity — complete
 
-- Add provider instance, descriptor, key, capability, and result models.
-- Persist provider ownership on books, replacing source-prefixed ID parsing as the dispatch
+- Added provider instance, descriptor, key, capability, and result models.
+- Persisted provider ownership on books, replacing source-prefixed ID parsing as the dispatch
   mechanism.
-- Add a registry containing the existing Kavita configuration as the first instance.
+- Added a registry containing the existing Kavita configuration as the first instance.
 
-### 2. Adapt Kavita catalog and acquisition
+### 2. Kavita catalog and acquisition — complete
 
-- Move `BookRepositoryImpl`'s Kavita API behavior behind `KavitaProvider`.
-- Make the shared repository aggregate provider catalog results and own cached download state.
-- Preserve current library, download, and offline behavior before adding another provider.
+- Moved `BookRepositoryImpl`'s Kavita API behavior behind `KavitaProvider`.
+- Made the shared repository aggregate provider catalog results and own cached download state.
+- Preserved current library, download, and offline behavior.
 
-### 3. Share EPUB opening
+### 3. Shared EPUB opening — complete
 
-- Replace `ReaderSource.openBook(seriesId)` with a shared opener accepting the acquired Kanshu
+- Replaced `ReaderSource.openBook(seriesId)` with a shared opener accepting the acquired Kanshu
   book.
-- Keep publication construction and reader behavior unchanged.
+- Kept publication construction and reader behavior unchanged.
 
-### 4. Route progress through providers
+### 4. Progress routing — complete
 
-- Move the existing `KavitaProgressAdapter` behind `KavitaProvider` methods.
-- Keep `SyncRepository` responsible for Room, debounce, retry, and remote comparison.
+- Moved `KavitaProgressAdapter` behind `KavitaProvider` methods.
+- Kept `ProgressRepository` responsible for Room, debounce, retry, and remote comparison.
 
-### 5. Route highlights through providers
+### 5. Highlight routing — contract complete, transport deferred
 
-- Add provider-neutral pending changes, tombstones, and opaque remote metadata.
+- Added provider-neutral provider method inputs and outputs.
+- Add pending changes, tombstones, and opaque remote metadata when transport is implemented.
 - Implement Kavita XPath conversion and annotation API calls behind `KavitaProvider`.
 
-### 6. Add the Local provider
+### 6. Local provider — deferred
 
 - Register one built-in **On this device** provider instance.
 - Support individually imported documents and configured SAF folders.
-- Copy acquired EPUBs into managed storage and return `LocalOnly` for both sync families.
+- Copy acquired EPUBs into managed storage and use the default successful no-op sync methods.
 
-BookOrbit is implemented only after this migration proves the boundary with Kavita and Local.
+BookOrbit is implemented only after the boundary is proven with Kavita and Local.
 
 ## Testing Strategy
 
-- Provider contract tests cover catalog, acquisition, explicit `LocalOnly`, authentication,
-  network failure, and malformed responses.
+- Provider contract tests cover catalog, acquisition, successful optional-operation defaults,
+  authentication, network failure, and malformed responses.
 - Registry and repository tests cover multiple configured instances and routing by provider owner.
 - Unified-library tests cover duplicate provider item IDs, partial outages, cached stale results,
   and disabled providers.
@@ -340,8 +341,8 @@ BookOrbit is implemented only after this migration proves the boundary with Kavi
   source.
 - Shared-opener regression tests prove a Kavita EPUB opens identically after `ReaderSource` is
   removed.
-- Progress tests preserve existing debounce and further-remote behavior while testing Local's
-  intentional no-op.
+- Progress tests preserve existing debounce and further-remote behavior while testing the
+  provider-defined successful no-op.
 - Highlight tests cover pull, create, update, deletion tombstones, retries, conflicts, and
   unresolvable anchors.
 - `./gradlew build` remains the canonical implementation gate.

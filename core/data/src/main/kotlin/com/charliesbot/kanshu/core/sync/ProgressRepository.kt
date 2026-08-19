@@ -161,7 +161,6 @@ class ProgressRepositoryImpl(
             locatorJson = locatorJson,
             progression = progression,
             updatedAt = now,
-            syncMetadata = null,
           )
         )
       } catch (e: CancellationException) {
