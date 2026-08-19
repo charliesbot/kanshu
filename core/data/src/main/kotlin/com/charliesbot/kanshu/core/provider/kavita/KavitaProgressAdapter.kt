@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.core.sync
+package com.charliesbot.kanshu.core.provider.kavita
 
 import android.util.Log
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
@@ -7,6 +7,7 @@ import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.KoreaderBookDto
 import com.charliesbot.kanshu.core.kosync.KoreaderHash
 import com.charliesbot.kanshu.core.kosync.KoreaderPosition
+import com.charliesbot.kanshu.core.provider.RemoteProgress
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.progress.progressionIn
 import java.io.File
@@ -16,13 +17,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.readium.r2.shared.publication.Publication
 
-class KavitaProgressSync(
+internal class KavitaProgressAdapter(
   private val api: KavitaApi,
   private val credentials: CredentialsRepository,
-  private val device: DeviceIdentity,
-) : ProgressSync {
+) {
 
-  override suspend fun push(
+  suspend fun push(
     file: File,
     position: ReaderPosition,
     publication: Publication,
@@ -36,8 +36,9 @@ class KavitaProgressSync(
       val payload =
         KoreaderBookDto(
           document = hash,
-          device_id = device.id,
-          device = device.name,
+          // Kavita ignores these KOReader compatibility fields.
+          device_id = KANSHU_DEVICE_ID,
+          device = KANSHU_DEVICE_NAME,
           percentage = position.progressionIn(publication).toFloat(),
           progress = KoreaderPosition.encode(position.spineIndex),
           // Kavita's controller ignores the inbound timestamp and stamps its own UTC clock
@@ -48,7 +49,7 @@ class KavitaProgressSync(
       runCatchingNetwork { api.putKoreaderProgress(creds.baseUrl, creds.apiKey, payload) }
     }
 
-  override suspend fun pull(file: File, publication: Publication): Result<RemoteProgress?> =
+  suspend fun pull(file: File, publication: Publication): Result<RemoteProgress?> =
     withContext(Dispatchers.IO) {
       val creds =
         credentials.credentials.first() ?: return@withContext Result.failure(NoCredentialsException)
@@ -72,7 +73,6 @@ class KavitaProgressSync(
           percentage = remote.percentage.toDouble(),
           // KOReader's kosync protocol uses epoch seconds; we expose millis everywhere else.
           timestampMillis = remote.timestamp * 1000L,
-          deviceName = remote.device.takeIf { it.isNotBlank() },
         )
       }
     }
@@ -89,7 +89,9 @@ class KavitaProgressSync(
     }
 
   private companion object {
-    const val TAG = "KavitaProgressSync"
+    const val TAG = "KavitaProgressAdapter"
+    const val KANSHU_DEVICE_ID = "kanshu"
+    const val KANSHU_DEVICE_NAME = "Kanshu"
   }
 }
 
@@ -97,5 +99,3 @@ class KavitaProgressSync(
 object NoCredentialsException : RuntimeException("No Kavita credentials configured")
 
 object MissingFileException : RuntimeException("Book file is missing")
-
-object UnresolvableLocatorException : RuntimeException("Locator doesn't map to a spine item")

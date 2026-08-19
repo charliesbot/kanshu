@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.features.reader
 import android.graphics.RectF
 import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.RemoteProgress
 import com.charliesbot.kanshu.core.reader.EpubOpener
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
 import com.charliesbot.kanshu.core.reader.ReaderFont
@@ -16,8 +17,7 @@ import com.charliesbot.kanshu.core.reader.annotation.ReaderAnnotation
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
-import com.charliesbot.kanshu.core.sync.RemoteProgress
-import com.charliesbot.kanshu.core.sync.SyncRepository
+import com.charliesbot.kanshu.core.sync.ProgressRepository
 import com.charliesbot.kanshu.navigator.ReaderHighlight
 import com.charliesbot.kanshu.navigator.ReaderPagePositions
 import com.charliesbot.kanshu.navigator.ReaderSelectionInfo
@@ -948,14 +948,14 @@ class ReaderViewModelTest {
   @Test
   fun `stale page positions from another book with the same spine are ignored`() =
     runTest(testDispatcher) {
-      val sync = FakeSyncRepository()
+      val sync = FakeProgressRepository()
       val viewModel =
         viewModel(
           FakeEpubOpener(
             1 to testPublication("<html><body><p>Old book</p></body></html>"),
             2 to testPublication("<html><body><p>New book</p></body></html>"),
           ),
-          syncRepository = sync,
+          progressRepository = sync,
         )
 
       viewModel.open(kavitaBookId(1))
@@ -1060,7 +1060,7 @@ class ReaderViewModelTest {
   fun `stored position reopens its chapter at the page containing its char offset`() =
     runTest(testDispatcher) {
       val sync =
-        FakeSyncRepository(
+        FakeProgressRepository(
           stored = ReaderPosition(spineIndex = 1, charOffset = 150, progressInSpine = 0.5f)
         )
       val viewModel =
@@ -1072,7 +1072,7 @@ class ReaderViewModelTest {
                 "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
               )
           ),
-          syncRepository = sync,
+          progressRepository = sync,
         )
 
       viewModel.open(kavitaBookId(1))
@@ -1120,10 +1120,10 @@ class ReaderViewModelTest {
   fun `repagination at an unchanged position keeps the same page`() =
     runTest(testDispatcher) {
       val sync =
-        FakeSyncRepository(
+        FakeProgressRepository(
           stored = ReaderPosition(spineIndex = 0, charOffset = 200, progressInSpine = 0.6f)
         )
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
       val positions =
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 300)
 
@@ -1144,7 +1144,7 @@ class ReaderViewModelTest {
   fun `stored position for an unreadable chapter falls back to the first spine item`() =
     runTest(testDispatcher) {
       val sync =
-        FakeSyncRepository(
+        FakeProgressRepository(
           stored = ReaderPosition(spineIndex = 1, charOffset = 150, progressInSpine = 0.5f)
         )
       val viewModel =
@@ -1157,7 +1157,7 @@ class ReaderViewModelTest {
                 "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
               )
           ),
-          syncRepository = sync,
+          progressRepository = sync,
         )
 
       viewModel.open(kavitaBookId(1))
@@ -1180,10 +1180,10 @@ class ReaderViewModelTest {
       // layer's pre-push check is what stops that going to the server, so the reader must report
       // it honestly rather than echoing the stored value back.
       val sync =
-        FakeSyncRepository(
+        FakeProgressRepository(
           stored = ReaderPosition(spineIndex = 0, charOffset = 150, progressInSpine = 0.375f)
         )
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1206,8 +1206,8 @@ class ReaderViewModelTest {
       // stale local row from clobbering a further-ahead server. That only holds if the reader
       // reports the resumed position exactly rather than something near it.
       val resumed = ReaderPosition(spineIndex = 0, charOffset = 100, progressInSpine = 0.25f)
-      val sync = FakeSyncRepository(stored = resumed)
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository(stored = resumed)
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1225,8 +1225,8 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       // The open path must stay local-only: a slow or unreachable host would otherwise sit in
       // front of the first page.
-      val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository()
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1237,8 +1237,8 @@ class ReaderViewModelTest {
   @Test
   fun `repagination re-reports the current position, not a shifted one`() =
     runTest(testDispatcher) {
-      val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository()
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
       val positions =
         ReaderPagePositions(pageStartCharOffsets = listOf(0, 100, 200), textStreamLength = 400)
 
@@ -1263,8 +1263,8 @@ class ReaderViewModelTest {
   @Test
   fun `page turns persist the char offset of the page landed on`() =
     runTest(testDispatcher) {
-      val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository()
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1286,8 +1286,8 @@ class ReaderViewModelTest {
     runTest(testDispatcher) {
       // Last page of the last chapter: nextPage has nowhere to go, so every report is the position
       // the reader was already at and the sync layer drops all but the first.
-      val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository()
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
       val positions = ReaderPagePositions(pageStartCharOffsets = listOf(0), textStreamLength = 100)
 
       viewModel.open(kavitaBookId(1))
@@ -1304,8 +1304,8 @@ class ReaderViewModelTest {
   @Test
   fun `progress is not persisted before the offsets table arrives`() =
     runTest(testDispatcher) {
-      val sync = FakeSyncRepository()
-      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), syncRepository = sync)
+      val sync = FakeProgressRepository()
+      val viewModel = viewModel(FakeEpubOpener(1 to testPublication()), progressRepository = sync)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1459,14 +1459,14 @@ class ReaderViewModelTest {
   private fun viewModel(
     source: EpubOpener,
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
-    syncRepository: SyncRepository = FakeSyncRepository(),
+    progressRepository: ProgressRepository = FakeProgressRepository(),
     annotationRepository: AnnotationRepository = FakeAnnotationRepository(),
     ioDispatcher: CoroutineDispatcher = testDispatcher,
   ): ReaderViewModel =
     ReaderViewModel(
       OpenBookUseCase(source),
       preferencesRepository,
-      syncRepository,
+      progressRepository,
       annotationRepository,
       ioDispatcher = ioDispatcher,
     )
@@ -1659,15 +1659,16 @@ private class FakeAnnotationRepository : AnnotationRepository {
   override suspend fun delete(id: String) = stored.update { all -> all.filterNot { it.id == id } }
 }
 
-private class FakeSyncRepository(private val stored: ReaderPosition? = null) : SyncRepository {
+private class FakeProgressRepository(private val stored: ReaderPosition? = null) :
+  ProgressRepository {
   val saved = mutableListOf<ReaderPosition>()
   var remoteConsulted = false
     private set
 
-  override suspend fun localPosition(bookId: String): ReaderPosition? = stored
+  override suspend fun localPosition(bookId: BookId): ReaderPosition? = stored
 
   override suspend fun resolveInitialPosition(
-    bookId: String,
+    bookId: BookId,
     file: File,
     publication: Publication,
   ): InitialPosition {
@@ -1676,7 +1677,7 @@ private class FakeSyncRepository(private val stored: ReaderPosition? = null) : S
   }
 
   override fun setProgress(
-    bookId: String,
+    bookId: BookId,
     file: File,
     position: ReaderPosition,
     publication: Publication,
@@ -1685,14 +1686,14 @@ private class FakeSyncRepository(private val stored: ReaderPosition? = null) : S
   }
 
   override suspend fun flushProgress(
-    bookId: String,
+    bookId: BookId,
     file: File,
     position: ReaderPosition,
     publication: Publication,
   ) = Unit
 
   override suspend fun pullFurthestPosition(
-    bookId: String,
+    bookId: BookId,
     file: File,
     publication: Publication,
   ): RemoteProgress? = null
