@@ -6,7 +6,7 @@ Before exploring an area, read:
 
 - `CONTEXT.md`, when present
 - Relevant decisions under `docs/adr/`, when present
-- The project documents referenced by `CLAUDE.md`
+- The project documents referenced by `AGENTS.md`
 
 Missing context or ADR files are not errors. Continue silently; create them only when domain-modeling work requires them.
 
