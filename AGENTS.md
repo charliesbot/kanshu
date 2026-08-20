@@ -47,3 +47,13 @@ The core layer follows the android-dev skill's four-module split (`:core:model`,
 ## Build Gate
 
 `./gradlew build` is the canonical green-or-not check. It runs Spotless, lint (debug + `lintVitalRelease`), unit tests, and `assembleRelease`. The `.github/workflows/build.yml` workflow runs it on every push and PR to `main` — a red CI run blocks merging. Reproduce locally with the same one-liner. If lint flags a real false positive, suppress it with `tools:ignore` at the call site (see `MainActivity`'s `Instantiatable` suppression) or a feature-local `lint {}` block; do not disable checks project-wide.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
