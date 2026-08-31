@@ -2,7 +2,7 @@ package com.charliesbot.kanshu.navigator.parser.css
 
 /**
  * A parsed stylesheet: the rules Kanshu can honor plus a census of everything it skipped. Parsed
- * once per stylesheet and cached per publication; see docs/PRD_PUBLISHER_STYLES.md.
+ * once per stylesheet and cached per publication; see docs/design/publisher-styles-engine.md.
  */
 data class CssStylesheet(
   val rules: List<CssRule> = emptyList(),
@@ -81,7 +81,7 @@ private val CSS_VALUE_WHITESPACE = Regex("""\s+""")
 /**
  * A CSS length normalized to em, or null for values the cascade treats as "no signal" (`auto`,
  * percentages, negatives, unparseable). Nominal ratios: 1em = 16px = 12pt. Clamping to the
- * per-property ranges happens where the value is applied; see docs/PRD_PUBLISHER_STYLES.md §
+ * per-property ranges happens where the value is applied; see docs/design/publisher-styles-engine.md §
  * Structural Spacing.
  */
 internal fun parseCssLengthToEm(value: String): Float? {

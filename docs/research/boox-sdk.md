@@ -1,6 +1,6 @@
 # Boox (Onyx) SDK
 
-What the official Onyx Android SDK offers and which parts Kanshu should use. Researched from the official sample repo [onyx-intl/OnyxAndroidDemo](https://github.com/onyx-intl/OnyxAndroidDemo) (last commit 2026-06-29): all 18 `doc/` wiki pages plus the demo app source, which exercises several APIs the README never mentions (EAC, high contrast, screensaver). This is desk research — nothing here has been validated on the Go 7 Gen 2 yet. The Phase 0 EPD spike in `docs/PRD_NATIVE_READER.md` remains the on-device validation gate.
+What the official Onyx Android SDK offers and which parts Kanshu should use. Researched from the official sample repo [onyx-intl/OnyxAndroidDemo](https://github.com/onyx-intl/OnyxAndroidDemo) (last commit 2026-06-29): all 18 `doc/` wiki pages plus the demo app source, which exercises several APIs the README never mentions (EAC, high contrast, screensaver). This is desk research — nothing here has been validated on the Go 7 Gen 2 yet. The Phase 0 EPD spike in `docs/design/native-reader.md` remains the on-device validation gate.
 
 ## Artifacts and Setup
 

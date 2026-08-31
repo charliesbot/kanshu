@@ -59,7 +59,7 @@ interface KavitaApi {
 
   // PUT the book's current reading position via Kavita's kosync-compatible endpoint. The apiKey
   // is path-encoded (not a header) per the kosync protocol; Kavita's AuthKeyAuthenticationHandler
-  // resolves it the same way as the x-api-key header. See docs/KAVITA_API.md.
+  // resolves it the same way as the x-api-key header. See docs/research/kavita-api.md.
   suspend fun putKoreaderProgress(baseUrl: String, apiKey: String, body: KoreaderBookDto)
 
   // GET the book's stored progress, identified by kosync file hash. Returns null on 400 (Kavita
@@ -132,7 +132,7 @@ class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
         else -> throw KavitaException.Unknown("HTTP ${response.status.value}")
       }
       // Kavita returns application/zip for multi-file chapters. Phase 0 only supports the
-      // single-file EPUB case (see docs/KAVITA_API.md). Reject anything else so we never write
+      // single-file EPUB case (see docs/research/kavita-api.md). Reject anything else so we never write
       // a bogus payload to disk. Strip parameters first — a future "; charset=…" appended by
       // the server must not cause a false reject.
       val ct = response.contentType()?.withoutParameters()

@@ -2,17 +2,16 @@
 
 Minimal Android ebook reader for eink tablets, backed by a Kavita server. Base package: `com.charliesbot.kanshu`.
 
-Read `docs/PRD.md` before any design, UX, or feature decision — it defines e-ink constraints, animation rules, Phase 0 scope, and the north star.
+## Project documentation
 
-Read `docs/KAVITA_API.md` before any Kavita networking work — it captures the verified auth flow, the endpoints we use, the ones we deliberately don't, and the footguns we've already paid for.
+- `docs/PRD.md`, when present, defines the project direction and north star.
+- `docs/ARCHITECTURE.md`, when present, describes the current system.
+- `docs/design/`, when present, contains focused design documents.
+- `docs/research/`, when present, contains external API, platform, and technical research.
+- `docs/archive/`, when present, contains non-current documents and is historical context only.
 
-Read `docs/KINDLE_TYPOGRAPHY.md` before any reader typography work — it captures the layout-mine-fonts-yours model we model after Kindle.
-
-Read `docs/PRD_NATIVE_READER.md` before any reader engine, pagination, rendering, or selection work — it defines the native `StaticLayout`/Canvas architecture, the `:reader-navigator` module, Phase 0 scope, performance budgets, and the block model that replaces WebView.
-
-Read `docs/BOOX_SDK.md` before any Boox SDK, EPD refresh, or e-ink hardware integration work — it inventories the Onyx SDK surface (refresh modes, EAC, dictionary, front light), the integration footguns, and the phase mapping for what Kanshu adopts when.
-
-Read `docs/PRD_PUBLISHER_STYLES.md` before any CSS, publisher styling, or rendering-fidelity work — it defines the parse-time micro-cascade, the property allowlist and styling census, the Kotlin-vs-native-engine decision with its tripwires, and the product-first roadmap ordering (styling before progress).
+Other project documents can live directly under `docs/`. Use lowercase kebab-case
+filenames except for the fixed `PRD.md` and `ARCHITECTURE.md` names.
 
 ## Stack Overrides
 
@@ -38,7 +37,7 @@ The Nav3 transitions ban (above) is the screen-level form of the same rule.
 
 The core layer follows the android-dev skill's four-module split (`:core:model`, `:core:domain`, `:core:data`, `:core:strings`) with project-specific deltas:
 
-- **`:reader-navigator` is a top-level Android library module.** Owns the native text rendering engine: XHTML parser, block model, `StaticLayout` layout engine, Canvas page renderer, and selection/hit-testing. Exposes `ReaderPageViewer` as its public composable. Depends only on `:core:model` for preference types. See `docs/PRD_NATIVE_READER.md` for full architecture.
+- **`:reader-navigator` is a top-level Android library module.** Owns the native text rendering engine: XHTML parser, block model, `StaticLayout` layout engine, Canvas page renderer, and selection/hit-testing. Exposes `ReaderPageViewer` as its public composable. Depends only on `:core:model` for preference types. See `docs/design/native-reader.md` for full architecture.
 
 - **`:core:designsystem` is a lazy-promoted module.** Holds `KanshuTheme`, the compose-unstyled wrappers (`KanshuButton`, `KanshuText`, `KanshuCover`, etc.), and the drawable icons. The trigger from the skill — "you deliberately break out of stock Material" — is permanent here, so the module is permanent too. Features depend on it directly instead of redeclaring tokens.
 - **`:features:reader:app` depends on `:core:data` (architectural exception).** `ReaderResult.Success` carries a Readium `Publication`, and Readium 3.x is an AAR whose public surface uses `android.net.Uri`. Hosting the reader contract in `:core:domain` (kotlin-jvm) is impossible, so the reader-specific types (`ReaderSource`, `ReaderResult`, `OpenBookUseCase`, `KavitaReaderSource`) live in `:core:data` and the reader feature is allowed to consume them. The other two features stay strict — `:core:domain` + `:core:designsystem` + `:core:strings` only.

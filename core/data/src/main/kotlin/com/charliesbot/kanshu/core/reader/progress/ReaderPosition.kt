@@ -10,7 +10,7 @@ import org.readium.r2.shared.publication.Publication
  * size, margins, or the layout rules change, so a page index is only meaningful under the exact
  * typography that produced it — every preference change silently invalidated it. A character offset
  * into the chapter's flattened text stream survives all of that. See the Progress Model in
- * `docs/PRD_NATIVE_READER.md`.
+ * `docs/design/native-reader.md`.
  */
 @Serializable
 data class ReaderPosition(

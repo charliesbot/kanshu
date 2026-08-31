@@ -98,6 +98,6 @@ data class ReaderPage(val entries: List<PageEntry>) {
  * denominator for `progressInSpine`. It counts every character the parser produced, including
  * blocks that were blank enough to skip rendering, so offsets stay stable regardless of what the
  * renderer chose to draw. List markers and image placeholders contribute nothing, matching the
- * progress model in `docs/PRD_NATIVE_READER.md`.
+ * progress model in `docs/design/native-reader.md`.
  */
 data class ReaderLayoutResult(val pages: List<ReaderPage>, val textStreamLength: Int)

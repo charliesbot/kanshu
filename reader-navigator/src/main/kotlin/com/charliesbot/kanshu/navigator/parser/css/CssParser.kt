@@ -15,7 +15,7 @@ import com.helger.css.reader.errorhandler.DoNothingCSSParseErrorHandler
  * stylesheets. This adapter keeps Kanshu's decisions: which selector shapes the cascade honors
  * (type/class/id/compound/descendant), the property allowlist, and the census counts for everything
  * skipped. Unparseable input degrades to an empty stylesheet, never an exception —
- * semantic-tags-only rendering per docs/PRD_PUBLISHER_STYLES.md.
+ * semantic-tags-only rendering per docs/design/publisher-styles-engine.md.
  */
 object CssParser {
   fun parse(css: String): CssStylesheet {

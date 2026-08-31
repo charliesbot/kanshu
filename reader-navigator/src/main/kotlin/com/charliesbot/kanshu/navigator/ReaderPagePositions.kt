@@ -8,7 +8,7 @@ import com.charliesbot.kanshu.navigator.engine.ReaderLayoutResult
  * This is the reader's progress primitive. Page indexes are a navigation convenience that shifts
  * whenever font size, margins, or the pagination rules themselves change; character offsets do not,
  * so a position stored against one typography setting still resolves under another. See the
- * Progress Model in `docs/PRD_NATIVE_READER.md`.
+ * Progress Model in `docs/design/native-reader.md`.
  */
 data class ReaderPagePositions(
   val pageStartCharOffsets: List<Int>,

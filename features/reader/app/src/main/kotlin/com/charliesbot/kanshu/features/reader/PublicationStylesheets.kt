@@ -8,7 +8,7 @@ import org.readium.r2.shared.util.Url
 
 private const val TAG = "PublicationStylesheets"
 
-// Degradation cap from docs/PRD_PUBLISHER_STYLES.md — real book sheets are KB-scale.
+// Degradation cap from docs/design/publisher-styles-engine.md — real book sheets are KB-scale.
 private const val MAX_STYLESHEET_BYTES = 256 * 1024
 
 /**

@@ -19,7 +19,7 @@ object EpubParser {
    * @param baseHref publication-root-relative path of the spine item the XHTML came from; used to
    *   resolve relative resource hrefs (images) to publication-root-relative hrefs.
    * @param stylesheets parsed publisher stylesheets in document link order; emphasis and block
-   *   alignment resolve through the micro-cascade (docs/PRD_PUBLISHER_STYLES.md). Inline `style`
+   *   alignment resolve through the micro-cascade (docs/design/publisher-styles-engine.md). Inline `style`
    *   attributes are honored even when this is empty.
    */
   fun parse(

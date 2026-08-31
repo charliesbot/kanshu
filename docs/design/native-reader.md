@@ -33,7 +33,7 @@ Kanshu does not evaluate publisher CSS live or implement a browser-style cascade
 3. After semantic block rendering lands, diagnostics measure residual structural CSS reliance in real EPUBs.
 4. Only measured high-value CSS signals are considered for a tiny allowlist, likely block alignment and fallback bold/italic when semantic tags are absent.
 
-This follows the Kindle-style split in `docs/KINDLE_TYPOGRAPHY.md`: publisher markup and selected structural signals shape the book, while Kanshu owns the reading typography. Because Kanshu is not a browser engine, fidelity is phased:
+This follows the Kindle-style split in `docs/research/kindle-typography.md`: publisher markup and selected structural signals shape the book, while Kanshu owns the reading typography. Because Kanshu is not a browser engine, fidelity is phased:
 
 | Phase | Reading experience                                                                                                                                                             |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -187,7 +187,7 @@ Use Ares as a **reference** when implementing `EpubParser`:
 
 Do not import `:htmlparser` or share a module yet. The ASTs diverge (`ParsedContent` vs `ReaderBlock`) and the render paths are incompatible. Revisit a shared parser-only library only if both projects stabilize on identical block semantics.
 
-This model preserves structural intent (headings, quotes, list nesting, emphasis) without carrying live CSS. Semantic tags are the first source of truth. A later, data-gated CSS signal layer may add narrowly scoped structural hints, but Kanshu does not apply publisher typography wholesale. It follows the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`: publisher markup and selected structural signals shape structure, while Kanshu owns legibility and spacing.
+This model preserves structural intent (headings, quotes, list nesting, emphasis) without carrying live CSS. Semantic tags are the first source of truth. A later, data-gated CSS signal layer may add narrowly scoped structural hints, but Kanshu does not apply publisher typography wholesale. It follows the Kindle-style split from `docs/research/kindle-typography.md`: publisher markup and selected structural signals shape structure, while Kanshu owns legibility and spacing.
 
 ### XHTML Element Mapping
 
@@ -472,7 +472,7 @@ Compose still owns everything around the page surface: tap zones, reader chrome 
 
 ### Typography Model
 
-From `docs/KINDLE_TYPOGRAPHY.md` §5:
+From `docs/research/kindle-typography.md` §5:
 
 - **Kanshu owns:** font family, font size, line height, margins, alignment, paragraph spacing, word spacing, letter spacing.
 - **Publisher owns:** structural semantics (headings, quotes, list nesting, emphasis).
@@ -844,5 +844,5 @@ Building on Phase 0's feasibility proof:
 ## Relationship to Other Docs
 
 - `docs/PRD.md` — project north star. This PRD is the reader engine strategy underneath Phase 0's "render enough EPUB content to actually read."
-- `docs/KINDLE_TYPOGRAPHY.md` — the layout-mine-fonts-yours model. The native engine implements this directly: the block model carries publisher structure, the renderer applies Kanshu typography.
+- `docs/research/kindle-typography.md` — the layout-mine-fonts-yours model. The native engine implements this directly: the block model carries publisher structure, the renderer applies Kanshu typography.
 - Ares `../ares/htmlparser` — sibling RSS app's HTML parser. Reference for inline style extraction and fallback traversal; not a Kanshu dependency. See § Reference: Ares `:htmlparser`.

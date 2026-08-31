@@ -9,7 +9,7 @@ import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
  *
  * Deliberately not page- or rect-based. Pagination shifts with every typography change, so a
  * highlight pinned to pixels or page indexes would drift off its words the first time the reader
- * changed the font. See the Progress Model in `docs/PRD_NATIVE_READER.md`.
+ * changed the font. See the Progress Model in `docs/design/native-reader.md`.
  */
 data class ReaderHighlight(
   val startCharOffset: Int,

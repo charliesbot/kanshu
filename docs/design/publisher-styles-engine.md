@@ -13,7 +13,7 @@ where `calibre7` maps to `font-style: italic` and `center` to `text-align: cente
 
 This PRD defines how Kanshu consumes publisher CSS without becoming a browser: a **micro-cascade** — honest CSS cascade semantics over a deliberately tiny property set, resolved once per chapter at parse time.
 
-It supersedes the "Phase 2.5: Data-Gated CSS Signals" section of `docs/PRD_NATIVE_READER.md`, which underestimated how much of the real corpus speaks CSS-only. The observed evidence: the same book opened side by side shows italics, bold, and centered text on Kindle and undifferentiated plain text in Kanshu. That is not a corner case; it is the common case.
+It supersedes the "Phase 2.5: Data-Gated CSS Signals" section of `docs/design/native-reader.md`, which underestimated how much of the real corpus speaks CSS-only. The observed evidence: the same book opened side by side shows italics, bold, and centered text on Kindle and undifferentiated plain text in Kanshu. That is not a corner case; it is the common case.
 
 ## Why This Is a Product Priority
 
@@ -25,7 +25,7 @@ Open the same reflowable book in Kindle and in Kanshu. The pages should be struc
 
 ## Constraints
 
-Inherited from `docs/PRD_NATIVE_READER.md` and unchanged:
+Inherited from `docs/design/native-reader.md` and unchanged:
 
 - Target device: Boox Go 7 Gen 2 B&W (Android 12 / API 31).
 - Page turns never trigger measurement, layout construction, or style resolution.
@@ -51,7 +51,7 @@ Two lessons:
 
 ### Kindle (KF8)
 
-Kindle's renderer is a native CSS-subset engine: it honors a curated slice of publisher CSS for structure and emphasis while clamping user-owned typography on top. This is the ownership split Kanshu already adopted from `docs/KINDLE_TYPOGRAPHY.md` — Kanshu simply never implemented the publisher half. Kindle is the fidelity bar for this PRD: not TeX, not InDesign — Kindle.
+Kindle's renderer is a native CSS-subset engine: it honors a curated slice of publisher CSS for structure and emphasis while clamping user-owned typography on top. This is the ownership split Kanshu already adopted from `docs/research/kindle-typography.md` — Kanshu simply never implemented the publisher half. Kindle is the fidelity bar for this PRD: not TeX, not InDesign — Kindle.
 
 ### Engine Language Decision
 
@@ -71,7 +71,7 @@ If a tripwire fires, the escape hatch is not a rewrite: it is **embedding crengi
 
 ## Ownership Model
 
-Extends the Kindle-style split from `docs/KINDLE_TYPOGRAPHY.md`:
+Extends the Kindle-style split from `docs/research/kindle-typography.md`:
 
 | Owner     | Properties                                                                                                                                                                                              |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -202,7 +202,7 @@ A single reader-side spacing constant cannot reproduce either page — the spaci
 
 Cascade note: unlike every v1 property, **margins do not inherit** in CSS — they resolve declared-only (the `resolveDeclared` path), while `text-indent` inherits normally. The inheritance table in § Cascade Semantics is v1-specific.
 
-**Unstyled-book defaults (product decision, ships with the `text-indent` slice):** books with no spacing signals get Kindle's fallback convention — first-line indent on body paragraphs, no vertical gap — replacing today's flat gap. The reader's paragraph-spacing slider becomes additive on top of publisher/default rhythm, defaulting to 0. This supersedes the flat per-block-type spacing table in `docs/PRD_NATIVE_READER.md` § Block Spacing Model for blocks carrying publisher spacing.
+**Unstyled-book defaults (product decision, ships with the `text-indent` slice):** books with no spacing signals get Kindle's fallback convention — first-line indent on body paragraphs, no vertical gap — replacing today's flat gap. The reader's paragraph-spacing slider becomes additive on top of publisher/default rhythm, defaulting to 0. This supersedes the flat per-block-type spacing table in `docs/design/native-reader.md` § Block Spacing Model for blocks carrying publisher spacing.
 
 ### v3 Candidates (admitted only by census data)
 
@@ -299,7 +299,7 @@ After the structural spacing slices (E–G):
 
 ## Roadmap Reordering
 
-This PRD is first in the product-first ordering agreed for completing the native reader (supersedes the phase ordering tail of `docs/PRD_NATIVE_READER.md`):
+This PRD is first in the product-first ordering agreed for completing the native reader (supersedes the phase ordering tail of `docs/design/native-reader.md`):
 
 1. **Publisher styles** (this PRD, slices A–C).
 2. **EPD spike + baseline refresh control** — requires on-device work; typography judgments are polluted by ghosting until refresh modes are controlled.
@@ -310,7 +310,7 @@ This PRD is first in the product-first ordering agreed for completing the native
 
 ## Relationship to Other Docs
 
-- `docs/PRD_NATIVE_READER.md` — the engine this builds on. This PRD supersedes its "Phase 2.5: Data-Gated CSS Signals" section and its phase-ordering tail (see § Roadmap Reordering). Its hard rules (page-turn purity, parse-time-only style work, silent degradation) are inherited unchanged.
-- `docs/KINDLE_TYPOGRAPHY.md` — the ownership split this PRD implements the publisher half of.
+- `docs/design/native-reader.md` — the engine this builds on. This PRD supersedes its "Phase 2.5: Data-Gated CSS Signals" section and its phase-ordering tail (see § Roadmap Reordering). Its hard rules (page-turn purity, parse-time-only style work, silent degradation) are inherited unchanged.
+- `docs/research/kindle-typography.md` — the ownership split this PRD implements the publisher half of.
 - `docs/PRD.md` — project north star; "best e-reader for Android e-ink" framing.
 - KOReader/crengine — prior art only (`lvstsheet.cpp` is the stylesheet engine to consult for semantics questions); the embed option is the documented tripwire escape hatch, not a dependency.
