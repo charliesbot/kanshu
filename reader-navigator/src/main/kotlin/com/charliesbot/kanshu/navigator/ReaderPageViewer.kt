@@ -137,7 +137,7 @@ fun ReaderPageViewer(
     var pendingSelectionSeedPage by remember(document) { mutableStateOf<Int?>(null) }
     var pendingSelectionSeedAtPageEnd by remember(document) { mutableStateOf(false) }
     var pendingRestoredSelection by remember(document) { mutableStateOf<TextSelection?>(null) }
-    if (page != null && presentedIndex != null) {
+    if (page != null) {
       val shouldSeedSelection = pendingSelectionSeedPage == presentedIndex
       ReaderPageAndroidView(
         page = page,
