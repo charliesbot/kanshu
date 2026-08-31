@@ -7,7 +7,8 @@ package com.charliesbot.kanshu.core.kosync
 // v0 syncs at spine precision only. Within-chunk position (the `<xpath>` tail) is intentionally
 // not produced here — Readium emits progression-style locators rather than positional XPaths
 // for ongoing reading, and Kavita drops character offsets on storage anyway, so the cross-device
-// ceiling is "element-level inside a chunk." We document this in docs/research/kavita-api.md and revisit
+// ceiling is "element-level inside a chunk." We document this in docs/research/kavita-api.md and
+// revisit
 // if real-world handoff feels too coarse.
 //
 // The encoder always writes spine-top (`.0`). The decoder accepts every shape Kavita can return

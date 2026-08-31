@@ -1,87 +1,55 @@
 # Provider Architecture
 
-## Status
+**Date:** 2026-08-09
 
-The provider foundation is implemented. Kavita is the only configured provider today; additional
-providers and remote highlight synchronization remain deferred until the product needs them.
+## TL;DR
 
-## Goal
+Kanshu treats every book origin as a provider instance with a common catalog, acquisition,
+progress, and highlight contract. Providers own remote protocols and provenance; shared Kanshu
+repositories own managed files, local-first persistence, retries, and conflict policy. Every
+provider converges on the same managed EPUB and native-reader path, so backend details never leak
+into the library or reader UI.
 
-Kanshu should discover, acquire, open, and synchronize books without shared application code
-knowing which backend supplied them. Kavita is the first provider, but the same boundary must fit
-books stored on the device and future services such as BookOrbit.
+## Design
 
-A **provider** supplies readable book files. It may additionally synchronize reading progress and
-highlights. Kavita, BookOrbit, and **On this device** are providers. Services such as Readwise and
-Hardcover do not supply the readable file, so they are integrations rather than providers.
+### Provider boundary
 
-The boundary must preserve Kanshu's offline-first behavior:
+A provider supplies readable book files and may also replicate progress or highlights. Kavita, a
+future local-files implementation, and a future BookOrbit implementation fit this definition. A
+service that only consumes reading state, such as Readwise or Hardcover, is an integration rather
+than a provider and does not participate in discovery or acquisition.
 
-- Room is updated before any remote synchronization.
-- Every acquired EPUB is materialized in Kanshu-managed storage before it is opened.
-- One unavailable provider does not prevent books from other providers, or its cached books, from
-  being shown.
-- Provider-specific identifiers and wire formats do not leak into reader UI or rendering code.
+Provider types are compiled implementations, not runtime plugins. A provider instance is one
+configured occurrence of a type: two Kavita servers are distinct instances with independent IDs,
+credentials, capabilities, and catalog state.
 
-## Definitions
+The same EPUB exposed by multiple providers remains multiple books. Content-hash deduplication and
+cross-provider state sharing are intentionally outside this model.
 
-### Provider type
+### Ownership principles
 
-A compiled implementation of a backend protocol, such as `Kavita`, `Local`, or `BookOrbit`.
-Runtime plugin loading is not part of this design.
+- Providers discover books, supply bytes, and translate optional remote state. Kanshu owns EPUB
+  opening, parsing, rendering, managed storage, persistence, and synchronization policy.
+- Local state is canonical for interaction. Progress and highlight mutations are persisted before
+  remote replication.
+- Provider identity follows every book through catalog, acquisition, progress, and highlight
+  routing.
+- Provider wire identifiers and metadata remain opaque to shared storage and UI code.
+- Optional remote operations have successful empty or no-op defaults; capabilities describe the
+  provider rather than changing its interface.
+- Removing a download deletes only Kanshu's managed copy. Mutating a provider's source is a
+  separate capability and is not implied by cache removal.
 
-### Provider instance
+### Identity and model
 
-One configured occurrence of a provider type. Two Kavita servers are two provider instances, each
-with its own stable ID, display name, credentials, configuration, and capabilities.
-
-### Provider book
-
-A book owned by one provider instance and identified within that instance by an opaque string. The
-same EPUB supplied by Kavita, Local, and BookOrbit is represented as three books in the initial
-model. Content-hash deduplication and cross-provider state sharing are deferred.
-
-### Integration
-
-A service that consumes or replicates reading state without supplying the book file. Integrations
-may be designed later, but they do not participate in provider discovery or acquisition.
-
-## Architectural Principles
-
-1. **The provider owns origin, not the reading experience.** Providers discover books, supply their
-   bytes, and translate optional remote state. Kanshu owns EPUB opening, parsing, rendering, local
-   persistence, and sync policy.
-2. **Local state is canonical for interaction.** Page turns and highlight mutations are persisted
-   immediately. Remote synchronization is asynchronous replication.
-3. **Capabilities are descriptive.** Every provider has the same direct contract. Optional
-   operations have successful no-op defaults, while capability metadata describes what the
-   provider can replicate remotely for UI and diagnostics.
-4. **Provider identity follows every book.** Catalog, acquisition, progress, and highlight calls are
-   routed through the provider instance that owns the book.
-5. **Remote metadata is opaque to shared storage.** Kavita chapter IDs, BookOrbit identifiers, and
-   remote annotation IDs live in provider-owned metadata rather than shared columns.
-6. **Removing a download only removes Kanshu's copy.** Deleting the provider's source book is a
-   separate, future capability.
-
-## Target Model
-
-The public model uses opaque identifiers instead of Kavita-specific integers:
+`ProviderInstanceId` identifies configuration and routing. `ProviderBookKey` combines that instance
+with the provider's opaque item ID. Room assigns each imported catalog item a Kanshu `BookId` and
+enforces uniqueness on `(providerInstanceId, providerItemId)`.
 
 ```kotlin
-@JvmInline
-value class ProviderInstanceId(val value: String)
-
-@JvmInline
-value class BookId(val value: String)
-
 data class ProviderBookKey(
   val providerId: ProviderInstanceId,
   val providerItemId: String,
-)
-
-data class ProviderCapabilities(
-  val progressSync: Boolean,
-  val highlightSync: Boolean,
 )
 
 data class ProviderDescriptor(
@@ -91,39 +59,25 @@ data class ProviderDescriptor(
   val enabled: Boolean,
   val capabilities: ProviderCapabilities,
 )
-
-data class ProviderBook(
-  val key: ProviderBookKey,
-  val title: String,
-  val cover: ProviderCover?,
-  val mediaType: String,
-  val revisionToken: String?,
-)
 ```
 
-Room assigns each imported catalog item a Kanshu `BookId` and enforces uniqueness on
-`(providerInstanceId, providerItemId)`. Reading progress and annotations continue to reference the
-Kanshu ID. The provider key is used only when dispatching provider operations.
+Reading progress and annotations reference the Kanshu `BookId`. The provider key appears only when
+dispatching provider operations. Non-secret configuration may live in shared persistence;
+credentials remain in provider-specific secure storage and never enter catalog or sync metadata.
 
-Provider configuration is keyed by `ProviderInstanceId`. Non-secret configuration may live in the
-database; credentials remain in provider-specific secure storage and never appear in catalog or
-sync metadata.
+### Provider contract
 
-## Provider Contract
-
-Providers expose one direct contract matching the product concept:
+Every provider implements the same direct contract:
 
 ```kotlin
 interface Provider {
   val descriptor: ProviderDescriptor
 
   suspend fun fetchCatalog(): ProviderResult<List<ProviderBook>>
-
   suspend fun resolveCover(
     book: ProviderBookKey,
     revisionToken: String?,
   ): ProviderCover?
-
   suspend fun acquire(
     book: ProviderBookKey,
     target: File,
@@ -133,7 +87,6 @@ interface Provider {
   suspend fun pullProgress(
     context: ProviderBookContext,
   ): ProviderResult<RemoteProgress?>
-
   suspend fun pushProgress(
     context: ProviderBookContext,
     position: ReaderPosition,
@@ -142,7 +95,6 @@ interface Provider {
   suspend fun pullHighlights(
     context: ProviderBookContext,
   ): ProviderResult<List<ProviderHighlight>>
-
   suspend fun pushHighlights(
     context: ProviderBookContext,
     changes: List<HighlightChange>,
@@ -150,209 +102,101 @@ interface Provider {
 }
 ```
 
-Providers use the same `ProviderResult` type for every fallible operation. The default progress
-and highlight implementations return successful empty/no-op results. Coordinators always delegate
-to the owning provider; they do not branch on capabilities or require feature-specific provider
-interfaces.
+`ProviderResult` is the common fallible result for remote operations. Default progress and
+highlight methods return successful empty or no-op values. Coordinators always call the owning
+provider; they do not branch on capabilities or select feature-specific interfaces.
 
-Provider methods are remote/provenance adapters only. They do not write Room rows, schedule
-retries, choose conflict winners, or open publications.
+Provider methods are protocol adapters. They do not write Room rows, schedule retries, choose
+conflict winners, aggregate catalogs, or open publications.
 
-## File Acquisition and Opening
+### Acquisition and opening
 
-All provider paths converge before EPUB opening:
+All providers converge on a Kanshu-managed file:
 
 ```text
 Provider catalog
-      |
-      v
-Provider.acquire()
-      |
-      v
-Kanshu-managed EPUB file
-      |
-      v
-Shared EPUB opener
-      |
-      v
-Readium Publication -> native reader
+  -> Provider.acquire()
+  -> Kanshu-managed EPUB
+  -> shared EPUB opener
+  -> Readium Publication
+  -> native reader
 ```
 
-Remote providers download into the target managed file. The Local provider copies a selected SAF
-document or a file discovered through a configured folder into the same managed storage. This
-avoids separate reader paths for files, content URIs, and network streams, and ensures that a
-temporary permission or network outage cannot break an already acquired book.
+Remote providers download into the supplied target. A local-files provider copies a selected SAF
+document or discovered file into the same storage rather than maintaining a separate content-URI
+reader path. Once acquired, temporary network or URI permission failures cannot break the cached
+book.
 
-The current `ReaderSource` name is misleading because it opens an already downloaded file rather
-than representing the full source. It is replaced by a shared EPUB opener that accepts a Kanshu
-book or acquired-file record. Readium and the native reader remain provider-agnostic.
+The shared opener accepts the acquired Kanshu book, constructs the Readium publication, and remains
+provider-agnostic. Cache removal deletes the managed file and clears local cache metadata without
+touching Kavita, SAF, filesystem, or future-provider sources.
 
-Removing a download deletes the managed file and clears its cache metadata. It never deletes the
-Kavita, BookOrbit, SAF, or filesystem source.
+### Unified library
 
-## Unified Library
+`ProviderRegistry` resolves configured instances by `ProviderInstanceId` and enumerates enabled
+providers. The shared book repository refreshes providers independently, persists per-provider
+catalog snapshots, and combines cached rows into one observable library.
 
-A registry owns configured provider instances:
+A successful refresh replaces only that provider's snapshot. Authentication or network failure
+retains its cached books and marks that provider stale. One unavailable provider cannot turn the
+whole library into an error while another provider or cached snapshot remains usable. Disabling a
+provider removes it from refresh and aggregation without rewriting book ownership.
 
-```kotlin
-interface ProviderRegistry {
-  fun enabledProviders(): List<Provider>
-  fun provider(id: ProviderInstanceId): Provider
-}
-```
+The default UI is one library. Provider filters or sections may be layered over the shared model
+without creating provider-specific library screens.
 
-The shared book repository refreshes enabled providers independently, persists their catalog
-snapshots, and combines all cached rows into one observable library. Each provider has independent
-refresh status:
+### Progress replication
 
-- A successful refresh replaces that provider's catalog snapshot.
-- A network or authentication failure retains its cached books and marks the provider stale.
-- A failure never converts the entire unified library to an error when another provider has usable
-  books.
-- Disabling a provider hides it from refresh and aggregation without rewriting ownership.
+`ProgressRepository` is the local-first coordinator. It writes `ReaderPosition` to Room
+immediately, resolves the book's provider, and then delegates remote pull or push. The repository
+owns debounce, retries, remote comparison, and conflict decisions; the provider translates the
+canonical position into its wire protocol.
 
-Provider filters or sections may be added to the UI later, but the default product surface is one
-unified library.
+Kavita-specific kosync hashes and XPointer conversion stay inside `KavitaProvider`. A remote record
+whose anchor cannot be decoded may still expose comparable percentage and timestamp metadata; it
+must not silently become a false precise local position.
 
-## Progress Synchronization
+### Highlight replication
 
-`ProgressRepository` is the local-first coordinator:
+The canonical highlight uses spine index, flattened-text character offsets, selected text, color,
+and timestamps. Shared annotation persistence owns immediate local writes, pending changes,
+tombstones, retries, and conflict policy. Providers translate between that canonical range and
+their remote representation and store remote IDs or revisions as opaque metadata.
 
-```text
-ReaderPosition
-      |
-      +--> Room (immediate)
-      |
-      v
-Owning Provider
-      |
-      +--> successful no-op
-      +--> provider wire translation and remote push
-```
+Reconciliation follows these rules:
 
-The repository resolves the book's provider instance and invokes it. It owns debounce behavior,
-retries, remote comparison, and user-facing conflict decisions. Providers translate the canonical
-`ReaderPosition` into their protocols.
+- A local deletion remains a tombstone until acknowledged remotely.
+- A remote deletion wins over a pending edit to prevent resurrection.
+- A one-sided change is copied to the other side.
+- Concurrent changes resolve to the remote version and record the conflict.
+- An unsafe remote anchor is skipped rather than attached to the wrong text.
 
-For Kavita, `KavitaProvider` retains the existing kosync hash and XPointer translation internally.
-Those types no longer appear in the shared progress contract.
+Kavita translates canonical ranges to and from XPath annotations. A provider without remote
+annotations uses the successful no-op implementation and keeps highlights exclusively in Room.
 
-## Highlight Synchronization
+### Capability and failure semantics
 
-`AnnotationRepository` will remain the local-first coordinator. Kanshu's canonical highlight is
-addressed by spine index, flattened-text character offsets, selected text, color, and timestamps.
-Provider implementations translate that model into their remote representation.
+Capabilities are descriptive metadata for UI and diagnostics, not gates around delegation. A
+provider that does not synchronize progress or highlights still participates through successful
+defaults. This keeps orchestration uniform and prevents capability combinations from fragmenting
+the contract.
 
-```text
-Reader highlight mutation
-      |
-      +--> Room annotation + pending change (immediate)
-      |
-      v
-Owning Provider
-      |
-      +--> successful no-op
-      +--> provider-specific annotation API
-```
+Catalog, cover, acquisition, progress, and highlight failures remain scoped to the owning provider
+and operation. Shared repositories decide what cached data remains visible and whether an action
+is retried. Provider errors never carry wire DTOs beyond the adapter boundary.
 
-The shared repository owns the pending-change queue, retry policy, tombstones, and conflict rules.
-Provider metadata stores remote IDs and the last observed remote revision without adding
-Kavita-specific columns to the shared annotation schema.
+### Extension boundaries
 
-Default reconciliation rules are:
+A local-files provider fits by discovering SAF-backed files, copying them into managed storage,
+and inheriting no-op remote synchronization. BookOrbit fits only after its actual API is verified;
+the shared contract does not assume Kavita-compatible identifiers or wire formats.
 
-- A local deletion remains as a tombstone until the provider acknowledges it.
-- A remote deletion wins over a pending edit, preventing accidental resurrection.
-- A change made on only one side is applied to the other side.
-- If both sides changed after their last common revision, the remote version wins and the conflict
-  is logged.
-- A remote anchor that cannot be mapped safely is skipped rather than attached to the wrong text.
+Runtime-loaded plugins, source-file deletion, cross-provider deduplication, non-EPUB rendering,
+and sync-only services are separate designs. They must not expand the provider contract until the
+product needs them.
 
-Kavita translates the canonical range to and from its XPath annotations. BookOrbit may use a
-different translation while sharing the same local queue and reconciliation policy. Local uses the
-default successful no-op methods and retains highlights exclusively in Room.
+## Links
 
-## Responsibility Matrix
-
-| Concern                      | Shared Kanshu | Kavita            | Local          | BookOrbit      |
-| ---------------------------- | ------------- | ----------------- | -------------- | -------------- |
-| Unified catalog and cache    | Yes           | API adapter       | File discovery | API adapter    |
-| Managed-file lifecycle       | Yes           | Download bytes    | Copy source    | Download bytes |
-| EPUB parsing and opening     | Yes           | No                | No             | No             |
-| Immediate progress storage   | Yes           | No                | No             | No             |
-| Remote progress translation  | No            | kosync            | No-op          | Provider API   |
-| Immediate highlight storage  | Yes           | No                | No             | No             |
-| Remote highlight translation | No            | XPath annotations | No-op          | Provider API   |
-| Retry and conflict policy    | Yes           | No                | No             | No             |
-
-BookOrbit is a valid future provider because it supplies a catalog and files and documents
-bidirectional progress and annotation synchronization across its clients. Its concrete API must be
-verified before implementing `BookOrbitProvider`; this design does not assume Kavita-compatible
-wire formats.
-
-## Implementation Status
-
-### 1. Provider identity — complete
-
-- Added provider instance, descriptor, key, capability, and result models.
-- Persisted provider ownership on books, replacing source-prefixed ID parsing as the dispatch
-  mechanism.
-- Added a registry containing the existing Kavita configuration as the first instance.
-
-### 2. Kavita catalog and acquisition — complete
-
-- Moved `BookRepositoryImpl`'s Kavita API behavior behind `KavitaProvider`.
-- Made the shared repository aggregate provider catalog results and own cached download state.
-- Preserved current library, download, and offline behavior.
-
-### 3. Shared EPUB opening — complete
-
-- Replaced `ReaderSource.openBook(seriesId)` with a shared opener accepting the acquired Kanshu
-  book.
-- Kept publication construction and reader behavior unchanged.
-
-### 4. Progress routing — complete
-
-- Moved `KavitaProgressAdapter` behind `KavitaProvider` methods.
-- Kept `ProgressRepository` responsible for Room, debounce, retry, and remote comparison.
-
-### 5. Highlight routing — contract complete, transport deferred
-
-- Added provider-neutral provider method inputs and outputs.
-- Add pending changes, tombstones, and opaque remote metadata when transport is implemented.
-- Implement Kavita XPath conversion and annotation API calls behind `KavitaProvider`.
-
-### 6. Local provider — deferred
-
-- Register one built-in **On this device** provider instance.
-- Support individually imported documents and configured SAF folders.
-- Copy acquired EPUBs into managed storage and use the default successful no-op sync methods.
-
-BookOrbit is implemented only after the boundary is proven with Kavita and Local.
-
-## Testing Strategy
-
-- Provider contract tests cover catalog, acquisition, successful optional-operation defaults,
-  authentication, network failure, and malformed responses.
-- Registry and repository tests cover multiple configured instances and routing by provider owner.
-- Unified-library tests cover duplicate provider item IDs, partial outages, cached stale results,
-  and disabled providers.
-- Acquisition tests prove all providers produce managed files and cache removal never touches the
-  source.
-- Shared-opener regression tests prove a Kavita EPUB opens identically after `ReaderSource` is
-  removed.
-- Progress tests preserve existing debounce and further-remote behavior while testing the
-  provider-defined successful no-op.
-- Highlight tests cover pull, create, update, deletion tombstones, retries, conflicts, and
-  unresolvable anchors.
-- `./gradlew build` remains the canonical implementation gate.
-
-## Deferred Work
-
-- BookOrbit API implementation.
-- Runtime-loaded provider plugins.
-- Cross-provider content deduplication or state sharing.
-- Deleting or modifying a provider's source files.
-- Sync-only integrations such as Readwise and Hardcover.
-- Non-EPUB acquisition and rendering.
-- Provider-specific library UI beyond optional filtering.
+- [Kanshu PRD](../PRD.md)
+- [Native Reader Engine](native-reader.md)
+- [Kavita API research](../research/kavita-api.md)

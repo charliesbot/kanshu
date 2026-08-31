@@ -8,7 +8,8 @@ data class ParseDiagnostics(
 
 /**
  * Measurement of how a spine item expresses styling — the admission mechanism for the publisher
- * styles property allowlist. See docs/design/publisher-styles-engine.md § Diagnostics.
+ * styles property allowlist. See docs/design/publisher-styles-engine.md § Diagnostics and property
+ * admission.
  */
 data class StylingCensus(
   val classAttributeCount: Int = 0,

@@ -132,7 +132,8 @@ class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
         else -> throw KavitaException.Unknown("HTTP ${response.status.value}")
       }
       // Kavita returns application/zip for multi-file chapters. Phase 0 only supports the
-      // single-file EPUB case (see docs/research/kavita-api.md). Reject anything else so we never write
+      // single-file EPUB case (see docs/research/kavita-api.md). Reject anything else so we never
+      // write
       // a bogus payload to disk. Strip parameters first — a future "; charset=…" appended by
       // the server must not cause a false reject.
       val ct = response.contentType()?.withoutParameters()
