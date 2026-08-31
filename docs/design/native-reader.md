@@ -125,7 +125,9 @@ handling to a text widget or browser.
 
 Persistent highlights use flattened-text offsets and are drawn against layout geometry. Selection
 may continue across pages within the current spine item; cross-spine ownership remains above
-`ReaderPageViewer` because changing spine items replaces its document.
+`ReaderPageViewer` because changing spine items replaces its document. Source element paths used to
+translate those offsets for provider synchronization are defined in
+[Highlight Persistence and Synchronization](highlight-persistence-and-sync.md).
 
 ### Progress identity
 
@@ -174,5 +176,6 @@ measurement-free page-turn invariants do not change.
 
 - [Kanshu PRD](../PRD.md)
 - [Publisher Styles Engine](publisher-styles-engine.md)
+- [Highlight Persistence and Synchronization](highlight-persistence-and-sync.md)
 - [Kindle CSS Application Model](../research/kindle-typography.md)
 - [Boox SDK research](../research/boox-sdk.md)

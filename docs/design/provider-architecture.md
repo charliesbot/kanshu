@@ -158,21 +158,14 @@ must not silently become a false precise local position.
 
 ### Highlight replication
 
-The canonical highlight uses spine index, flattened-text character offsets, selected text, color,
-and timestamps. Shared annotation persistence owns immediate local writes, pending changes,
-tombstones, retries, and conflict policy. Providers translate between that canonical range and
-their remote representation and store remote IDs or revisions as opaque metadata.
-
-Reconciliation follows these rules:
-
-- A local deletion remains a tombstone until acknowledged remotely.
-- A remote deletion wins over a pending edit to prevent resurrection.
-- A one-sided change is copied to the other side.
-- Concurrent changes resolve to the remote version and record the conflict.
-- An unsafe remote anchor is skipped rather than attached to the wrong text.
-
-Kavita translates canonical ranges to and from XPath annotations. A provider without remote
+The canonical highlight uses spine index and flattened-text character offsets. Shared annotation
+persistence owns immediate local writes, pending changes, tombstones, and retries. Providers
+translate between that canonical range and their remote representation; a provider without remote
 annotations uses the successful no-op implementation and keeps highlights exclusively in Room.
+
+The complete local model, synchronization order, conflict behavior, source-element translation,
+and Kavita XPath handling are defined in
+[Highlight Persistence and Synchronization](highlight-persistence-and-sync.md).
 
 ### Capability and failure semantics
 
@@ -199,4 +192,5 @@ product needs them.
 
 - [Kanshu PRD](../PRD.md)
 - [Native Reader Engine](native-reader.md)
+- [Highlight Persistence and Synchronization](highlight-persistence-and-sync.md)
 - [Kavita API research](../research/kavita-api.md)
