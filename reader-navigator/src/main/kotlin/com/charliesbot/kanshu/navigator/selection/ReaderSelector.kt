@@ -59,7 +59,7 @@ internal object ReaderSelector {
 
   /**
    * The link href at a tap position, or null when the tap is not on link text. Same geometry
-   * pipeline as selection (docs/design/native-reader.md § Link and Footnote Taps): strict bounds, no
+   * pipeline as selection (docs/design/native-reader.md § Interaction geometry): strict bounds, no
    * clamping — a miss falls through to the tap zones.
    */
   fun linkHrefAt(

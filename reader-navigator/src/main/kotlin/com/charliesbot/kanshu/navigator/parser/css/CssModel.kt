@@ -81,8 +81,8 @@ private val CSS_VALUE_WHITESPACE = Regex("""\s+""")
 /**
  * A CSS length normalized to em, or null for values the cascade treats as "no signal" (`auto`,
  * percentages, negatives, unparseable). Nominal ratios: 1em = 16px = 12pt. Clamping to the
- * per-property ranges happens where the value is applied; see docs/design/publisher-styles-engine.md §
- * Structural Spacing.
+ * per-property ranges happens where the value is applied; see
+ * docs/design/publisher-styles-engine.md § Structural spacing normalization.
  */
 internal fun parseCssLengthToEm(value: String): Float? {
   val trimmed = value.trim().lowercase()

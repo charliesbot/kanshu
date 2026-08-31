@@ -14,7 +14,8 @@ internal data class ResolvedStyle(
   val bold: Boolean? = null,
   val textAlign: CssTextAlign? = null,
   // Structural spacing, normalized to em and clamped at application time (see
-  // docs/design/publisher-styles-engine.md § Structural Spacing). Margins do NOT inherit per CSS —
+  // docs/design/publisher-styles-engine.md § Structural spacing normalization). Margins do NOT
+  // inherit per CSS —
   // InheritedStyleResolver strips them before passing a parent style down; text-indent inherits.
   val marginTopEm: Float? = null,
   val marginBottomEm: Float? = null,
@@ -233,7 +234,9 @@ private fun ResolvedStyle.applyingLength(
   set: ResolvedStyle.(Float) -> ResolvedStyle,
 ): ResolvedStyle = parseCssLengthToEm(value)?.let { set(it.coerceAtMost(maxEm)) } ?: this
 
-// Normalization clamps from docs/design/publisher-styles-engine.md § Structural Spacing. Lengths are
+// Normalization clamps from docs/design/publisher-styles-engine.md § Structural spacing
+// normalization. Lengths
+// are
 // already non-negative (parseCssLengthToEm treats negatives as no signal).
 private const val MAX_VERTICAL_MARGIN_EM = 2f
 private const val MAX_TEXT_INDENT_EM = 3f
