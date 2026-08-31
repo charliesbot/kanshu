@@ -83,6 +83,18 @@ mechanism. A provider adapter formats them into its wire representation. Kavita 
 XPath; another provider can use a different representation without changing the persisted local
 offset semantics.
 
+`SourceElementPath` is a zero-based list of element-child indexes relative to the XHTML `<body>`:
+
+```kotlin
+data class SourceElementPath(val childIndexes: List<Int>)
+```
+
+Each step indexes `Element.children()`, so indentation text and comments do not affect the path. The
+path contains neither tag names nor provider syntax. Resolving it produces the original XHTML
+element; the Kavita adapter then derives Kavita's one-based, same-tag-sibling XPath. An incoming
+Kavita XPath is resolved to an element first, then converted to the same child-index path. Room
+stores the integer list directly through ordinary serialization rather than a custom packed format.
+
 The same mapping supports the reverse direction: a provider adapter resolves its wire anchor to a
 source element range, and `:reader-navigator` maps a selected-text match within that range to
 flattened-text offsets. Provider adapters must not independently reimplement Kanshu's whitespace
@@ -154,9 +166,21 @@ first occurrence rather than the originally selected occurrence. Kanshu follows 
 behavior so both readers agree. If the XPath cannot be resolved or the selected text is absent,
 Kanshu skips the remote annotation rather than highlighting unrelated text.
 
-Kavita stores a color slot rather than an RGB value. Kanshu maintains one stable mapping between its
-five highlight colors and Kavita's slots. The exact displayed web color can differ if the Kavita
-user customizes those slots.
+Kavita stores a color slot rather than an RGB value. The mapping is private to `KavitaProvider`:
+
+```text
+Aqua   <-> slot 0
+Green  <-> slot 1
+Yellow <-> slot 2
+Orange <-> slot 3
+Pink   <-> slot 4
+```
+
+This follows Kavita's default cyan, green, yellow, orange, and magenta slot order. Shared annotation
+code and `:reader-navigator` know only `ReaderHighlightColor`; every provider owns translation to
+its wire representation. The mapping is explicit rather than based on Kotlin enum ordinals. Because
+Kavita users can customize slot colors, the exact displayed web color may differ, but a slot always
+round-trips to the same Kanshu color.
 
 ### Deliberate limits
 
@@ -165,12 +189,6 @@ offsets or source paths may then become invalid; this is accepted for the curren
 scope. There are no resource fingerprints, prefix or suffix selectors, fuzzy re-anchoring, conflict
 history, background scheduling, cross-provider annotation sharing, or cross-spine highlights in
 this design.
-
-## Open questions
-
-- What compact `SourceElementPath` representation gives stable XPath conversion without storing
-  provider-specific XPath strings in the native reader model?
-- Which Kanshu color maps to each of Kavita's five user-configurable highlight slots?
 
 ## Links
 
