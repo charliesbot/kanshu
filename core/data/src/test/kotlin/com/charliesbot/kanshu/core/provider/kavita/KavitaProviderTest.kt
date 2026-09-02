@@ -34,7 +34,7 @@ class KavitaProviderTest {
     coEvery { credentials.credentials } returns
       flowOf(KavitaCredentials("https://kavita.example/", "key&value"))
     coEvery { api.listSeries(any(), any(), any(), any()) } returns
-      listOf(SeriesDto(id = 42, name = "Book", coverImage = "revision"))
+      listOf(SeriesDto(id = 42, name = "Book", coverImage = "revision", libraryId = 9))
 
     val result = provider.fetchCatalog() as ProviderResult.Success
     val book = result.value.single()
@@ -44,6 +44,7 @@ class KavitaProviderTest {
     assertEquals("application/epub+zip", book.mediaType)
     assertEquals("revision", book.revisionToken)
     assertEquals(ProviderCover.Available, book.cover)
+    assertEquals(mapOf("seriesId" to "42", "libraryId" to "9"), book.providerMetadata)
   }
 
   @Test
@@ -89,7 +90,10 @@ class KavitaProviderTest {
 
     val result = provider.acquire(ProviderBookKey(KavitaProvider.ID, "42"), target) { _, _ -> }
 
-    assertEquals(3L, (result as ProviderResult.Success).value.byteSize)
+    val acquired = (result as ProviderResult.Success).value
+    assertEquals(3L, acquired.byteSize)
+    assertEquals("10", acquired.providerMetadata["volumeId"])
+    assertEquals("100", acquired.providerMetadata["chapterId"])
     coVerify { api.downloadChapter(any(), any(), 100, target, any()) }
     target.delete()
   }
