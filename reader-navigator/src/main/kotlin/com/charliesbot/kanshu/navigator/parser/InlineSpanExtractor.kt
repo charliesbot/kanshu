@@ -1,5 +1,6 @@
 package com.charliesbot.kanshu.navigator.parser
 
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 import com.charliesbot.kanshu.navigator.model.InlineStyle
 import com.charliesbot.kanshu.navigator.model.LinkSpan
 import com.charliesbot.kanshu.navigator.model.TextLeaf
@@ -48,12 +49,27 @@ internal class InlineSpanExtractor(
       when (node) {
         is TextNode -> {
           val text = node.text()
-          if (text.isEmpty()) emptyList() else listOf(TextLeaf(text = text, style = inheritedStyle))
+          if (text.isEmpty()) emptyList()
+          else
+            listOf(
+              TextLeaf(
+                text = text,
+                style = inheritedStyle,
+                sourceElementPath = node.sourceElementPath(),
+              )
+            )
         }
 
         is Element ->
           when (node.tagName().lowercase()) {
-            "br" -> listOf(TextLeaf(text = "\n", style = inheritedStyle))
+            "br" ->
+              listOf(
+                TextLeaf(
+                  text = "\n",
+                  style = inheritedStyle,
+                  sourceElementPath = node.sourceElementPath(),
+                )
+              )
 
             "strong",
             "b" -> extractInternal(node.childNodes(), styled(node, mergeBold(inheritedStyle)))
@@ -159,4 +175,20 @@ internal class InlineSpanExtractor(
       is LinkSpan -> span.children.joinToString("") { spanText(it) }
       else -> ""
     }
+}
+
+internal fun Node.sourceElementPath(): SourceElementPath? {
+  val element =
+    when (this) {
+      is Element -> this
+      else -> parent() as? Element
+    } ?: return null
+  val indexes = mutableListOf<Int>()
+  var current: Element? = element
+  while (current != null && !current.tagName().equals("body", ignoreCase = true)) {
+    val parent = current.parent() ?: return null
+    indexes += parent.children().indexOf(current)
+    current = parent
+  }
+  return if (current == null) null else SourceElementPath(indexes.asReversed())
 }

@@ -179,7 +179,7 @@ internal class BlockLevelParser(
     return if (trimmed.isEmpty()) null
     else
       ParagraphBlock(
-        listOf(TextLeaf(trimmed)),
+        listOf(TextLeaf(trimmed, sourceElementPath = owner?.sourceElementPath())),
         alignment = publisherAlignment(owner),
         spacing = publisherSpacing(owner),
       )

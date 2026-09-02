@@ -163,7 +163,15 @@ fun ReaderPageViewer(
           }
         },
         onLinkTapped = onLinkTapped,
-        onTextSelected = { info -> onTextSelected?.invoke(info) },
+        onTextSelected = { info ->
+          val startPath = document.sourceMap.pathAt(info.startCharOffset)
+          val endPath = document.sourceMap.pathAt(info.endCharOffset - 1)
+          if (startPath != null && endPath != null) {
+            onTextSelected?.invoke(
+              info.copy(startElementPath = startPath, endElementPath = endPath)
+            )
+          }
+        },
         highlights = highlights,
         onHighlightTapped = onHighlightTapped,
         clearSelectionToken = clearSelectionToken,
