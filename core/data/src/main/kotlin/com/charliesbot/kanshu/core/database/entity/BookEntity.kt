@@ -32,4 +32,5 @@ data class BookEntity(
   @ColumnInfo(name = "downloaded_at") val downloadedAt: Long?,
   @ColumnInfo(name = "last_opened_at") val lastOpenedAt: Long?,
   @ColumnInfo(name = "cover_token") val coverToken: String? = null,
+  @ColumnInfo(name = "provider_metadata") val providerMetadata: String? = null,
 )

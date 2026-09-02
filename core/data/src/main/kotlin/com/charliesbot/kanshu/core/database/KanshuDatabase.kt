@@ -11,7 +11,7 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 
 @Database(
   entities = [BookEntity::class, ReadingProgressEntity::class, AnnotationEntity::class],
-  version = 7,
+  version = 8,
   exportSchema = false,
 )
 abstract class KanshuDatabase : RoomDatabase() {

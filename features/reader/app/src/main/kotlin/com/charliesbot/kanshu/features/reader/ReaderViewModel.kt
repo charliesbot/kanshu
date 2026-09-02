@@ -12,6 +12,7 @@ import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinator
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.ProgressRepository
@@ -71,6 +72,7 @@ class ReaderViewModel(
   private val preferencesRepository: ReaderPreferencesRepository,
   private val progressRepository: ProgressRepository,
   private val annotationRepository: AnnotationRepository,
+  private val annotationSyncCoordinator: AnnotationSyncCoordinator? = null,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -355,17 +357,26 @@ class ReaderViewModel(
         startCharOffset = selection.startCharOffset,
         endCharOffset = selection.endCharOffset,
         selectedText = selection.text,
+        startElementPath = selection.startElementPath,
+        endElementPath = selection.endElementPath,
         color = color,
       )
+      synchronizeAnnotations()
     }
   }
 
   fun removeHighlight(id: String) {
-    viewModelScope.launch { annotationRepository.delete(id) }
+    viewModelScope.launch {
+      annotationRepository.delete(id)
+      synchronizeAnnotations()
+    }
   }
 
   fun setHighlightColor(id: String, color: ReaderHighlightColor) {
-    viewModelScope.launch { annotationRepository.updateHighlightColor(id, color) }
+    viewModelScope.launch {
+      annotationRepository.updateHighlightColor(id, color)
+      synchronizeAnnotations()
+    }
   }
 
   private fun observeHighlights(chapterToken: Long) {
@@ -553,6 +564,26 @@ class ReaderViewModel(
         diagnostics = item.diagnostics,
       )
     observeHighlights(chapterToken)
+    viewModelScope.launch { synchronizeAnnotations() }
+  }
+
+  private suspend fun synchronizeAnnotations() {
+    val coordinator = annotationSyncCoordinator ?: return
+    val session = openSession ?: return
+    coordinator.synchronize(
+      bookId = session.bookId,
+      file = session.file,
+      publication = session.publication,
+      sourceMapForSpine = { spineIndex ->
+        val item =
+          session.spineItems[spineIndex]
+            ?: withContext(ioDispatcher) {
+                session.publication.readSpineItemAt(spineIndex, session.stylesheets)
+              }
+              ?.also { session.spineItems[spineIndex] = it }
+        item?.document?.sourceMap?.let(::ReaderProviderSourceMap)
+      },
+    )
   }
 
   override fun onCleared() {

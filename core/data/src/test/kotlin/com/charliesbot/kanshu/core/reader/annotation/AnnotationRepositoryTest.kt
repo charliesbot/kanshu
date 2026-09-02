@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.core.reader.annotation
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -20,12 +21,15 @@ class AnnotationRepositoryTest {
   fun `updateHighlightColor updates the stored annotation color and timestamp`() = runTest {
     val dao =
       mockk<AnnotationDao> {
-        coEvery { updateColor("annotation-id", "AQUA", 1_700L) } returns Unit
+        coEvery { find("annotation-id") } returns annotationEntity("annotation-id", "YELLOW")
+        coEvery { updateColor("annotation-id", "AQUA", 1_700L, "SYNCED") } returns Unit
       }
 
     repository(dao).updateHighlightColor("annotation-id", ReaderHighlightColor.Aqua)
 
-    coVerify(exactly = 1) { dao.updateColor("annotation-id", "AQUA", 1_700L) }
+    coVerify(exactly = 1) {
+      dao.updateColor("annotation-id", "AQUA", 1_700L, "SYNCED")
+    }
   }
 
   @Test
@@ -93,11 +97,48 @@ class AnnotationRepositoryTest {
           startCharOffset = 10,
           endCharOffset = 20,
           selectedText = "words",
+          bookId = "kavita:7",
           createdAt = 5L,
         )
       ),
       annotations,
     )
+  }
+
+  @Test
+  fun syncCapableCreateStoresPathsAsPendingUpsert() = runTest {
+    val stored = slot<AnnotationEntity>()
+    val dao = mockk<AnnotationDao> { coEvery { upsert(capture(stored)) } returns Unit }
+
+    repository(dao, syncEnabled = true)
+      .addHighlight(
+        bookId = "kavita:7",
+        spineIndex = 2,
+        startCharOffset = 4,
+        endCharOffset = 9,
+        selectedText = "words",
+        startElementPath = SourceElementPath(listOf(0, 1)),
+        endElementPath = SourceElementPath(listOf(0, 2)),
+      )
+
+    assertEquals("PENDING_UPSERT", stored.captured.syncState)
+    assertEquals("[0,1]", stored.captured.startElementPath)
+    assertEquals("[0,2]", stored.captured.endElementPath)
+  }
+
+  @Test
+  fun syncCapableLinkedDeleteLeavesPendingTombstone() = runTest {
+    val row = annotationEntity("annotation-id", "YELLOW").copy(remoteId = "remote-1")
+    val dao =
+      mockk<AnnotationDao> {
+        coEvery { find("annotation-id") } returns row
+        coEvery { markPendingDelete("annotation-id", 1_700L) } returns Unit
+      }
+
+    repository(dao, syncEnabled = true).delete("annotation-id")
+
+    coVerify { dao.markPendingDelete("annotation-id", 1_700L) }
+    coVerify(exactly = 0) { dao.delete(any()) }
   }
 
   @Test
@@ -117,8 +158,16 @@ class AnnotationRepositoryTest {
     )
   }
 
-  private fun repository(dao: AnnotationDao): AnnotationRepository =
-    AnnotationRepositoryImpl(annotationDao = dao, now = { 1_700L }, newId = { "annotation-id" })
+  private fun repository(
+    dao: AnnotationDao,
+    syncEnabled: Boolean = false,
+  ): AnnotationRepository =
+    AnnotationRepositoryImpl(
+      annotationDao = dao,
+      highlightSyncEnabled = { syncEnabled },
+      now = { 1_700L },
+      newId = { "annotation-id" },
+    )
 }
 
 private fun annotationEntity(id: String, color: String): AnnotationEntity =

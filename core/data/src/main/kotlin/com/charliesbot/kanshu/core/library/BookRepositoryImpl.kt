@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class BookRepositoryImpl(
   private val providers: ProviderRegistry,
@@ -78,6 +80,8 @@ class BookRepositoryImpl(
                 downloadedAt = null,
                 lastOpenedAt = null,
                 coverToken = book.revisionToken,
+                providerMetadata =
+                  book.providerMetadata.takeIf { it.isNotEmpty() }?.let(Json::encodeToString),
               )
             }
           bookDao.syncBooks(
@@ -185,7 +189,11 @@ class BookRepositoryImpl(
       val providerId = ProviderInstanceId(existingBook.providerInstanceId)
       val provider = providers.provider(providerId)
       val result =
-        provider.acquire(existingBook.providerBookKey(), tmp) { bytesSoFar, totalBytes ->
+        provider.acquire(
+          existingBook.providerBookKey(),
+          decodeProviderMetadata(existingBook.providerMetadata),
+          tmp,
+        ) { bytesSoFar, totalBytes ->
           val pct =
             if (totalBytes != null && totalBytes > 0) {
               ((bytesSoFar * 100) / totalBytes).toInt().coerceIn(0, 100)
@@ -223,6 +231,12 @@ class BookRepositoryImpl(
           downloadedAt = System.currentTimeMillis(),
           lastOpenedAt = null,
           coverToken = existingBook.coverToken,
+          providerMetadata =
+            (result as ProviderResult.Success)
+              .value
+              .providerMetadata
+              .takeIf { it.isNotEmpty() }
+              ?.let(Json::encodeToString) ?: existingBook.providerMetadata,
         )
       )
       _inFlight.update { it - bookId }
@@ -278,3 +292,8 @@ private fun List<ProviderError>.toLibraryError(): LibraryResult =
     any { it == ProviderError.MalformedResponse } -> LibraryResult.Error.UnexpectedResponse
     else -> LibraryResult.Error.Unknown
   }
+
+private fun decodeProviderMetadata(value: String?): Map<String, String> =
+  value
+    ?.let { runCatching { Json.decodeFromString<Map<String, String>>(it) }.getOrNull() }
+    .orEmpty()
