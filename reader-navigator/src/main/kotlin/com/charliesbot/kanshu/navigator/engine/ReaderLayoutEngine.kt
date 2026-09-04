@@ -4,7 +4,6 @@ import android.text.StaticLayout
 import com.charliesbot.kanshu.navigator.model.HorizontalRule
 import com.charliesbot.kanshu.navigator.model.ImageBlock
 import com.charliesbot.kanshu.navigator.model.ListBlock
-import com.charliesbot.kanshu.navigator.model.ListItem
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import kotlin.math.max
@@ -100,7 +99,6 @@ class ReaderLayoutEngine {
           blockIndex = index,
           block = block,
           style = style,
-          depth = 0,
           contentWidthPx = contentWidthPx,
           justify = justify,
           selectionId = ::syntheticSelectionId,
@@ -365,63 +363,39 @@ private fun appendListBlock(
   blockIndex: Int,
   block: ListBlock,
   style: BlockStyle,
-  depth: Int,
   contentWidthPx: Int,
   justify: Boolean,
   selectionId: () -> Int,
   measuredBlocks: MutableList<MeasuredBlock>,
   cursor: TextStreamCursor,
 ) {
-  block.items.forEachIndexed { itemIndex, item ->
-    val textBlocks = mutableListOf<ReaderBlock>()
-    var emittedItemText = false
-
-    fun flushTextBlocks() {
-      val text = SpanFlattener.flatten(ListItem(textBlocks))
-      // Markers are drawn from `markerText`, never flattened into the text, so bullets and
-      // numbers stay out of the stream the way the progress model requires.
-      val textStartCharOffset = cursor.take(text?.length ?: 0)
-      if (!text.isNullOrBlank()) {
-        measuredBlocks.add(
-          MeasuredBlock.Text(
-            blockIndex = blockIndex,
-            selectionId = selectionId(),
-            style = style,
-            layout =
-              StaticLayoutFactory.build(text, style.withListDepth(depth), contentWidthPx, justify),
-            textJustified = justify,
-            markerText =
-              if (emittedItemText) null
-              else if (block.ordered) "${itemIndex + 1}." else BULLET_MARKER,
-            depth = depth,
-            textStartCharOffset = textStartCharOffset,
-          )
-        )
-        emittedItemText = true
-      }
-      textBlocks.clear()
-    }
-
-    item.blocks.forEach { child ->
-      if (child is ListBlock) {
-        flushTextBlocks()
-        appendListBlock(
+  SpanFlattener.flattenListRuns(block).forEach { run ->
+    val text = run.content.styledText()
+    // Markers are drawn from `markerText`, never flattened into the text, so bullets and
+    // numbers stay out of the stream the way the progress model requires.
+    val textStartCharOffset = cursor.take(text.length)
+    if (!text.isBlank()) {
+      measuredBlocks.add(
+        MeasuredBlock.Text(
           blockIndex = blockIndex,
-          block = child,
+          selectionId = selectionId(),
           style = style,
-          depth = depth + 1,
-          contentWidthPx = contentWidthPx,
-          justify = justify,
-          selectionId = selectionId,
-          measuredBlocks = measuredBlocks,
-          cursor = cursor,
+          layout =
+            StaticLayoutFactory.build(
+              text,
+              style.withListDepth(run.depth),
+              contentWidthPx,
+              justify,
+            ),
+          textJustified = justify,
+          markerText =
+            if (!run.startsItem) null
+            else if (run.ordered) "${run.itemIndex + 1}." else BULLET_MARKER,
+          depth = run.depth,
+          textStartCharOffset = textStartCharOffset,
         )
-      } else {
-        textBlocks.add(child)
-      }
+      )
     }
-
-    flushTextBlocks()
   }
 }
 

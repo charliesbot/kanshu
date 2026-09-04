@@ -34,10 +34,18 @@ object EpubParser {
 
     val document = Jsoup.parse(xhtml)
     val styles = InheritedStyleResolver(CssStyleResolver(stylesheets))
-    val blocks = BlockLevelParser(diagnostics, baseHref, styles).parse(document.body().childNodes())
+    val sourceIndex = SourceElementIndex.create(document.body())
+    val blocks =
+      BlockLevelParser(diagnostics, baseHref, styles, sourceIndex)
+        .parse(document.body().childNodes())
 
     return ParseResult(
-      document = ReaderDocument(blocks = blocks, language = extractLanguage(document)),
+      document =
+        ReaderDocument(
+          blocks = blocks,
+          language = extractLanguage(document),
+          sourceMap = sourceIndex.sourceMap(blocks),
+        ),
       diagnostics =
         diagnostics
           .build()

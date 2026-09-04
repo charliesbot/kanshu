@@ -13,6 +13,7 @@ import org.jsoup.nodes.TextNode
 internal class InlineSpanExtractor(
   private val diagnostics: ParseDiagnosticsCollector,
   private val styles: InheritedStyleResolver,
+  private val sourceIndex: SourceElementIndex,
   private val baseHref: String? = null,
 ) {
   fun extract(nodes: List<Node>, inheritedStyle: InlineStyle = InlineStyle.Plain): List<TextSpan> =
@@ -48,12 +49,12 @@ internal class InlineSpanExtractor(
       when (node) {
         is TextNode -> {
           val text = node.text()
-          if (text.isEmpty()) emptyList() else listOf(TextLeaf(text = text, style = inheritedStyle))
+          if (text.isEmpty()) emptyList() else listOf(textLeaf(text, inheritedStyle, node))
         }
 
         is Element ->
           when (node.tagName().lowercase()) {
-            "br" -> listOf(TextLeaf(text = "\n", style = inheritedStyle))
+            "br" -> listOf(textLeaf("\n", inheritedStyle, node))
 
             "strong",
             "b" -> extractInternal(node.childNodes(), styled(node, mergeBold(inheritedStyle)))
@@ -79,6 +80,9 @@ internal class InlineSpanExtractor(
         else -> emptyList()
       }
     }
+
+  private fun textLeaf(text: String, style: InlineStyle, source: Node): TextLeaf =
+    TextLeaf(text = text, style = style, sourceElementPath = sourceIndex.pathOf(source))
 
   /**
    * Tag semantics first, publisher CSS on top — but only values *declared* on this element (matched

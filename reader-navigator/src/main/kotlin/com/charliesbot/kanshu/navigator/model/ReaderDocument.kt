@@ -1,6 +1,12 @@
 package com.charliesbot.kanshu.navigator.model
 
-data class ReaderDocument(val blocks: List<ReaderBlock>, val language: String? = null)
+import com.charliesbot.kanshu.navigator.ReaderSourceMap
+
+data class ReaderDocument(
+  val blocks: List<ReaderBlock>,
+  val language: String? = null,
+  val sourceMap: ReaderSourceMap = ReaderSourceMap.Empty,
+)
 
 /**
  * Block AST for the native reader engine.

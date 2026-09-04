@@ -26,8 +26,9 @@ internal class BlockLevelParser(
   private val diagnostics: ParseDiagnosticsCollector,
   private val baseHref: String? = null,
   private val styles: InheritedStyleResolver,
+  private val sourceIndex: SourceElementIndex,
 ) {
-  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles, baseHref)
+  private val inlineSpanExtractor = InlineSpanExtractor(diagnostics, styles, sourceIndex, baseHref)
   private val headingParser = HeadingParser(inlineSpanExtractor, styles)
 
   fun parse(nodes: List<Node>): List<ReaderBlock> {
@@ -90,7 +91,7 @@ internal class BlockLevelParser(
 
       "table" -> {
         diagnostics.recordUnsupportedBlock("table")
-        textParagraph(element.text(), element)?.let(blocks::add)
+        tableParagraph(element)?.let(blocks::add)
       }
 
       else -> {
@@ -174,15 +175,30 @@ internal class BlockLevelParser(
     return imageBlock(image)
   }
 
-  private fun textParagraph(text: String, owner: Element? = null): ParagraphBlock? {
-    val trimmed = text.trim()
-    return if (trimmed.isEmpty()) null
-    else
-      ParagraphBlock(
-        listOf(TextLeaf(trimmed)),
-        alignment = publisherAlignment(owner),
-        spacing = publisherSpacing(owner),
-      )
+  private fun tableParagraph(table: Element): ParagraphBlock? {
+    val cells = table.select("th, td")
+    val spans =
+      if (cells.isEmpty()) {
+        table.text().trim().takeIf(String::isNotEmpty)?.let {
+          listOf(TextLeaf(it, sourceElementPath = sourceIndex.pathOf(table)))
+        }
+      } else {
+        cells.mapNotNull { cell ->
+          cell.text().trim().takeIf(String::isNotEmpty)?.let {
+            TextLeaf(it, sourceElementPath = sourceIndex.pathOf(cell))
+          }
+        }
+      }
+    if (spans.isNullOrEmpty()) return null
+
+    val separatedSpans = spans.flatMapIndexed { index, span ->
+      if (index == 0) listOf(span) else listOf(TextLeaf(" "), span)
+    }
+    return ParagraphBlock(
+      separatedSpans,
+      alignment = publisherAlignment(table),
+      spacing = publisherSpacing(table),
+    )
   }
 
   private fun Element.hasBlockDescendant(): Boolean = allElements.any { descendant ->

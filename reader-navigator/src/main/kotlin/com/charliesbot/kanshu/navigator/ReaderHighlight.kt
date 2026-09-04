@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.navigator
 
 import android.graphics.RectF
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 
 /**
  * A stored highlight, addressed the same way reading progress is: a half-open range of character
@@ -45,6 +46,8 @@ data class ReaderSelectionInfo(
   val anchor: RectF,
   val startCharOffset: Int,
   val endCharOffset: Int,
+  val startElementPath: SourceElementPath = SourceElementPath.Root,
+  val endElementPath: SourceElementPath = SourceElementPath.Root,
 ) {
   /** False when the engine reported a selection it could not resolve to stream offsets. */
   val hasRange: Boolean
