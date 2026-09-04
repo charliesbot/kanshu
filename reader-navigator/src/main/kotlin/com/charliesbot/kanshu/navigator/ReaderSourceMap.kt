@@ -1,17 +1,8 @@
 package com.charliesbot.kanshu.navigator
 
 import com.charliesbot.kanshu.core.reader.SourceElementPath
-import com.charliesbot.kanshu.navigator.model.HeadingBlock
-import com.charliesbot.kanshu.navigator.model.HorizontalRule
-import com.charliesbot.kanshu.navigator.model.ImageBlock
-import com.charliesbot.kanshu.navigator.model.LinkSpan
-import com.charliesbot.kanshu.navigator.model.ListBlock
-import com.charliesbot.kanshu.navigator.model.ParagraphBlock
-import com.charliesbot.kanshu.navigator.model.QuoteBlock
+import com.charliesbot.kanshu.navigator.engine.SpanFlattener
 import com.charliesbot.kanshu.navigator.model.ReaderBlock
-import com.charliesbot.kanshu.navigator.model.StyledGroup
-import com.charliesbot.kanshu.navigator.model.TextLeaf
-import com.charliesbot.kanshu.navigator.model.TextSpan
 
 data class ReaderSourceElement(
   val path: SourceElementPath,
@@ -102,88 +93,12 @@ internal constructor(
     val Empty = ReaderSourceMap("", emptyMap(), emptyList())
 
     fun create(blocks: List<ReaderBlock>, elements: List<ElementRecord>): ReaderSourceMap {
-      val builder = SourceTextBuilder()
-      blocks.forEach { block ->
-        if (block is ListBlock) builder.appendLayoutList(block) else builder.appendBlock(block)
-      }
+      val flattened = SpanFlattener.sourceStream(blocks)
       return ReaderSourceMap(
-        text = builder.text.toString(),
+        text = flattened.text,
         elements = elements.associateBy { it.path },
-        characterPaths = builder.paths,
+        characterPaths = flattened.sourcePaths,
       )
-    }
-  }
-}
-
-private class SourceTextBuilder {
-  val text = StringBuilder()
-  val paths = mutableListOf<SourceElementPath?>()
-
-  private fun append(value: String, path: SourceElementPath? = null) {
-    text.append(value)
-    repeat(value.length) { paths += path }
-  }
-
-  fun appendBlock(block: ReaderBlock) {
-    when (block) {
-      is HeadingBlock -> appendSpans(block.spans)
-      is ParagraphBlock -> appendSpans(block.spans)
-      is QuoteBlock -> appendBlocks(block.children, "\n\n")
-      is ListBlock ->
-        block.items.forEachIndexed { index, item ->
-          if (index > 0) append("\n")
-          appendBlocks(item.blocks, "\n\n")
-        }
-      is HorizontalRule,
-      is ImageBlock -> Unit
-    }
-  }
-
-  fun appendLayoutList(block: ListBlock) {
-    block.items.forEach { item ->
-      val buffered = mutableListOf<ReaderBlock>()
-      fun flush() {
-        appendBlocks(buffered, "\n\n")
-        buffered.clear()
-      }
-      item.blocks.forEach { child ->
-        if (child is ListBlock) {
-          flush()
-          appendLayoutList(child)
-        } else {
-          buffered += child
-        }
-      }
-      flush()
-    }
-  }
-
-  private fun appendBlocks(blocks: List<ReaderBlock>, separator: String) {
-    var emitted = false
-    blocks.forEach { block ->
-      val before = text.length
-      if (emitted) append(separator)
-      appendBlock(block)
-      if (text.length == before + if (emitted) separator.length else 0) {
-        if (emitted) {
-          text.delete(text.length - separator.length, text.length)
-          repeat(separator.length) { paths.removeAt(paths.lastIndex) }
-        }
-      } else {
-        emitted = true
-      }
-    }
-  }
-
-  private fun appendSpans(spans: List<TextSpan>) {
-    spans.forEach(::appendSpan)
-  }
-
-  private fun appendSpan(span: TextSpan) {
-    when (span) {
-      is TextLeaf -> append(span.text, span.sourceElementPath)
-      is StyledGroup -> span.children.forEach(::appendSpan)
-      is LinkSpan -> span.children.forEach(::appendSpan)
     }
   }
 }

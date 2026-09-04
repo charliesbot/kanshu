@@ -55,4 +55,18 @@ class ReaderSourceMapTest {
     assertEquals(SourceElementPath(listOf(0)), document.sourceMap.pathAt(1))
     assertEquals(SourceElementPath(listOf(1, 1)), document.sourceMap.pathAt(14))
   }
+
+  @Test
+  fun `table fallback text remains anchored to its source cells`() {
+    val map =
+      EpubParser.parse(
+          """<html><body><table><tr><td>left</td><td>right</td></tr></table></body></html>"""
+        )
+        .document
+        .sourceMap
+
+    // Jsoup inserts the HTML-standard tbody element while parsing the table.
+    assertEquals(SourceElementPath(listOf(0, 0, 0, 0)), map.pathAt(0))
+    assertEquals(SourceElementPath(listOf(0, 0, 0, 1)), map.pathAt(5))
+  }
 }

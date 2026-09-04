@@ -1,7 +1,5 @@
 package com.charliesbot.kanshu.navigator.parser
 
-import com.charliesbot.kanshu.core.reader.SourceElementPath
-import com.charliesbot.kanshu.navigator.ReaderSourceMap
 import com.charliesbot.kanshu.navigator.model.ParseResult
 import com.charliesbot.kanshu.navigator.model.ReaderDocument
 import com.charliesbot.kanshu.navigator.parser.css.CssStyleResolver
@@ -36,14 +34,17 @@ object EpubParser {
 
     val document = Jsoup.parse(xhtml)
     val styles = InheritedStyleResolver(CssStyleResolver(stylesheets))
-    val blocks = BlockLevelParser(diagnostics, baseHref, styles).parse(document.body().childNodes())
+    val sourceIndex = SourceElementIndex.create(document.body())
+    val blocks =
+      BlockLevelParser(diagnostics, baseHref, styles, sourceIndex)
+        .parse(document.body().childNodes())
 
     return ParseResult(
       document =
         ReaderDocument(
           blocks = blocks,
           language = extractLanguage(document),
-          sourceMap = ReaderSourceMap.create(blocks, sourceElements(document)),
+          sourceMap = sourceIndex.sourceMap(blocks),
         ),
       diagnostics =
         diagnostics
@@ -60,38 +61,6 @@ object EpubParser {
   fun stylesheetHrefs(xhtml: String, baseHref: String? = null): List<String> {
     if (xhtml.isBlank()) return emptyList()
     return Jsoup.parse(xhtml).stylesheetLinkHrefs(baseHref)
-  }
-
-  private fun sourceElements(document: Document): List<ReaderSourceMap.ElementRecord> {
-    val body = document.body()
-    fun records(
-      parent: org.jsoup.nodes.Element,
-      parentPath: SourceElementPath,
-    ): List<ReaderSourceMap.ElementRecord> =
-      parent.children().flatMapIndexed { childIndex, child ->
-        val path = SourceElementPath(parentPath.childIndexes + childIndex)
-        val sameTagIndex =
-          parent.children().take(childIndex).count { it.tagName().equals(child.tagName(), true) }
-        val children = child.children().indices.map { SourceElementPath(path.childIndexes + it) }
-        listOf(
-          ReaderSourceMap.ElementRecord(
-            path = path,
-            tagName = child.tagName().lowercase(),
-            id = child.id().ifBlank { null },
-            sameTagSiblingIndex = sameTagIndex,
-            childPaths = children,
-          )
-        ) + records(child, path)
-      }
-    return listOf(
-      ReaderSourceMap.ElementRecord(
-        path = SourceElementPath.Root,
-        tagName = "body",
-        id = body.id().ifBlank { null },
-        sameTagSiblingIndex = 0,
-        childPaths = body.children().indices.map { SourceElementPath(listOf(it)) },
-      )
-    ) + records(body, SourceElementPath.Root)
   }
 
   private fun extractLanguage(document: Document): String? =
