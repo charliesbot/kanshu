@@ -9,6 +9,8 @@ data class SourceElementPath(val childIndexes: List<Int>) {
     require(childIndexes.all { it >= 0 }) { "Source element indexes must be non-negative" }
   }
 
+  fun child(index: Int): SourceElementPath = SourceElementPath(childIndexes + index)
+
   companion object {
     val Root = SourceElementPath(emptyList())
   }

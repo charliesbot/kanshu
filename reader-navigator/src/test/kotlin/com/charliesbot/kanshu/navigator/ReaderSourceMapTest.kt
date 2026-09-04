@@ -69,4 +69,47 @@ class ReaderSourceMapTest {
     assertEquals(SourceElementPath(listOf(0, 0, 0, 0)), map.pathAt(0))
     assertEquals(SourceElementPath(listOf(0, 0, 0, 1)), map.pathAt(5))
   }
+
+  @Test
+  fun `selection paths skip synthetic delimiters and fall back to body for an empty map`() {
+    val map =
+      EpubParser.parse(
+          """<html><body><table><tr><td>left</td><td>right</td></tr></table></body></html>"""
+        )
+        .document
+        .sourceMap
+
+    assertEquals(
+      SourceElementPath(listOf(0, 0, 0, 1)) to SourceElementPath(listOf(0, 0, 0, 1)),
+      map.resolveSelectionPaths(startCharOffset = 4, endCharOffset = 9),
+    )
+    assertEquals(
+      SourceElementPath(listOf(0, 0, 0, 0)) to SourceElementPath(listOf(0, 0, 0, 0)),
+      map.resolveSelectionPaths(startCharOffset = 0, endCharOffset = 5),
+    )
+    assertEquals(
+      SourceElementPath.Root to SourceElementPath.Root,
+      ReaderSourceMap.Empty.resolveSelectionPaths(startCharOffset = 0, endCharOffset = 1),
+    )
+  }
+
+  @Test
+  fun `literal matching treats top-level block boundaries as whitespace`() {
+    val map =
+      EpubParser.parse("""<html><body><p>Alpha</p><p>Beta</p></body></html>""").document.sourceMap
+
+    assertEquals(
+      0 until 9,
+      map.findFirstLiteralMatch(
+        SourceElementPath(listOf(0)),
+        SourceElementPath(listOf(1)),
+        "Alpha Beta",
+      ),
+    )
+  }
+
+  @Test
+  fun `public and offset-preserving whitespace normalization agree on unicode whitespace`() {
+    assertEquals("Alpha Beta", normalizeWhitespace("\u2003Alpha\t \nBeta\u2003"))
+  }
 }

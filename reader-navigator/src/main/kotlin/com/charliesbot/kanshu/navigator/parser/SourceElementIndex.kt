@@ -33,7 +33,7 @@ internal class SourceElementIndex(
             tagName = element.tagName().lowercase(),
             id = element.id().ifBlank { null },
             sameTagSiblingIndex = sameTagSiblingIndex,
-            childPaths = element.children().indices.map(path::child),
+            childCount = element.childrenSize(),
           )
 
         val siblingCounts = mutableMapOf<String, Int>()
@@ -50,6 +50,3 @@ internal class SourceElementIndex(
     }
   }
 }
-
-private fun SourceElementPath.child(index: Int): SourceElementPath =
-  SourceElementPath(childIndexes + index)

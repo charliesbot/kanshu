@@ -23,6 +23,7 @@ import com.charliesbot.kanshu.navigator.model.TextSpan
 internal class FlattenedText(
   val text: String,
   val sourcePaths: List<SourceElementPath?>,
+  val searchBoundaries: Set<Int>,
   internal val styleRanges: List<TextStyleRange>,
   internal val linkRanges: List<LinkRange>,
 ) {
@@ -72,11 +73,18 @@ internal object SpanFlattener {
   /** The exact stream consumed by layout, paired with the source element for every character. */
   fun sourceStream(blocks: List<ReaderBlock>): FlattenedText {
     val builder = FlattenedTextBuilder()
+
+    fun append(content: FlattenedText) {
+      if (content.text.isEmpty()) return
+      if (builder.isNotEmpty()) builder.markSearchBoundary()
+      builder.append(content)
+    }
+
     blocks.forEach { block ->
       if (block is ListBlock) {
-        flattenListRuns(block).forEach { builder.append(it.content) }
+        flattenListRuns(block).forEach { append(it.content) }
       } else {
-        flattenWithSources(block)?.let(builder::append)
+        flattenWithSources(block)?.let(::append)
       }
     }
     return builder.build()
@@ -187,6 +195,7 @@ internal object SpanFlattener {
 private class FlattenedTextBuilder {
   private val text = StringBuilder()
   private val sourcePaths = mutableListOf<SourceElementPath?>()
+  private val searchBoundaries = mutableSetOf<Int>()
   private val styleRanges = mutableListOf<TextStyleRange>()
   private val linkRanges = mutableListOf<LinkRange>()
   val length: Int
@@ -203,9 +212,14 @@ private class FlattenedTextBuilder {
     val offset = length
     text.append(value.text)
     sourcePaths += value.sourcePaths
+    searchBoundaries += value.searchBoundaries.map { it + offset }
     styleRanges +=
       value.styleRanges.map { it.copy(start = it.start + offset, end = it.end + offset) }
     linkRanges += value.linkRanges.map { it.copy(start = it.start + offset, end = it.end + offset) }
+  }
+
+  fun markSearchBoundary() {
+    if (text.isNotEmpty()) searchBoundaries += text.length
   }
 
   fun addStyle(start: Int, end: Int, style: InlineStyle) {
@@ -222,6 +236,7 @@ private class FlattenedTextBuilder {
     FlattenedText(
       text = text.toString(),
       sourcePaths = sourcePaths.toList(),
+      searchBoundaries = searchBoundaries.toSet(),
       styleRanges = styleRanges.toList(),
       linkRanges = linkRanges.toList(),
     )
