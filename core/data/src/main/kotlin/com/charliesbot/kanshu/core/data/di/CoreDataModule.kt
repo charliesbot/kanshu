@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.data.di
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
@@ -23,6 +24,8 @@ import com.charliesbot.kanshu.core.reader.EpubOpenerImpl
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepositoryImpl
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinator
+import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinatorImpl
 import com.charliesbot.kanshu.core.reader.preferences.ReaderPreferencesRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.readerPreferencesDataStore
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -74,5 +77,25 @@ val coreDataModule = module {
   single<ProgressRepository> {
     ProgressRepositoryImpl(providers = get(), books = get(), progressDao = get())
   }
-  single<AnnotationRepository> { AnnotationRepositoryImpl(annotationDao = get()) }
+  single<AnnotationRepository> {
+    val database = get<KanshuDatabase>()
+    AnnotationRepositoryImpl(
+      annotationDao = database.annotationDao(),
+      highlightSyncEnabled = { bookId ->
+        val book = database.bookDao().find(bookId)
+        book != null &&
+          get<ProviderRegistry>()
+            .provider(
+              com.charliesbot.kanshu.core.provider.ProviderInstanceId(book.providerInstanceId)
+            )
+            .descriptor
+            .capabilities
+            .highlightSync
+      },
+      inTransaction = { block -> database.withTransaction { block() } },
+    )
+  }
+  single<AnnotationSyncCoordinator> {
+    AnnotationSyncCoordinatorImpl(providers = get(), books = get(), annotations = get())
+  }
 }

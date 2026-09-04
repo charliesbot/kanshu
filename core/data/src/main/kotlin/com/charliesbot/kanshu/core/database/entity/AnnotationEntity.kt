@@ -7,9 +7,6 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 
-// Provider-neutral local highlight state. The range uses character offsets into the chapter's
-// flattened text stream, the same primitive as ReaderPosition. Offsets survive typography changes;
-// provider-specific anchors such as Kavita XPath are derived at the provider boundary.
 @Entity(
   tableName = "annotations",
   foreignKeys =
@@ -21,7 +18,12 @@ import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
         onDelete = ForeignKey.CASCADE,
       )
     ],
-  indices = [Index("book_id"), Index(value = ["book_id", "spine_index"])],
+  indices =
+    [
+      Index("book_id"),
+      Index(value = ["book_id", "spine_index"]),
+      Index(value = ["book_id", "remote_id"], unique = true),
+    ],
 )
 data class AnnotationEntity(
   @PrimaryKey val id: String,
@@ -30,7 +32,11 @@ data class AnnotationEntity(
   @ColumnInfo(name = "start_char_offset") val startCharOffset: Int,
   @ColumnInfo(name = "end_char_offset") val endCharOffset: Int,
   @ColumnInfo(name = "selected_text") val selectedText: String,
+  @ColumnInfo(name = "start_element_path") val startElementPath: String = "[]",
+  @ColumnInfo(name = "end_element_path") val endElementPath: String = "[]",
   @ColumnInfo(name = "color") val color: String = ReaderHighlightColor.default.key,
   @ColumnInfo(name = "created_at") val createdAt: Long,
   @ColumnInfo(name = "updated_at") val updatedAt: Long,
+  @ColumnInfo(name = "remote_id") val remoteId: String? = null,
+  @ColumnInfo(name = "sync_state") val syncState: String = "SYNCED",
 )

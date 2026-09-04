@@ -48,6 +48,8 @@ interface BookDao {
         byteSize = existing?.byteSize,
         downloadedAt = existing?.downloadedAt,
         lastOpenedAt = existing?.lastOpenedAt,
+        providerMetadata =
+          if (existing?.localPath != null) existing.providerMetadata else remote.providerMetadata,
       )
     }
     toUpsert.forEach { upsert(it) }

@@ -278,6 +278,7 @@ class ProgressRepositoryImpl(
             ),
           file = file,
           publication = publication,
+          providerMetadata = decodeProviderMetadata(book.providerMetadata),
         )
     }
 
@@ -296,3 +297,11 @@ class ProgressRepositoryImpl(
     const val FLUSH_PUSH_TIMEOUT_MILLIS = 6_000L
   }
 }
+
+private fun decodeProviderMetadata(value: String?): Map<String, String> =
+  value
+    ?.let {
+      runCatching { kotlinx.serialization.json.Json.decodeFromString<Map<String, String>>(it) }
+        .getOrNull()
+    }
+    .orEmpty()

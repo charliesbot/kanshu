@@ -17,6 +17,7 @@ data class ProviderBook(
   val cover: ProviderCover?,
   val mediaType: String,
   val revisionToken: String?,
+  val providerMetadata: Map<String, String> = emptyMap(),
 )
 
 sealed interface ProviderCover {
