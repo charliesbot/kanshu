@@ -27,6 +27,8 @@ interface AnnotationDao {
 
   @Upsert suspend fun upsert(annotation: AnnotationEntity)
 
+  @Upsert suspend fun upsertAll(annotations: List<AnnotationEntity>)
+
   @Query(
     "UPDATE annotations SET color = :color, updated_at = :updatedAt, sync_state = :syncState " +
       "WHERE id = :id"
@@ -51,4 +53,6 @@ interface AnnotationDao {
   suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long): Int
 
   @Query("DELETE FROM annotations WHERE id = :id") suspend fun delete(id: String)
+
+  @Query("DELETE FROM annotations WHERE id IN (:ids)") suspend fun deleteAll(ids: List<String>)
 }

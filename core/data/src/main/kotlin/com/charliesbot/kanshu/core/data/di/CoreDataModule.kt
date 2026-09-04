@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.data.di
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
@@ -77,10 +78,11 @@ val coreDataModule = module {
     ProgressRepositoryImpl(providers = get(), books = get(), progressDao = get())
   }
   single<AnnotationRepository> {
+    val database = get<KanshuDatabase>()
     AnnotationRepositoryImpl(
-      annotationDao = get(),
+      annotationDao = database.annotationDao(),
       highlightSyncEnabled = { bookId ->
-        val book = get<KanshuDatabase>().bookDao().find(bookId)
+        val book = database.bookDao().find(bookId)
         book != null &&
           get<ProviderRegistry>()
             .provider(
@@ -90,6 +92,7 @@ val coreDataModule = module {
             .capabilities
             .highlightSync
       },
+      inTransaction = { block -> database.withTransaction { block() } },
     )
   }
   single<AnnotationSyncCoordinator> {

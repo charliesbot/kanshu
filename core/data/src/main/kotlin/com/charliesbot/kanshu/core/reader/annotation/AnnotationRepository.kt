@@ -3,6 +3,7 @@ package com.charliesbot.kanshu.core.reader.annotation
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.provider.HighlightChange
+import com.charliesbot.kanshu.core.provider.ProviderHighlight
 import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.SourceElementPath
@@ -76,6 +77,7 @@ interface AnnotationRepository {
 
 class AnnotationRepositoryImpl(
   private val annotationDao: AnnotationDao,
+  private val inTransaction: suspend (suspend () -> Unit) -> Unit,
   private val highlightSyncEnabled: suspend (String) -> Boolean = { false },
   private val now: () -> Long = System::currentTimeMillis,
   private val newId: () -> String = { UUID.randomUUID().toString() },
@@ -182,54 +184,51 @@ class AnnotationRepositoryImpl(
   }
 
   override suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot) {
-    val existing = annotationDao.forBook(bookId)
-    val byRemoteId = existing.mapNotNull { row -> row.remoteId?.let { it to row } }.toMap()
-    snapshot.highlights.forEach { remote ->
-      val local = byRemoteId[remote.remoteId]
-      if (local == null) {
-        annotationDao.upsert(
-          ReaderAnnotation(
-              id = newId(),
-              bookId = bookId,
-              spineIndex = remote.spineIndex,
-              startCharOffset = remote.startCharOffset,
-              endCharOffset = remote.endCharOffset,
-              selectedText = remote.selectedText,
-              startElementPath = remote.startElementPath,
-              endElementPath = remote.endElementPath,
-              color = remote.color,
-              createdAt = remote.createdAt,
-              updatedAt = remote.updatedAt,
-              remoteId = remote.remoteId,
-              syncState = HighlightSyncState.SYNCED,
-            )
-            .toEntity(json)
-        )
-      } else if (local.syncState == HighlightSyncState.SYNCED.name) {
-        annotationDao.upsert(
-          local.copy(
-            spineIndex = remote.spineIndex,
-            startCharOffset = remote.startCharOffset,
-            endCharOffset = remote.endCharOffset,
-            selectedText = remote.selectedText,
-            startElementPath = json.encodeToString(remote.startElementPath.childIndexes),
-            endElementPath = json.encodeToString(remote.endElementPath.childIndexes),
-            color = remote.color.key,
-            createdAt = remote.createdAt,
-            updatedAt = remote.updatedAt,
-          )
-        )
-      }
+    inTransaction {
+      val existing = annotationDao.forBook(bookId)
+      val byRemoteId = existing.mapNotNull { row -> row.remoteId?.let { it to row } }.toMap()
+      val upserts =
+        snapshot.highlights.mapNotNull { remote ->
+          val local = byRemoteId[remote.remoteId]
+          val localId =
+            when {
+              local == null -> newId()
+              local.syncState == HighlightSyncState.SYNCED.name -> local.id
+              else -> return@mapNotNull null
+            }
+          remote.toAnnotation(bookId, localId).toEntity(json)
+        }
+      val deletions =
+        existing
+          .filter {
+            it.remoteId != null &&
+              it.syncState == HighlightSyncState.SYNCED.name &&
+              it.remoteId !in snapshot.seenRemoteIds
+          }
+          .map { it.id }
+
+      if (upserts.isNotEmpty()) annotationDao.upsertAll(upserts)
+      if (deletions.isNotEmpty()) annotationDao.deleteAll(deletions)
     }
-    existing
-      .filter {
-        it.remoteId != null &&
-          it.syncState == HighlightSyncState.SYNCED.name &&
-          it.remoteId !in snapshot.seenRemoteIds
-      }
-      .forEach { annotationDao.delete(it.id) }
   }
 }
+
+private fun ProviderHighlight.toAnnotation(bookId: String, id: String): ReaderAnnotation =
+  ReaderAnnotation(
+    id = id,
+    bookId = bookId,
+    spineIndex = spineIndex,
+    startCharOffset = startCharOffset,
+    endCharOffset = endCharOffset,
+    selectedText = selectedText,
+    startElementPath = startElementPath,
+    endElementPath = endElementPath,
+    color = color,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    remoteId = remoteId,
+    syncState = HighlightSyncState.SYNCED,
+  )
 
 private fun AnnotationEntity.toAnnotation(json: Json): ReaderAnnotation =
   ReaderAnnotation(
