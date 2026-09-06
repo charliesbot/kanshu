@@ -24,13 +24,15 @@ class AnnotationRepositoryTest {
     val dao =
       mockk<AnnotationDao> {
         coEvery { find("annotation-id") } returns annotationEntity("annotation-id", "YELLOW")
-        coEvery { updateColor("annotation-id", "AQUA", 1_700L, "SYNCED") } returns Unit
+        coEvery {
+          updateColor("annotation-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
+        } returns Unit
       }
 
     repository(dao).updateHighlightColor("annotation-id", ReaderHighlightColor.Aqua)
 
     coVerify(exactly = 1) {
-      dao.updateColor("annotation-id", "AQUA", 1_700L, "SYNCED")
+      dao.updateColor("annotation-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
     }
   }
 
@@ -123,7 +125,7 @@ class AnnotationRepositoryTest {
         endElementPath = SourceElementPath(listOf(0, 2)),
       )
 
-    assertEquals("PENDING_UPSERT", stored.captured.syncState)
+    assertEquals(HighlightSyncState.PENDING_UPSERT, stored.captured.syncState)
     assertEquals("[0,1]", stored.captured.startElementPath)
     assertEquals("[0,2]", stored.captured.endElementPath)
   }
@@ -151,7 +153,7 @@ class AnnotationRepositoryTest {
       annotationEntity("local-existing", "YELLOW")
         .copy(
           remoteId = "remote-existing",
-          syncState = HighlightSyncState.SYNCED.name,
+          syncState = HighlightSyncState.SYNCED,
         )
     val dao =
       mockk<AnnotationDao> {
@@ -197,7 +199,7 @@ class AnnotationRepositoryTest {
       assertEquals("AQUA", row.color)
       assertEquals(100L, row.createdAt)
       assertEquals(200L, row.updatedAt)
-      assertEquals(HighlightSyncState.SYNCED.name, row.syncState)
+      assertEquals(HighlightSyncState.SYNCED, row.syncState)
     }
   }
 
@@ -207,19 +209,19 @@ class AnnotationRepositoryTest {
       annotationEntity("pending", "PINK")
         .copy(
           remoteId = "remote-pending",
-          syncState = HighlightSyncState.PENDING_UPSERT.name,
+          syncState = HighlightSyncState.PENDING_UPSERT,
         )
     val missing =
       annotationEntity("missing", "YELLOW")
         .copy(
           remoteId = "remote-missing",
-          syncState = HighlightSyncState.SYNCED.name,
+          syncState = HighlightSyncState.SYNCED,
         )
     val seenButUntranslated =
       annotationEntity("untranslated", "GREEN")
         .copy(
           remoteId = "remote-untranslated",
-          syncState = HighlightSyncState.SYNCED.name,
+          syncState = HighlightSyncState.SYNCED,
         )
     val dao =
       mockk<AnnotationDao> {

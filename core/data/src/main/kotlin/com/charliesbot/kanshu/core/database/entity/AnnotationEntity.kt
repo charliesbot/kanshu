@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 
 @Entity(
   tableName = "annotations",
@@ -38,5 +39,5 @@ data class AnnotationEntity(
   @ColumnInfo(name = "created_at") val createdAt: Long,
   @ColumnInfo(name = "updated_at") val updatedAt: Long,
   @ColumnInfo(name = "remote_id") val remoteId: String? = null,
-  @ColumnInfo(name = "sync_state") val syncState: String = "SYNCED",
+  @ColumnInfo(name = "sync_state") val syncState: HighlightSyncState = HighlightSyncState.SYNCED,
 )

@@ -10,6 +10,7 @@ import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
 import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
+import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -127,6 +128,26 @@ class KanshuDatabaseTest {
     val ids = annotationDao.observeForSpine("kavita:1", 0).first().map { it.id }
 
     assertEquals(listOf("early", "late"), ids)
+  }
+
+  @Test
+  fun annotationQueriesUseTypedSyncStates() = runTest {
+    bookDao.upsert(sampleBook("kavita:1"))
+    annotationDao.upsert(
+      sampleAnnotation("pending", "kavita:1").copy(syncState = HighlightSyncState.PENDING_UPSERT)
+    )
+    annotationDao.upsert(
+      sampleAnnotation("deleted", "kavita:1").copy(syncState = HighlightSyncState.PENDING_DELETE)
+    )
+
+    assertEquals(
+      listOf("pending"),
+      annotationDao.pending("kavita:1", HighlightSyncState.PENDING_UPSERT).map { it.id },
+    )
+    assertEquals(
+      listOf("pending"),
+      annotationDao.observeForSpine("kavita:1", 0).first().map { it.id },
+    )
   }
 
   private fun sampleBook(

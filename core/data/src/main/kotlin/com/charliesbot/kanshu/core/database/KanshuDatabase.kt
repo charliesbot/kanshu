@@ -2,6 +2,7 @@ package com.charliesbot.kanshu.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
@@ -14,6 +15,7 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
   version = 8,
   exportSchema = false,
 )
+@TypeConverters(HighlightSyncStateConverter::class)
 abstract class KanshuDatabase : RoomDatabase() {
   abstract fun bookDao(): BookDao
 

@@ -13,10 +13,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-enum class HighlightSyncState {
-  SYNCED,
-  PENDING_UPSERT,
-  PENDING_DELETE,
+enum class HighlightSyncState(val storageValue: String) {
+  SYNCED("SYNCED"),
+  PENDING_UPSERT("PENDING_UPSERT"),
+  PENDING_DELETE("PENDING_DELETE");
+
+  companion object {
+    fun fromStorageValue(value: String): HighlightSyncState =
+      entries.firstOrNull { it.storageValue == value }
+        ?: throw IllegalArgumentException("Unknown highlight sync state: $value")
+  }
 }
 
 data class ReaderAnnotation(
@@ -146,7 +152,7 @@ class AnnotationRepositoryImpl(
     val state =
       if (highlightSyncEnabled(annotation.bookId)) HighlightSyncState.PENDING_UPSERT
       else HighlightSyncState.SYNCED
-    annotationDao.updateColor(id, color.key, now(), state.name)
+    annotationDao.updateColor(id, color.key, now(), state)
   }
 
   override suspend fun delete(id: String) {
@@ -162,7 +168,7 @@ class AnnotationRepositoryImpl(
     bookId: String,
     state: HighlightSyncState,
   ): List<HighlightChange> =
-    annotationDao.pending(bookId, state.name).map { row ->
+    annotationDao.pending(bookId, state).map { row ->
       when (state) {
         HighlightSyncState.PENDING_DELETE ->
           HighlightChange.Delete(row.id, row.remoteId, row.updatedAt)
@@ -193,7 +199,7 @@ class AnnotationRepositoryImpl(
           val localId =
             when {
               local == null -> newId()
-              local.syncState == HighlightSyncState.SYNCED.name -> local.id
+              local.syncState == HighlightSyncState.SYNCED -> local.id
               else -> return@mapNotNull null
             }
           remote.toAnnotation(bookId, localId).toEntity(json)
@@ -202,7 +208,7 @@ class AnnotationRepositoryImpl(
         existing
           .filter {
             it.remoteId != null &&
-              it.syncState == HighlightSyncState.SYNCED.name &&
+              it.syncState == HighlightSyncState.SYNCED &&
               it.remoteId !in snapshot.seenRemoteIds
           }
           .map { it.id }
@@ -244,8 +250,7 @@ private fun AnnotationEntity.toAnnotation(json: Json): ReaderAnnotation =
     createdAt = createdAt,
     updatedAt = updatedAt,
     remoteId = remoteId,
-    syncState =
-      runCatching { HighlightSyncState.valueOf(syncState) }.getOrDefault(HighlightSyncState.SYNCED),
+    syncState = syncState,
   )
 
 private fun ReaderAnnotation.toEntity(json: Json): AnnotationEntity =
@@ -262,7 +267,7 @@ private fun ReaderAnnotation.toEntity(json: Json): AnnotationEntity =
     createdAt = createdAt,
     updatedAt = updatedAt,
     remoteId = remoteId,
-    syncState = syncState.name,
+    syncState = syncState,
   )
 
 private fun AnnotationEntity.toUpsert(json: Json): HighlightChange.Upsert =
