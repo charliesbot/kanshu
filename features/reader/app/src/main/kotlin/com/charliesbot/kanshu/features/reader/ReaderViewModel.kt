@@ -533,11 +533,7 @@ class ReaderViewModel(
     val startingSpineIndex = currentSpineIndex
     spineJob = viewModelScope.launch {
       try {
-        val item =
-          session.spineItems[targetSpineIndex]
-            ?: withContext(ioDispatcher) {
-              session.publication.readSpineItemAt(targetSpineIndex, session.stylesheets)
-            }
+        val item = loadSpineItem(session, targetSpineIndex)
         if (openSession !== session || currentSpineIndex != startingSpineIndex) {
           Log.d(TAG, "openSpineItem: ignored stale open of spine[$targetSpineIndex]")
           return@launch
@@ -557,6 +553,13 @@ class ReaderViewModel(
       }
     }
   }
+
+  private suspend fun loadSpineItem(session: BookSession, spineIndex: Int): SpineItem? =
+    session.spineItems[spineIndex]
+      ?: withContext(ioDispatcher) {
+          session.publication.readSpineItemAt(spineIndex, session.stylesheets)
+        }
+        ?.also { session.spineItems[spineIndex] = it }
 
   private fun activateSpineItem(session: BookSession, item: SpineItem) {
     session.spineItems[item.spineIndex] = item
@@ -581,13 +584,7 @@ class ReaderViewModel(
       file = session.file,
       publication = session.publication,
       sourceMapForSpine = { spineIndex ->
-        val item =
-          session.spineItems[spineIndex]
-            ?: withContext(ioDispatcher) {
-                session.publication.readSpineItemAt(spineIndex, session.stylesheets)
-              }
-              ?.also { session.spineItems[spineIndex] = it }
-        item?.document?.sourceMap?.let(::ReaderEpubSourceMap)
+        loadSpineItem(session, spineIndex)?.document?.sourceMap?.let(::ReaderEpubSourceMap)
       },
     )
   }
