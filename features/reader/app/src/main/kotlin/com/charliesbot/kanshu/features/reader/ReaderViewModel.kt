@@ -11,8 +11,8 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinator
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinator
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.ProgressRepository
@@ -74,8 +74,8 @@ class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
   private val progressRepository: ProgressRepository,
-  private val annotationRepository: AnnotationRepository,
-  private val annotationSyncCoordinator: AnnotationSyncCoordinator? = null,
+  private val highlightRepository: HighlightRepository,
+  private val highlightSyncCoordinator: HighlightSyncCoordinator? = null,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -355,7 +355,7 @@ class ReaderViewModel(
     if (!selection.hasRange) return
     val spineIndex = currentSpineIndex
     viewModelScope.launch {
-      annotationRepository.addHighlight(
+      highlightRepository.addHighlight(
         bookId = id.value,
         spineIndex = spineIndex,
         startCharOffset = selection.startCharOffset,
@@ -365,23 +365,23 @@ class ReaderViewModel(
         endElementPath = selection.endElementPath,
         color = color,
       )
-      synchronizeAnnotations()
+      synchronizeHighlights()
     }
   }
 
   /** Applies the local deletion before requesting provider synchronization. */
   fun removeHighlight(id: String) {
     viewModelScope.launch {
-      annotationRepository.delete(id)
-      synchronizeAnnotations()
+      highlightRepository.delete(id)
+      synchronizeHighlights()
     }
   }
 
   /** Persists the new color locally before requesting provider synchronization. */
   fun setHighlightColor(id: String, color: ReaderHighlightColor) {
     viewModelScope.launch {
-      annotationRepository.updateHighlightColor(id, color)
-      synchronizeAnnotations()
+      highlightRepository.updateHighlightColor(id, color)
+      synchronizeHighlights()
     }
   }
 
@@ -391,9 +391,9 @@ class ReaderViewModel(
     highlightsJob?.cancel()
     _highlights.value = emptyList()
     highlightsJob = viewModelScope.launch {
-      annotationRepository.observeForSpine(id.value, spineIndex).collect { annotations ->
+      highlightRepository.observeForSpine(id.value, spineIndex).collect { highlights ->
         if (!isCurrentChapter(chapterToken)) return@collect
-        _highlights.value = annotations.map {
+        _highlights.value = highlights.map {
           ReaderHighlight(
             startCharOffset = it.startCharOffset,
             endCharOffset = it.endCharOffset,
@@ -570,11 +570,11 @@ class ReaderViewModel(
         diagnostics = item.diagnostics,
       )
     observeHighlights(chapterToken)
-    viewModelScope.launch { synchronizeAnnotations() }
+    viewModelScope.launch { synchronizeHighlights() }
   }
 
-  private suspend fun synchronizeAnnotations() {
-    val coordinator = annotationSyncCoordinator ?: return
+  private suspend fun synchronizeHighlights() {
+    val coordinator = highlightSyncCoordinator ?: return
     val session = openSession ?: return
     coordinator.synchronize(
       bookId = session.bookId,

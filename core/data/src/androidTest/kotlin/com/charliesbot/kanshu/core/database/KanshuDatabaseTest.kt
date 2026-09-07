@@ -4,13 +4,13 @@ import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.dao.BookDao
+import com.charliesbot.kanshu.core.database.dao.HighlightDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
-import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.database.entity.BookEntity
+import com.charliesbot.kanshu.core.database.entity.HighlightEntity
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -28,7 +28,7 @@ class KanshuDatabaseTest {
   private lateinit var db: KanshuDatabase
   private lateinit var bookDao: BookDao
   private lateinit var progressDao: ReadingProgressDao
-  private lateinit var annotationDao: AnnotationDao
+  private lateinit var highlightDao: HighlightDao
 
   @Before
   fun setUp() {
@@ -36,7 +36,7 @@ class KanshuDatabaseTest {
     db = Room.inMemoryDatabaseBuilder(context, KanshuDatabase::class.java).build()
     bookDao = db.bookDao()
     progressDao = db.readingProgressDao()
-    annotationDao = db.annotationDao()
+    highlightDao = db.highlightDao()
   }
 
   @After
@@ -102,11 +102,11 @@ class KanshuDatabaseTest {
   }
 
   @Test
-  fun deletingBookCascadesToAnnotations() = runTest {
+  fun deletingBookCascadesToHighlights() = runTest {
     bookDao.upsert(sampleBook("kavita:1"))
-    annotationDao.upsert(sampleAnnotation("a-1", "kavita:1"))
+    highlightDao.upsert(sampleHighlight("a-1", "kavita:1"))
     bookDao.delete("kavita:1")
-    assertTrue(annotationDao.observeForSpine("kavita:1", 0).first().isEmpty())
+    assertTrue(highlightDao.observeForSpine("kavita:1", 0).first().isEmpty())
   }
 
   @Test
@@ -118,35 +118,35 @@ class KanshuDatabaseTest {
   }
 
   @Test
-  fun annotationsForASpineItemAreOrderedByOffset() = runTest {
+  fun highlightsForASpineItemAreOrderedByOffset() = runTest {
     bookDao.upsert(sampleBook("kavita:1"))
-    annotationDao.upsert(sampleAnnotation("late", "kavita:1", startCharOffset = 900))
-    annotationDao.upsert(sampleAnnotation("early", "kavita:1", startCharOffset = 100))
+    highlightDao.upsert(sampleHighlight("late", "kavita:1", startCharOffset = 900))
+    highlightDao.upsert(sampleHighlight("early", "kavita:1", startCharOffset = 100))
     // A different chapter, to pin the spine filter against a real database.
-    annotationDao.upsert(sampleAnnotation("other", "kavita:1", spineIndex = 4))
+    highlightDao.upsert(sampleHighlight("other", "kavita:1", spineIndex = 4))
 
-    val ids = annotationDao.observeForSpine("kavita:1", 0).first().map { it.id }
+    val ids = highlightDao.observeForSpine("kavita:1", 0).first().map { it.id }
 
     assertEquals(listOf("early", "late"), ids)
   }
 
   @Test
-  fun annotationQueriesUseTypedSyncStates() = runTest {
+  fun highlightQueriesUseTypedSyncStates() = runTest {
     bookDao.upsert(sampleBook("kavita:1"))
-    annotationDao.upsert(
-      sampleAnnotation("pending", "kavita:1").copy(syncState = HighlightSyncState.PENDING_UPSERT)
+    highlightDao.upsert(
+      sampleHighlight("pending", "kavita:1").copy(syncState = HighlightSyncState.PENDING_UPSERT)
     )
-    annotationDao.upsert(
-      sampleAnnotation("deleted", "kavita:1").copy(syncState = HighlightSyncState.PENDING_DELETE)
+    highlightDao.upsert(
+      sampleHighlight("deleted", "kavita:1").copy(syncState = HighlightSyncState.PENDING_DELETE)
     )
 
     assertEquals(
       listOf("pending"),
-      annotationDao.pending("kavita:1", HighlightSyncState.PENDING_UPSERT).map { it.id },
+      highlightDao.pending("kavita:1", HighlightSyncState.PENDING_UPSERT).map { it.id },
     )
     assertEquals(
       listOf("pending"),
-      annotationDao.observeForSpine("kavita:1", 0).first().map { it.id },
+      highlightDao.observeForSpine("kavita:1", 0).first().map { it.id },
     )
   }
 
@@ -176,14 +176,14 @@ class KanshuDatabaseTest {
       updatedAt = 1000L,
     )
 
-  private fun sampleAnnotation(
+  private fun sampleHighlight(
     id: String,
     bookId: String,
     createdAt: Long = 0L,
     spineIndex: Int = 0,
     startCharOffset: Int = 0,
-  ): AnnotationEntity =
-    AnnotationEntity(
+  ): HighlightEntity =
+    HighlightEntity(
       id = id,
       bookId = bookId,
       spineIndex = spineIndex,

@@ -15,9 +15,9 @@ import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
 import com.charliesbot.kanshu.core.reader.SourceElementPath
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
-import com.charliesbot.kanshu.core.reader.annotation.ReaderAnnotation
+import com.charliesbot.kanshu.core.reader.highlight.Highlight
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.InitialPosition
@@ -1324,9 +1324,9 @@ class ReaderViewModelTest {
   @Test
   fun `addHighlight stores the selection range for the current chapter`() =
     runTest(testDispatcher) {
-      val annotations = FakeAnnotationRepository()
+      val highlights = FakeHighlightRepository()
       val viewModel =
-        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), highlightRepository = highlights)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1340,23 +1340,23 @@ class ReaderViewModelTest {
       )
       advanceUntilIdle()
 
-      val stored = annotations.saved.single()
+      val stored = highlights.saved.single()
       assertEquals(0, stored.spineIndex)
       assertEquals(40, stored.startCharOffset)
       assertEquals(57, stored.endCharOffset)
       assertEquals("highlighted words", stored.selectedText)
       assertEquals(
-        listOf(ReaderHighlight(40, 57, id = "annotation-0")),
+        listOf(ReaderHighlight(40, 57, id = "highlight-0")),
         viewModel.highlights.value,
       )
     }
 
   @Test
-  fun `removeHighlight deletes the tapped annotation`() =
+  fun `removeHighlight deletes the tapped highlight`() =
     runTest(testDispatcher) {
-      val annotations = FakeAnnotationRepository()
+      val highlights = FakeHighlightRepository()
       val viewModel =
-        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), highlightRepository = highlights)
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
@@ -1365,19 +1365,19 @@ class ReaderViewModelTest {
       )
       advanceUntilIdle()
 
-      viewModel.removeHighlight(annotations.saved.single().id)
+      viewModel.removeHighlight(highlights.saved.single().id)
       advanceUntilIdle()
 
-      assertTrue(annotations.saved.isEmpty())
+      assertTrue(highlights.saved.isEmpty())
       assertTrue(viewModel.highlights.value.isEmpty())
     }
 
   @Test
-  fun `setHighlightColor recolors the tapped annotation`() =
+  fun `setHighlightColor recolors the tapped highlight`() =
     runTest(testDispatcher) {
-      val annotations = FakeAnnotationRepository()
+      val highlights = FakeHighlightRepository()
       val viewModel =
-        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), highlightRepository = highlights)
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
       viewModel.addHighlight(
@@ -1386,19 +1386,19 @@ class ReaderViewModelTest {
       )
       advanceUntilIdle()
 
-      viewModel.setHighlightColor(annotations.saved.single().id, ReaderHighlightColor.Aqua)
+      viewModel.setHighlightColor(highlights.saved.single().id, ReaderHighlightColor.Aqua)
       advanceUntilIdle()
 
-      assertEquals(ReaderHighlightColor.Aqua, annotations.saved.single().color)
+      assertEquals(ReaderHighlightColor.Aqua, highlights.saved.single().color)
       assertEquals(ReaderHighlightColor.Aqua, viewModel.highlights.value.single().color)
     }
 
   @Test
   fun `an empty selection range is not stored`() =
     runTest(testDispatcher) {
-      val annotations = FakeAnnotationRepository()
+      val highlights = FakeHighlightRepository()
       val viewModel =
-        viewModel(FakeEpubOpener(1 to testPublication()), annotationRepository = annotations)
+        viewModel(FakeEpubOpener(1 to testPublication()), highlightRepository = highlights)
 
       viewModel.open(kavitaBookId(1))
       advanceUntilIdle()
@@ -1407,13 +1407,13 @@ class ReaderViewModelTest {
       )
       advanceUntilIdle()
 
-      assertTrue(annotations.saved.isEmpty())
+      assertTrue(highlights.saved.isEmpty())
     }
 
   @Test
   fun `highlights are scoped to the chapter on screen`() =
     runTest(testDispatcher) {
-      val annotations = FakeAnnotationRepository()
+      val highlights = FakeHighlightRepository()
       val viewModel =
         viewModel(
           FakeEpubOpener(
@@ -1423,7 +1423,7 @@ class ReaderViewModelTest {
                 "<html><body><p>${"Second chapter ".repeat(6)}</p></body></html>",
               )
           ),
-          annotationRepository = annotations,
+          highlightRepository = highlights,
         )
 
       viewModel.open(kavitaBookId(1))
@@ -1433,7 +1433,7 @@ class ReaderViewModelTest {
       )
       advanceUntilIdle()
       assertEquals(
-        listOf(ReaderHighlight(1, 4, id = "annotation-0")),
+        listOf(ReaderHighlight(1, 4, id = "highlight-0")),
         viewModel.highlights.value,
       )
 
@@ -1464,14 +1464,14 @@ class ReaderViewModelTest {
     source: EpubOpener,
     preferencesRepository: ReaderPreferencesRepository = FakeReaderPreferencesRepository(),
     progressRepository: ProgressRepository = FakeProgressRepository(),
-    annotationRepository: AnnotationRepository = FakeAnnotationRepository(),
+    highlightRepository: HighlightRepository = FakeHighlightRepository(),
     ioDispatcher: CoroutineDispatcher = testDispatcher,
   ): ReaderViewModel =
     ReaderViewModel(
       OpenBookUseCase(source),
       preferencesRepository,
       progressRepository,
-      annotationRepository,
+      highlightRepository,
       ioDispatcher = ioDispatcher,
     )
 
@@ -1623,12 +1623,12 @@ private class FakeReaderPreferencesRepository(initial: ReaderPreferences = Reade
   }
 }
 
-private class FakeAnnotationRepository : AnnotationRepository {
-  private val stored = MutableStateFlow<List<ReaderAnnotation>>(emptyList())
-  val saved: List<ReaderAnnotation>
+private class FakeHighlightRepository : HighlightRepository {
+  private val stored = MutableStateFlow<List<Highlight>>(emptyList())
+  val saved: List<Highlight>
     get() = stored.value
 
-  override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>> =
+  override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<Highlight>> =
     stored.map { all ->
       all.filter { it.spineIndex == spineIndex }
     }
@@ -1642,11 +1642,11 @@ private class FakeAnnotationRepository : AnnotationRepository {
     startElementPath: SourceElementPath,
     endElementPath: SourceElementPath,
     color: ReaderHighlightColor,
-  ): ReaderAnnotation? {
+  ): Highlight? {
     if (endCharOffset <= startCharOffset) return null
-    val annotation =
-      ReaderAnnotation(
-        id = "annotation-${stored.value.size}",
+    val highlight =
+      Highlight(
+        id = "highlight-${stored.value.size}",
         bookId = bookId,
         spineIndex = spineIndex,
         startCharOffset = startCharOffset,
@@ -1656,8 +1656,8 @@ private class FakeAnnotationRepository : AnnotationRepository {
         endElementPath = endElementPath,
         color = color,
       )
-    stored.update { it + annotation }
-    return annotation
+    stored.update { it + highlight }
+    return highlight
   }
 
   override suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor) =

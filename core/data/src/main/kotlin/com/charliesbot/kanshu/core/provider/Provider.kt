@@ -118,7 +118,7 @@ data class ProviderHighlight(
 
 /**
  * Complete remote inventory used for local reconciliation. [seenRemoteIds] includes untranslatable
- * annotations; [highlights] contains only translated ones. An ID absent from [highlights] but
+ * highlights; [highlights] contains only translated ones. An ID absent from [highlights] but
  * present in [seenRemoteIds] must not cause local deletion.
  */
 data class ProviderHighlightSnapshot(

@@ -1,7 +1,7 @@
 package com.charliesbot.kanshu.core.database.converter
 
 import androidx.room.TypeConverter
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 
 /** Stores typed highlight sync states as stable SQLite TEXT values. */
 class HighlightSyncStateConverter {

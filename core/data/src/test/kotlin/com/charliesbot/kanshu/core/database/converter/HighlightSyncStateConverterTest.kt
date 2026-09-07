@@ -1,6 +1,6 @@
 package com.charliesbot.kanshu.core.database.converter
 
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test

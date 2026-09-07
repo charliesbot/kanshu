@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.core.reader.annotation
+package com.charliesbot.kanshu.core.reader.highlight
 
 import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import org.readium.r2.shared.publication.Publication
 
 /** Coordinates on-demand highlight synchronization independently of local persistence. */
-interface AnnotationSyncCoordinator {
+interface HighlightSyncCoordinator {
   /**
    * Checks declared provider support, not network reachability; returns false for a missing book.
    */
@@ -37,11 +37,11 @@ interface AnnotationSyncCoordinator {
 }
 
 /** Serializes sync rounds and coalesces overlapping triggers into the latest queued request. */
-class AnnotationSyncCoordinatorImpl(
+class HighlightSyncCoordinatorImpl(
   private val providers: ProviderRegistry,
   private val books: BookDao,
-  private val annotations: AnnotationRepository,
-) : AnnotationSyncCoordinator {
+  private val highlights: HighlightRepository,
+) : HighlightSyncCoordinator {
   private val stateMutex = Mutex()
   private var running = false
   private var pending: SyncRequest? = null
@@ -96,7 +96,7 @@ class AnnotationSyncCoordinatorImpl(
     pushPending(request.bookId, provider, context, HighlightSyncState.PENDING_DELETE)
     pushPending(request.bookId, provider, context, HighlightSyncState.PENDING_UPSERT)
     when (val pulled = provider.pullHighlights(context)) {
-      is ProviderResult.Success -> annotations.applySnapshot(request.bookId.value, pulled.value)
+      is ProviderResult.Success -> highlights.applySnapshot(request.bookId.value, pulled.value)
       is ProviderResult.Failure -> Log.w(TAG, "Highlight pull failed: " + pulled.error)
     }
   }
@@ -107,14 +107,14 @@ class AnnotationSyncCoordinatorImpl(
     context: ProviderHighlightContext,
     state: HighlightSyncState,
   ) {
-    annotations.pendingChanges(bookId.value, state).forEach { change ->
+    highlights.pendingChanges(bookId.value, state).forEach { change ->
       when (val result = provider.pushHighlight(context, change)) {
         is ProviderResult.Success ->
           when (change) {
             is HighlightChange.Delete ->
-              annotations.acknowledgeDelete(change.localId, change.expectedUpdatedAt)
+              highlights.acknowledgeDelete(change.localId, change.expectedUpdatedAt)
             is HighlightChange.Upsert ->
-              annotations.acknowledgeUpsert(
+              highlights.acknowledgeUpsert(
                 change.localId,
                 change.expectedUpdatedAt,
                 result.value.remoteId,
@@ -133,6 +133,6 @@ class AnnotationSyncCoordinatorImpl(
   )
 
   private companion object {
-    const val TAG = "AnnotationSync"
+    const val TAG = "HighlightSync"
   }
 }

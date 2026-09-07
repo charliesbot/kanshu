@@ -1,7 +1,7 @@
-package com.charliesbot.kanshu.core.reader.annotation
+package com.charliesbot.kanshu.core.reader.highlight
 
-import com.charliesbot.kanshu.core.database.dao.AnnotationDao
-import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
+import com.charliesbot.kanshu.core.database.dao.HighlightDao
+import com.charliesbot.kanshu.core.database.entity.HighlightEntity
 import com.charliesbot.kanshu.core.provider.ProviderHighlight
 import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
@@ -18,30 +18,30 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class AnnotationRepositoryTest {
+class HighlightRepositoryTest {
   @Test
-  fun `updateHighlightColor updates the stored annotation color and timestamp`() = runTest {
+  fun `updateHighlightColor updates the stored highlight color and timestamp`() = runTest {
     val dao =
-      mockk<AnnotationDao> {
-        coEvery { find("annotation-id") } returns annotationEntity("annotation-id", "YELLOW")
+      mockk<HighlightDao> {
+        coEvery { find("highlight-id") } returns highlightEntity("highlight-id", "YELLOW")
         coEvery {
-          updateColor("annotation-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
+          updateColor("highlight-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
         } returns Unit
       }
 
-    repository(dao).updateHighlightColor("annotation-id", ReaderHighlightColor.Aqua)
+    repository(dao).updateHighlightColor("highlight-id", ReaderHighlightColor.Aqua)
 
     coVerify(exactly = 1) {
-      dao.updateColor("annotation-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
+      dao.updateColor("highlight-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
     }
   }
 
   @Test
-  fun `addHighlight stores the offsets and returns the annotation`() = runTest {
-    val stored = slot<AnnotationEntity>()
-    val dao = mockk<AnnotationDao> { coEvery { upsert(capture(stored)) } returns Unit }
+  fun `addHighlight stores the offsets and returns the highlight`() = runTest {
+    val stored = slot<HighlightEntity>()
+    val dao = mockk<HighlightDao> { coEvery { upsert(capture(stored)) } returns Unit }
 
-    val annotation =
+    val highlight =
       repository(dao)
         .addHighlight(
           bookId = "kavita:7",
@@ -53,7 +53,7 @@ class AnnotationRepositoryTest {
           endElementPath = SourceElementPath.Root,
         )
 
-    assertEquals("annotation-id", annotation?.id)
+    assertEquals("highlight-id", highlight?.id)
     assertEquals("kavita:7", stored.captured.bookId)
     assertEquals(3, stored.captured.spineIndex)
     assertEquals(100, stored.captured.startCharOffset)
@@ -64,7 +64,7 @@ class AnnotationRepositoryTest {
 
   @Test
   fun `an empty or inverted range is rejected without touching the dao`() = runTest {
-    val dao = mockk<AnnotationDao>()
+    val dao = mockk<HighlightDao>()
 
     assertNull(
       repository(dao)
@@ -95,13 +95,13 @@ class AnnotationRepositoryTest {
   }
 
   @Test
-  fun `observeForSpine maps rows to annotations`() = runTest {
+  fun `observeForSpine maps rows to highlights`() = runTest {
     val dao =
-      mockk<AnnotationDao> {
+      mockk<HighlightDao> {
         coEvery { observeForSpine("kavita:7", 3) } returns
           flowOf(
             listOf(
-              AnnotationEntity(
+              HighlightEntity(
                 id = "a",
                 bookId = "kavita:7",
                 spineIndex = 3,
@@ -115,11 +115,11 @@ class AnnotationRepositoryTest {
           )
       }
 
-    val annotations = repository(dao).observeForSpine("kavita:7", 3).first()
+    val highlights = repository(dao).observeForSpine("kavita:7", 3).first()
 
     assertEquals(
       listOf(
-        ReaderAnnotation(
+        Highlight(
           id = "a",
           spineIndex = 3,
           startCharOffset = 10,
@@ -129,14 +129,14 @@ class AnnotationRepositoryTest {
           createdAt = 5L,
         )
       ),
-      annotations,
+      highlights,
     )
   }
 
   @Test
   fun syncCapableCreateStoresPathsAsPendingUpsert() = runTest {
-    val stored = slot<AnnotationEntity>()
-    val dao = mockk<AnnotationDao> { coEvery { upsert(capture(stored)) } returns Unit }
+    val stored = slot<HighlightEntity>()
+    val dao = mockk<HighlightDao> { coEvery { upsert(capture(stored)) } returns Unit }
 
     repository(dao, syncEnabled = true)
       .addHighlight(
@@ -156,31 +156,31 @@ class AnnotationRepositoryTest {
 
   @Test
   fun syncCapableLinkedDeleteLeavesPendingTombstone() = runTest {
-    val row = annotationEntity("annotation-id", "YELLOW").copy(remoteId = "remote-1")
+    val row = highlightEntity("highlight-id", "YELLOW").copy(remoteId = "remote-1")
     val dao =
-      mockk<AnnotationDao> {
-        coEvery { find("annotation-id") } returns row
-        coEvery { markPendingDelete("annotation-id", 1_700L) } returns Unit
+      mockk<HighlightDao> {
+        coEvery { find("highlight-id") } returns row
+        coEvery { markPendingDelete("highlight-id", 1_700L) } returns Unit
       }
 
-    repository(dao, syncEnabled = true).delete("annotation-id")
+    repository(dao, syncEnabled = true).delete("highlight-id")
 
-    coVerify { dao.markPendingDelete("annotation-id", 1_700L) }
+    coVerify { dao.markPendingDelete("highlight-id", 1_700L) }
     coVerify(exactly = 0) { dao.delete(any()) }
   }
 
   @Test
   fun applySnapshotMapsNewAndSyncedRemoteHighlightsInOneTransaction() = runTest {
     var transactionActive = false
-    val stored = slot<List<AnnotationEntity>>()
+    val stored = slot<List<HighlightEntity>>()
     val existing =
-      annotationEntity("local-existing", "YELLOW")
+      highlightEntity("local-existing", "YELLOW")
         .copy(
           remoteId = "remote-existing",
           syncState = HighlightSyncState.SYNCED,
         )
     val dao =
-      mockk<AnnotationDao> {
+      mockk<HighlightDao> {
         coEvery { forBook("kavita:7") } answers
           {
             check(transactionActive)
@@ -213,7 +213,7 @@ class AnnotationRepositoryTest {
         ),
       )
 
-    assertEquals(listOf("annotation-id", "local-existing"), stored.captured.map { it.id })
+    assertEquals(listOf("highlight-id", "local-existing"), stored.captured.map { it.id })
     assertEquals(listOf(1, 2), stored.captured.map { it.spineIndex })
     stored.captured.forEach { row ->
       assertEquals("kavita:7", row.bookId)
@@ -230,25 +230,25 @@ class AnnotationRepositoryTest {
   @Test
   fun applySnapshotPreservesPendingRowsAndDeletesOnlyMissingSyncedRows() = runTest {
     val pending =
-      annotationEntity("pending", "PINK")
+      highlightEntity("pending", "PINK")
         .copy(
           remoteId = "remote-pending",
           syncState = HighlightSyncState.PENDING_UPSERT,
         )
     val missing =
-      annotationEntity("missing", "YELLOW")
+      highlightEntity("missing", "YELLOW")
         .copy(
           remoteId = "remote-missing",
           syncState = HighlightSyncState.SYNCED,
         )
     val seenButUntranslated =
-      annotationEntity("untranslated", "GREEN")
+      highlightEntity("untranslated", "GREEN")
         .copy(
           remoteId = "remote-untranslated",
           syncState = HighlightSyncState.SYNCED,
         )
     val dao =
-      mockk<AnnotationDao> {
+      mockk<HighlightDao> {
         coEvery { forBook("kavita:7") } returns listOf(pending, missing, seenButUntranslated)
         coEvery { deleteAll(listOf("missing")) } returns Unit
       }
@@ -270,35 +270,35 @@ class AnnotationRepositoryTest {
   fun `stored colors accept legacy casing and unknown values fall back to yellow`() = runTest {
     val rows =
       listOf(
-        annotationEntity(id = "legacy", color = "aqua"),
-        annotationEntity(id = "unknown", color = "not-a-color"),
+        highlightEntity(id = "legacy", color = "aqua"),
+        highlightEntity(id = "unknown", color = "not-a-color"),
       )
-    val dao = mockk<AnnotationDao> { every { observeForSpine("kavita:7", 3) } returns flowOf(rows) }
+    val dao = mockk<HighlightDao> { every { observeForSpine("kavita:7", 3) } returns flowOf(rows) }
 
-    val annotations = repository(dao).observeForSpine("kavita:7", 3).first()
+    val highlights = repository(dao).observeForSpine("kavita:7", 3).first()
 
     assertEquals(
       listOf(ReaderHighlightColor.Aqua, ReaderHighlightColor.Yellow),
-      annotations.map { it.color },
+      highlights.map { it.color },
     )
   }
 
   private fun repository(
-    dao: AnnotationDao,
+    dao: HighlightDao,
     syncEnabled: Boolean = false,
     transaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
-  ): AnnotationRepository =
-    AnnotationRepositoryImpl(
-      annotationDao = dao,
+  ): HighlightRepository =
+    HighlightRepositoryImpl(
+      highlightDao = dao,
       highlightSyncEnabled = { syncEnabled },
       now = { 1_700L },
-      newId = { "annotation-id" },
+      newId = { "highlight-id" },
       inTransaction = transaction,
     )
 }
 
-private fun annotationEntity(id: String, color: String): AnnotationEntity =
-  AnnotationEntity(
+private fun highlightEntity(id: String, color: String): HighlightEntity =
+  HighlightEntity(
     id = id,
     bookId = "kavita:7",
     spineIndex = 3,

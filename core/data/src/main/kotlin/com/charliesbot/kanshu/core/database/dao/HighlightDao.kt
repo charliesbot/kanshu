@@ -3,13 +3,13 @@ package com.charliesbot.kanshu.core.database.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
-import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
+import com.charliesbot.kanshu.core.database.entity.HighlightEntity
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 import kotlinx.coroutines.flow.Flow
 
 /** Room operations for visible highlights, pending mutations, and guarded acknowledgements. */
 @Dao
-interface AnnotationDao {
+interface HighlightDao {
   /** Observes highlights in offset order, excluding pending-delete tombstones by default. */
   @Query(
     "SELECT * FROM annotations WHERE book_id = :bookId AND spine_index = :spineIndex " +
@@ -19,26 +19,26 @@ interface AnnotationDao {
     bookId: String,
     spineIndex: Int,
     excludedState: HighlightSyncState = HighlightSyncState.PENDING_DELETE,
-  ): Flow<List<AnnotationEntity>>
+  ): Flow<List<HighlightEntity>>
 
   /** Returns a row by local ID, including tombstones, or null if absent. */
-  @Query("SELECT * FROM annotations WHERE id = :id") suspend fun find(id: String): AnnotationEntity?
+  @Query("SELECT * FROM annotations WHERE id = :id") suspend fun find(id: String): HighlightEntity?
 
-  /** Returns all book annotations, including tombstones, for reconciliation. */
+  /** Returns all book highlights, including tombstones, for reconciliation. */
   @Query("SELECT * FROM annotations WHERE book_id = :bookId")
-  suspend fun forBook(bookId: String): List<AnnotationEntity>
+  suspend fun forBook(bookId: String): List<HighlightEntity>
 
   /** Returns rows in a requested state ordered by their last local update. */
   @Query(
     "SELECT * FROM annotations WHERE book_id = :bookId AND sync_state = :state " +
       "ORDER BY updated_at ASC"
   )
-  suspend fun pending(bookId: String, state: HighlightSyncState): List<AnnotationEntity>
+  suspend fun pending(bookId: String, state: HighlightSyncState): List<HighlightEntity>
 
-  @Upsert suspend fun upsert(annotation: AnnotationEntity)
+  @Upsert suspend fun upsert(highlight: HighlightEntity)
 
   /** Inserts or updates a batch; callers supply the transaction when reconciling a snapshot. */
-  @Upsert suspend fun upsertAll(annotations: List<AnnotationEntity>)
+  @Upsert suspend fun upsertAll(highlights: List<HighlightEntity>)
 
   /** Updates color, timestamp, and sync status together in one statement. */
   @Query(
@@ -52,7 +52,7 @@ interface AnnotationDao {
     syncState: HighlightSyncState,
   )
 
-  /** Marks an annotation as a hidden pending-delete tombstone by default. */
+  /** Marks a highlight as a hidden pending-delete tombstone by default. */
   @Query("UPDATE annotations SET updated_at = :updatedAt, sync_state = :syncState WHERE id = :id")
   suspend fun markPendingDelete(
     id: String,

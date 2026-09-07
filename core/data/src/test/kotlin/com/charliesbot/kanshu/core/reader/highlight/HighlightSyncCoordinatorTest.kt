@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.core.reader.annotation
+package com.charliesbot.kanshu.core.reader.highlight
 
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
@@ -29,7 +29,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.readium.r2.shared.publication.Publication
 
-class AnnotationSyncCoordinatorTest {
+class HighlightSyncCoordinatorTest {
   @Test
   fun pushesDeletesThenUpsertsThenPulls() = runTest {
     val events = mutableListOf<String>()
@@ -48,8 +48,8 @@ class AnnotationSyncCoordinatorTest {
         color = ReaderHighlightColor.Yellow,
         createdAt = 1L,
       )
-    val annotations =
-      mockk<AnnotationRepository>(relaxed = true) {
+    val highlights =
+      mockk<HighlightRepository>(relaxed = true) {
         coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_DELETE) } returns
           listOf(delete)
         coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_UPSERT) } returns
@@ -69,7 +69,7 @@ class AnnotationSyncCoordinatorTest {
             ProviderResult.Success(HighlightPushAck(remoteId = "remote-created"))
         }
       }
-    val coordinator = coordinator(provider, annotations)
+    val coordinator = coordinator(provider, highlights)
 
     coordinator.synchronize(
       BookId("kavita:7"),
@@ -88,8 +88,8 @@ class AnnotationSyncCoordinatorTest {
   @Test
   fun failedPushLeavesPendingStateUntouchedAndStillCompletesPull() = runTest {
     val change = HighlightChange.Delete("delete", "remote-delete", 3L)
-    val annotations =
-      mockk<AnnotationRepository>(relaxed = true) {
+    val highlights =
+      mockk<HighlightRepository>(relaxed = true) {
         coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_DELETE) } returns
           listOf(change)
         coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_UPSERT) } returns
@@ -100,7 +100,7 @@ class AnnotationSyncCoordinatorTest {
         ProviderResult.Failure(com.charliesbot.kanshu.core.provider.ProviderError.Network)
       }
 
-    coordinator(provider, annotations).synchronize(
+    coordinator(provider, highlights).synchronize(
       BookId("kavita:7"),
       File("book.epub"),
       mockk<Publication>(),
@@ -108,14 +108,14 @@ class AnnotationSyncCoordinatorTest {
       null
     }
 
-    coVerify(exactly = 0) { annotations.acknowledgeDelete(any(), any()) }
-    coVerify { annotations.applySnapshot("kavita:7", any()) }
+    coVerify(exactly = 0) { highlights.acknowledgeDelete(any(), any()) }
+    coVerify { highlights.applySnapshot("kavita:7", any()) }
   }
 
   private fun coordinator(
     provider: Provider,
-    annotations: AnnotationRepository,
-  ): AnnotationSyncCoordinator {
+    highlights: HighlightRepository,
+  ): HighlightSyncCoordinator {
     val books =
       mockk<BookDao> {
         coEvery { find("kavita:7") } returns
@@ -130,10 +130,10 @@ class AnnotationSyncCoordinatorTest {
             lastOpenedAt = null,
           )
       }
-    return AnnotationSyncCoordinatorImpl(
+    return HighlightSyncCoordinatorImpl(
       providers = ProviderRegistryImpl(listOf(provider)),
       books = books,
-      annotations = annotations,
+      highlights = highlights,
     )
   }
 }

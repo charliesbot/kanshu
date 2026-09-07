@@ -23,10 +23,10 @@ import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import com.charliesbot.kanshu.core.reader.EpubOpener
 import com.charliesbot.kanshu.core.reader.EpubOpenerImpl
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepositoryImpl
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinator
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationSyncCoordinatorImpl
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepositoryImpl
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinator
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinatorImpl
 import com.charliesbot.kanshu.core.reader.preferences.ReaderPreferencesRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.readerPreferencesDataStore
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -53,7 +53,7 @@ val coreDataModule = module {
   }
   single { get<KanshuDatabase>().bookDao() }
   single { get<KanshuDatabase>().readingProgressDao() }
-  single { get<KanshuDatabase>().annotationDao() }
+  single { get<KanshuDatabase>().highlightDao() }
   single { KavitaProvider(credentials = get(), api = get()) }
   single<ProviderRegistry> { ProviderRegistryImpl(listOf(get<KavitaProvider>())) }
   single<BookRepository> {
@@ -78,10 +78,10 @@ val coreDataModule = module {
   single<ProgressRepository> {
     ProgressRepositoryImpl(providers = get(), books = get(), progressDao = get())
   }
-  single<AnnotationRepository> {
+  single<HighlightRepository> {
     val database = get<KanshuDatabase>()
-    AnnotationRepositoryImpl(
-      annotationDao = database.annotationDao(),
+    HighlightRepositoryImpl(
+      highlightDao = database.highlightDao(),
       highlightSyncEnabled = { bookId ->
         val book = database.bookDao().find(bookId)
         book != null &&
@@ -94,7 +94,7 @@ val coreDataModule = module {
       inTransaction = { block -> database.withTransaction { block() } },
     )
   }
-  single<AnnotationSyncCoordinator> {
-    AnnotationSyncCoordinatorImpl(providers = get(), books = get(), annotations = get())
+  single<HighlightSyncCoordinator> {
+    HighlightSyncCoordinatorImpl(providers = get(), books = get(), highlights = get())
   }
 }

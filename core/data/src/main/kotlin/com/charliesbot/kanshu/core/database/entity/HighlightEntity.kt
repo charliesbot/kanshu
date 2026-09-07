@@ -7,7 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.SourceElementPath
-import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncState
 
 /** Persisted highlight or delete tombstone; remote IDs are unique within each book. */
 @Entity(
@@ -28,7 +28,7 @@ import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
       Index(value = ["book_id", "remote_id"], unique = true),
     ],
 )
-data class AnnotationEntity(
+data class HighlightEntity(
   @PrimaryKey val id: String,
   @ColumnInfo(name = "book_id") val bookId: String,
   @ColumnInfo(name = "spine_index") val spineIndex: Int,

@@ -1,7 +1,7 @@
-package com.charliesbot.kanshu.core.reader.annotation
+package com.charliesbot.kanshu.core.reader.highlight
 
-import com.charliesbot.kanshu.core.database.dao.AnnotationDao
-import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
+import com.charliesbot.kanshu.core.database.dao.HighlightDao
+import com.charliesbot.kanshu.core.database.entity.HighlightEntity
 import com.charliesbot.kanshu.core.provider.HighlightChange
 import com.charliesbot.kanshu.core.provider.ProviderHighlight
 import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
@@ -31,9 +31,9 @@ enum class HighlightSyncState(val storageValue: String) {
 /**
  * A local highlight with rendering offsets, source-element anchors, and durable sync bookkeeping.
  * Offsets are relative to one spine section with an exclusive end; timestamps are epoch
- * milliseconds. A null [remoteId] means the highlight has not been linked to a remote annotation.
+ * milliseconds. A null [remoteId] means the highlight has not been linked to a remote highlight.
  */
-data class ReaderAnnotation(
+data class Highlight(
   val id: String,
   val bookId: String,
   val spineIndex: Int,
@@ -50,11 +50,11 @@ data class ReaderAnnotation(
 )
 
 /** Local-first highlight storage and guarded reconciliation with provider changes. */
-interface AnnotationRepository {
+interface HighlightRepository {
   /**
    * Observes visible highlights in offset order for one spine section, excluding delete tombstones.
    */
-  fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>>
+  fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<Highlight>>
 
   /**
    * Persists a highlight before any network work; returns null for an empty or inverted range.
@@ -69,7 +69,7 @@ interface AnnotationRepository {
     startElementPath: SourceElementPath,
     endElementPath: SourceElementPath,
     color: ReaderHighlightColor = ReaderHighlightColor.default,
-  ): ReaderAnnotation?
+  ): Highlight?
 
   /** Recolors locally and marks sync-capable highlights pending upsert; absent IDs are ignored. */
   suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor)
@@ -106,16 +106,16 @@ interface AnnotationRepository {
  * Room-backed highlight storage with injected capability lookup and transaction execution. Local
  * mutations do not perform network requests; the sync coordinator submits pending work.
  */
-class AnnotationRepositoryImpl(
-  private val annotationDao: AnnotationDao,
+class HighlightRepositoryImpl(
+  private val highlightDao: HighlightDao,
   private val inTransaction: suspend (suspend () -> Unit) -> Unit,
   private val highlightSyncEnabled: suspend (String) -> Boolean = { false },
   private val now: () -> Long = System::currentTimeMillis,
   private val newId: () -> String = { UUID.randomUUID().toString() },
-) : AnnotationRepository {
-  override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>> =
-    annotationDao.observeForSpine(bookId, spineIndex).map { rows ->
-      rows.map(AnnotationEntity::toAnnotation)
+) : HighlightRepository {
+  override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<Highlight>> =
+    highlightDao.observeForSpine(bookId, spineIndex).map { rows ->
+      rows.map(HighlightEntity::toHighlight)
     }
 
   override suspend fun addHighlight(
@@ -127,12 +127,12 @@ class AnnotationRepositoryImpl(
     startElementPath: SourceElementPath,
     endElementPath: SourceElementPath,
     color: ReaderHighlightColor,
-  ): ReaderAnnotation? {
+  ): Highlight? {
     if (endCharOffset <= startCharOffset) return null
     val timestamp = now()
     val state = syncStateFor(bookId)
-    val annotation =
-      ReaderAnnotation(
+    val highlight =
+      Highlight(
         id = newId(),
         bookId = bookId,
         spineIndex = spineIndex,
@@ -146,21 +146,21 @@ class AnnotationRepositoryImpl(
         updatedAt = timestamp,
         syncState = state,
       )
-    annotationDao.upsert(annotation.toEntity())
-    return annotation
+    highlightDao.upsert(highlight.toEntity())
+    return highlight
   }
 
   override suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor) {
-    val annotation = annotationDao.find(id) ?: return
-    annotationDao.updateColor(id, color.key, now(), syncStateFor(annotation.bookId))
+    val highlight = highlightDao.find(id) ?: return
+    highlightDao.updateColor(id, color.key, now(), syncStateFor(highlight.bookId))
   }
 
   override suspend fun delete(id: String) {
-    val annotation = annotationDao.find(id) ?: return
-    if (highlightSyncEnabled(annotation.bookId) && annotation.remoteId != null) {
-      annotationDao.markPendingDelete(id, now())
+    val highlight = highlightDao.find(id) ?: return
+    if (highlightSyncEnabled(highlight.bookId) && highlight.remoteId != null) {
+      highlightDao.markPendingDelete(id, now())
     } else {
-      annotationDao.delete(id)
+      highlightDao.delete(id)
     }
   }
 
@@ -168,7 +168,7 @@ class AnnotationRepositoryImpl(
     bookId: String,
     state: HighlightSyncState,
   ): List<HighlightChange> =
-    annotationDao.pending(bookId, state).map { row ->
+    highlightDao.pending(bookId, state).map { row ->
       when (state) {
         HighlightSyncState.PENDING_DELETE ->
           HighlightChange.Delete(row.id, row.remoteId, row.updatedAt)
@@ -182,16 +182,16 @@ class AnnotationRepositoryImpl(
     expectedUpdatedAt: Long,
     remoteId: String?,
   ) {
-    annotationDao.acknowledgeUpsert(id, expectedUpdatedAt, remoteId)
+    highlightDao.acknowledgeUpsert(id, expectedUpdatedAt, remoteId)
   }
 
   override suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long) {
-    annotationDao.acknowledgeDelete(id, expectedUpdatedAt)
+    highlightDao.acknowledgeDelete(id, expectedUpdatedAt)
   }
 
   override suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot) {
     inTransaction {
-      val existing = annotationDao.forBook(bookId)
+      val existing = highlightDao.forBook(bookId)
       val byRemoteId = existing.mapNotNull { row -> row.remoteId?.let { it to row } }.toMap()
       val upserts =
         snapshot.highlights.mapNotNull { remote ->
@@ -202,7 +202,7 @@ class AnnotationRepositoryImpl(
               local.syncState == HighlightSyncState.SYNCED -> local.id
               else -> return@mapNotNull null
             }
-          remote.toAnnotation(bookId, localId).toEntity()
+          remote.toHighlight(bookId, localId).toEntity()
         }
       val deletions =
         existing
@@ -213,8 +213,8 @@ class AnnotationRepositoryImpl(
           }
           .map { it.id }
 
-      if (upserts.isNotEmpty()) annotationDao.upsertAll(upserts)
-      if (deletions.isNotEmpty()) annotationDao.deleteAll(deletions)
+      if (upserts.isNotEmpty()) highlightDao.upsertAll(upserts)
+      if (deletions.isNotEmpty()) highlightDao.deleteAll(deletions)
     }
   }
 
@@ -223,8 +223,8 @@ class AnnotationRepositoryImpl(
     else HighlightSyncState.SYNCED
 }
 
-private fun ProviderHighlight.toAnnotation(bookId: String, id: String): ReaderAnnotation =
-  ReaderAnnotation(
+private fun ProviderHighlight.toHighlight(bookId: String, id: String): Highlight =
+  Highlight(
     id = id,
     bookId = bookId,
     spineIndex = spineIndex,
@@ -240,8 +240,8 @@ private fun ProviderHighlight.toAnnotation(bookId: String, id: String): ReaderAn
     syncState = HighlightSyncState.SYNCED,
   )
 
-private fun AnnotationEntity.toAnnotation(): ReaderAnnotation =
-  ReaderAnnotation(
+private fun HighlightEntity.toHighlight(): Highlight =
+  Highlight(
     id = id,
     bookId = bookId,
     spineIndex = spineIndex,
@@ -257,8 +257,8 @@ private fun AnnotationEntity.toAnnotation(): ReaderAnnotation =
     syncState = syncState,
   )
 
-private fun ReaderAnnotation.toEntity(): AnnotationEntity =
-  AnnotationEntity(
+private fun Highlight.toEntity(): HighlightEntity =
+  HighlightEntity(
     id = id,
     bookId = bookId,
     spineIndex = spineIndex,
@@ -274,7 +274,7 @@ private fun ReaderAnnotation.toEntity(): AnnotationEntity =
     syncState = syncState,
   )
 
-private fun AnnotationEntity.toUpsert(): HighlightChange.Upsert =
+private fun HighlightEntity.toUpsert(): HighlightChange.Upsert =
   HighlightChange.Upsert(
     localId = id,
     remoteId = remoteId,
