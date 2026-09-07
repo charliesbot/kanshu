@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.kavita
 
 import android.util.Log
+import com.charliesbot.kanshu.core.kavita.dto.AnnotationDto
 import com.charliesbot.kanshu.core.kavita.dto.KoreaderBookDto
 import com.charliesbot.kanshu.core.kavita.dto.SeriesDto
 import com.charliesbot.kanshu.core.kavita.dto.ServerInfoSlim
@@ -56,6 +57,26 @@ interface KavitaApi {
     target: File,
     onProgress: (bytesSoFar: Long, totalBytes: Long?) -> Unit,
   )
+
+  suspend fun listAnnotations(
+    baseUrl: String,
+    apiKey: String,
+    seriesId: Int,
+  ): List<AnnotationDto>
+
+  suspend fun createAnnotation(
+    baseUrl: String,
+    apiKey: String,
+    annotation: AnnotationDto,
+  ): AnnotationDto
+
+  suspend fun updateAnnotation(
+    baseUrl: String,
+    apiKey: String,
+    annotation: AnnotationDto,
+  ): AnnotationDto
+
+  suspend fun deleteAnnotation(baseUrl: String, apiKey: String, annotationId: Int)
 
   // PUT the book's current reading position via Kavita's kosync-compatible endpoint. The apiKey
   // is path-encoded (not a header) per the kosync protocol; Kavita's AuthKeyAuthenticationHandler
@@ -141,6 +162,66 @@ class KavitaApiImpl(private val client: HttpClient) : KavitaApi {
         throw KavitaException.UnexpectedResponse
       }
       streamToFile(response.bodyAsChannel(), target, response.contentLength(), onProgress)
+    }
+  }
+
+  override suspend fun listAnnotations(
+    baseUrl: String,
+    apiKey: String,
+    seriesId: Int,
+  ): List<AnnotationDto> {
+    val response =
+      executeRequest(baseUrl.trimEnd('/') + "/api/Annotation/all-for-series", HttpMethod.Get) {
+        header("x-api-key", apiKey)
+        parameter("seriesId", seriesId)
+      }
+    return decodeJsonBody(response)
+  }
+
+  override suspend fun createAnnotation(
+    baseUrl: String,
+    apiKey: String,
+    annotation: AnnotationDto,
+  ): AnnotationDto {
+    val response =
+      executeRequest(baseUrl.trimEnd('/') + "/api/Annotation/create", HttpMethod.Post) {
+        header("x-api-key", apiKey)
+        contentType(ContentType.Application.Json)
+        setBody(annotation)
+      }
+    return decodeJsonBody(response)
+  }
+
+  override suspend fun updateAnnotation(
+    baseUrl: String,
+    apiKey: String,
+    annotation: AnnotationDto,
+  ): AnnotationDto {
+    val response =
+      executeRequest(baseUrl.trimEnd('/') + "/api/Annotation/update", HttpMethod.Post) {
+        header("x-api-key", apiKey)
+        contentType(ContentType.Application.Json)
+        setBody(annotation)
+      }
+    return decodeJsonBody(response)
+  }
+
+  override suspend fun deleteAnnotation(
+    baseUrl: String,
+    apiKey: String,
+    annotationId: Int,
+  ) {
+    val response =
+      executeRequest(baseUrl.trimEnd('/') + "/api/Annotation", HttpMethod.Delete) {
+        header("x-api-key", apiKey)
+        parameter("annotationId", annotationId)
+      }
+    when (response.status) {
+      HttpStatusCode.OK,
+      HttpStatusCode.NoContent -> Unit
+      HttpStatusCode.Unauthorized,
+      HttpStatusCode.Forbidden -> throw KavitaException.Unauthorized
+      else -> throw KavitaException.Unknown("HTTP " + response.status.value)
     }
   }
 
