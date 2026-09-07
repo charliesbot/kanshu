@@ -2,19 +2,18 @@ package com.charliesbot.kanshu.core.reader.annotation
 
 import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
+import com.charliesbot.kanshu.core.database.entity.toProviderBookContext
+import com.charliesbot.kanshu.core.database.entity.toProviderBookKey
 import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.HighlightChange
 import com.charliesbot.kanshu.core.provider.Provider
-import com.charliesbot.kanshu.core.provider.ProviderBookContext
-import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderHighlightContext
-import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderResult
 import com.charliesbot.kanshu.core.provider.ProviderSourceMap
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
 import org.readium.r2.shared.publication.Publication
 
 interface AnnotationSyncCoordinator {
@@ -39,11 +38,8 @@ class AnnotationSyncCoordinatorImpl(
 
   override suspend fun supports(bookId: BookId): Boolean {
     val book = books.find(bookId.value) ?: return false
-    return providers
-      .provider(ProviderInstanceId(book.providerInstanceId))
-      .descriptor
-      .capabilities
-      .highlightSync
+    val provider = providers.provider(book.toProviderBookKey().providerId)
+    return provider.descriptor.capabilities.highlightSync
   }
 
   override suspend fun synchronize(
@@ -79,26 +75,11 @@ class AnnotationSyncCoordinatorImpl(
 
   private suspend fun runRound(request: SyncRequest) {
     val book = books.find(request.bookId.value) ?: return
-    val provider = providers.provider(ProviderInstanceId(book.providerInstanceId))
+    val provider = providers.provider(book.toProviderBookKey().providerId)
     if (!provider.descriptor.capabilities.highlightSync) return
     val context =
       ProviderHighlightContext(
-        book =
-          ProviderBookContext(
-            book =
-              ProviderBookKey(
-                providerId = ProviderInstanceId(book.providerInstanceId),
-                providerItemId = book.providerItemId,
-              ),
-            file = request.file,
-            publication = request.publication,
-            providerMetadata =
-              book.providerMetadata
-                ?.let {
-                  runCatching { Json.decodeFromString<Map<String, String>>(it) }.getOrNull()
-                }
-                .orEmpty(),
-          ),
+        book = book.toProviderBookContext(request.file, request.publication),
         sourceMapForSpine = request.sourceMapForSpine,
       )
 
@@ -119,16 +100,15 @@ class AnnotationSyncCoordinatorImpl(
     annotations.pendingChanges(bookId.value, state).forEach { change ->
       when (val result = provider.pushHighlight(context, change)) {
         is ProviderResult.Success ->
-          when (state) {
-            HighlightSyncState.PENDING_DELETE ->
+          when (change) {
+            is HighlightChange.Delete ->
               annotations.acknowledgeDelete(change.localId, change.expectedUpdatedAt)
-            HighlightSyncState.PENDING_UPSERT ->
+            is HighlightChange.Upsert ->
               annotations.acknowledgeUpsert(
                 change.localId,
                 change.expectedUpdatedAt,
                 result.value.remoteId,
               )
-            HighlightSyncState.SYNCED -> Unit
           }
         is ProviderResult.Failure -> Log.w(TAG, "Highlight push failed: " + result.error)
       }

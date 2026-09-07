@@ -3,6 +3,8 @@ package com.charliesbot.kanshu.features.reader
 import android.graphics.RectF
 import androidx.lifecycle.ViewModelStore
 import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.HighlightChange
+import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
 import com.charliesbot.kanshu.core.provider.RemoteProgress
 import com.charliesbot.kanshu.core.reader.EpubOpener
 import com.charliesbot.kanshu.core.reader.ReaderAlignment
@@ -12,7 +14,9 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
+import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 import com.charliesbot.kanshu.core.reader.annotation.ReaderAnnotation
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -1635,6 +1639,8 @@ private class FakeAnnotationRepository : AnnotationRepository {
     startCharOffset: Int,
     endCharOffset: Int,
     selectedText: String,
+    startElementPath: SourceElementPath,
+    endElementPath: SourceElementPath,
     color: ReaderHighlightColor,
   ): ReaderAnnotation? {
     if (endCharOffset <= startCharOffset) return null
@@ -1645,6 +1651,8 @@ private class FakeAnnotationRepository : AnnotationRepository {
         startCharOffset = startCharOffset,
         endCharOffset = endCharOffset,
         selectedText = selectedText,
+        startElementPath = startElementPath,
+        endElementPath = endElementPath,
         color = color,
       )
     stored.update { it + annotation }
@@ -1657,6 +1665,21 @@ private class FakeAnnotationRepository : AnnotationRepository {
     }
 
   override suspend fun delete(id: String) = stored.update { all -> all.filterNot { it.id == id } }
+
+  override suspend fun pendingChanges(
+    bookId: String,
+    state: HighlightSyncState,
+  ): List<HighlightChange> = emptyList()
+
+  override suspend fun acknowledgeUpsert(
+    id: String,
+    expectedUpdatedAt: Long,
+    remoteId: String?,
+  ) = Unit
+
+  override suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long) = Unit
+
+  override suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot) = Unit
 }
 
 private class FakeProgressRepository(private val stored: ReaderPosition? = null) :

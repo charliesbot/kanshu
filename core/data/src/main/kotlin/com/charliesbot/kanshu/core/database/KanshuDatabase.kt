@@ -15,7 +15,7 @@ import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
   version = 8,
   exportSchema = false,
 )
-@TypeConverters(HighlightSyncStateConverter::class)
+@TypeConverters(HighlightSyncStateConverter::class, SourceElementPathConverter::class)
 abstract class KanshuDatabase : RoomDatabase() {
   abstract fun bookDao(): BookDao
 

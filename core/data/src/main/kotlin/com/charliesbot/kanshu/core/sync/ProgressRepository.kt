@@ -4,11 +4,9 @@ import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
+import com.charliesbot.kanshu.core.database.entity.toProviderBookContext
 import com.charliesbot.kanshu.core.provider.BookId
-import com.charliesbot.kanshu.core.provider.ProviderBookContext
-import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderError
-import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderResult
 import com.charliesbot.kanshu.core.provider.RemoteProgress
@@ -268,18 +266,8 @@ class ProgressRepositoryImpl(
     publication: Publication,
   ) =
     books.find(bookId.value)?.let { book ->
-      val provider = providers.provider(ProviderInstanceId(book.providerInstanceId))
-      provider to
-        ProviderBookContext(
-          book =
-            ProviderBookKey(
-              providerId = ProviderInstanceId(book.providerInstanceId),
-              providerItemId = book.providerItemId,
-            ),
-          file = file,
-          publication = publication,
-          providerMetadata = decodeProviderMetadata(book.providerMetadata),
-        )
+      val context = book.toProviderBookContext(file, publication)
+      providers.provider(context.book.providerId) to context
     }
 
   private fun decodePosition(json: String): ReaderPosition =
@@ -297,11 +285,3 @@ class ProgressRepositoryImpl(
     const val FLUSH_PUSH_TIMEOUT_MILLIS = 6_000L
   }
 }
-
-private fun decodeProviderMetadata(value: String?): Map<String, String> =
-  value
-    ?.let {
-      runCatching { kotlinx.serialization.json.Json.decodeFromString<Map<String, String>>(it) }
-        .getOrNull()
-    }
-    .orEmpty()

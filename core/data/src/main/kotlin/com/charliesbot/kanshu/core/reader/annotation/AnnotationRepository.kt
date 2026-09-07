@@ -10,8 +10,6 @@ import com.charliesbot.kanshu.core.reader.SourceElementPath
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 enum class HighlightSyncState(val storageValue: String) {
   SYNCED("SYNCED"),
@@ -50,20 +48,10 @@ interface AnnotationRepository {
     startCharOffset: Int,
     endCharOffset: Int,
     selectedText: String,
-    color: ReaderHighlightColor = ReaderHighlightColor.default,
-  ): ReaderAnnotation?
-
-  suspend fun addHighlight(
-    bookId: String,
-    spineIndex: Int,
-    startCharOffset: Int,
-    endCharOffset: Int,
-    selectedText: String,
     startElementPath: SourceElementPath,
     endElementPath: SourceElementPath,
     color: ReaderHighlightColor = ReaderHighlightColor.default,
-  ): ReaderAnnotation? =
-    addHighlight(bookId, spineIndex, startCharOffset, endCharOffset, selectedText, color)
+  ): ReaderAnnotation?
 
   suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor)
 
@@ -72,13 +60,13 @@ interface AnnotationRepository {
   suspend fun pendingChanges(
     bookId: String,
     state: HighlightSyncState,
-  ): List<HighlightChange> = emptyList()
+  ): List<HighlightChange>
 
-  suspend fun acknowledgeUpsert(id: String, expectedUpdatedAt: Long, remoteId: String?) = Unit
+  suspend fun acknowledgeUpsert(id: String, expectedUpdatedAt: Long, remoteId: String?)
 
-  suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long) = Unit
+  suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long)
 
-  suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot) = Unit
+  suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot)
 }
 
 class AnnotationRepositoryImpl(
@@ -87,31 +75,11 @@ class AnnotationRepositoryImpl(
   private val highlightSyncEnabled: suspend (String) -> Boolean = { false },
   private val now: () -> Long = System::currentTimeMillis,
   private val newId: () -> String = { UUID.randomUUID().toString() },
-  private val json: Json = Json,
 ) : AnnotationRepository {
   override fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>> =
     annotationDao.observeForSpine(bookId, spineIndex).map { rows ->
-      rows.map { it.toAnnotation(json) }
+      rows.map(AnnotationEntity::toAnnotation)
     }
-
-  override suspend fun addHighlight(
-    bookId: String,
-    spineIndex: Int,
-    startCharOffset: Int,
-    endCharOffset: Int,
-    selectedText: String,
-    color: ReaderHighlightColor,
-  ): ReaderAnnotation? =
-    addHighlight(
-      bookId,
-      spineIndex,
-      startCharOffset,
-      endCharOffset,
-      selectedText,
-      SourceElementPath.Root,
-      SourceElementPath.Root,
-      color,
-    )
 
   override suspend fun addHighlight(
     bookId: String,
@@ -125,9 +93,7 @@ class AnnotationRepositoryImpl(
   ): ReaderAnnotation? {
     if (endCharOffset <= startCharOffset) return null
     val timestamp = now()
-    val state =
-      if (highlightSyncEnabled(bookId)) HighlightSyncState.PENDING_UPSERT
-      else HighlightSyncState.SYNCED
+    val state = syncStateFor(bookId)
     val annotation =
       ReaderAnnotation(
         id = newId(),
@@ -143,16 +109,13 @@ class AnnotationRepositoryImpl(
         updatedAt = timestamp,
         syncState = state,
       )
-    annotationDao.upsert(annotation.toEntity(json))
+    annotationDao.upsert(annotation.toEntity())
     return annotation
   }
 
   override suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor) {
     val annotation = annotationDao.find(id) ?: return
-    val state =
-      if (highlightSyncEnabled(annotation.bookId)) HighlightSyncState.PENDING_UPSERT
-      else HighlightSyncState.SYNCED
-    annotationDao.updateColor(id, color.key, now(), state)
+    annotationDao.updateColor(id, color.key, now(), syncStateFor(annotation.bookId))
   }
 
   override suspend fun delete(id: String) {
@@ -172,7 +135,7 @@ class AnnotationRepositoryImpl(
       when (state) {
         HighlightSyncState.PENDING_DELETE ->
           HighlightChange.Delete(row.id, row.remoteId, row.updatedAt)
-        HighlightSyncState.PENDING_UPSERT -> row.toUpsert(json)
+        HighlightSyncState.PENDING_UPSERT -> row.toUpsert()
         HighlightSyncState.SYNCED -> error("SYNCED rows are not pending changes")
       }
     }
@@ -202,7 +165,7 @@ class AnnotationRepositoryImpl(
               local.syncState == HighlightSyncState.SYNCED -> local.id
               else -> return@mapNotNull null
             }
-          remote.toAnnotation(bookId, localId).toEntity(json)
+          remote.toAnnotation(bookId, localId).toEntity()
         }
       val deletions =
         existing
@@ -217,6 +180,10 @@ class AnnotationRepositoryImpl(
       if (deletions.isNotEmpty()) annotationDao.deleteAll(deletions)
     }
   }
+
+  private suspend fun syncStateFor(bookId: String): HighlightSyncState =
+    if (highlightSyncEnabled(bookId)) HighlightSyncState.PENDING_UPSERT
+    else HighlightSyncState.SYNCED
 }
 
 private fun ProviderHighlight.toAnnotation(bookId: String, id: String): ReaderAnnotation =
@@ -236,7 +203,7 @@ private fun ProviderHighlight.toAnnotation(bookId: String, id: String): ReaderAn
     syncState = HighlightSyncState.SYNCED,
   )
 
-private fun AnnotationEntity.toAnnotation(json: Json): ReaderAnnotation =
+private fun AnnotationEntity.toAnnotation(): ReaderAnnotation =
   ReaderAnnotation(
     id = id,
     bookId = bookId,
@@ -244,8 +211,8 @@ private fun AnnotationEntity.toAnnotation(json: Json): ReaderAnnotation =
     startCharOffset = startCharOffset,
     endCharOffset = endCharOffset,
     selectedText = selectedText,
-    startElementPath = SourceElementPath(json.decodeFromString(startElementPath)),
-    endElementPath = SourceElementPath(json.decodeFromString(endElementPath)),
+    startElementPath = startElementPath,
+    endElementPath = endElementPath,
     color = ReaderHighlightColor.fromStorageValue(color),
     createdAt = createdAt,
     updatedAt = updatedAt,
@@ -253,7 +220,7 @@ private fun AnnotationEntity.toAnnotation(json: Json): ReaderAnnotation =
     syncState = syncState,
   )
 
-private fun ReaderAnnotation.toEntity(json: Json): AnnotationEntity =
+private fun ReaderAnnotation.toEntity(): AnnotationEntity =
   AnnotationEntity(
     id = id,
     bookId = bookId,
@@ -261,8 +228,8 @@ private fun ReaderAnnotation.toEntity(json: Json): AnnotationEntity =
     startCharOffset = startCharOffset,
     endCharOffset = endCharOffset,
     selectedText = selectedText,
-    startElementPath = json.encodeToString(startElementPath.childIndexes),
-    endElementPath = json.encodeToString(endElementPath.childIndexes),
+    startElementPath = startElementPath,
+    endElementPath = endElementPath,
     color = color.key,
     createdAt = createdAt,
     updatedAt = updatedAt,
@@ -270,7 +237,7 @@ private fun ReaderAnnotation.toEntity(json: Json): AnnotationEntity =
     syncState = syncState,
   )
 
-private fun AnnotationEntity.toUpsert(json: Json): HighlightChange.Upsert =
+private fun AnnotationEntity.toUpsert(): HighlightChange.Upsert =
   HighlightChange.Upsert(
     localId = id,
     remoteId = remoteId,
@@ -279,8 +246,8 @@ private fun AnnotationEntity.toUpsert(json: Json): HighlightChange.Upsert =
     startCharOffset = startCharOffset,
     endCharOffset = endCharOffset,
     selectedText = selectedText,
-    startElementPath = SourceElementPath(json.decodeFromString(startElementPath)),
-    endElementPath = SourceElementPath(json.decodeFromString(endElementPath)),
+    startElementPath = startElementPath,
+    endElementPath = endElementPath,
     color = ReaderHighlightColor.fromStorageValue(color),
     createdAt = createdAt,
   )

@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 
 @Entity(
@@ -33,8 +34,10 @@ data class AnnotationEntity(
   @ColumnInfo(name = "start_char_offset") val startCharOffset: Int,
   @ColumnInfo(name = "end_char_offset") val endCharOffset: Int,
   @ColumnInfo(name = "selected_text") val selectedText: String,
-  @ColumnInfo(name = "start_element_path") val startElementPath: String = "[]",
-  @ColumnInfo(name = "end_element_path") val endElementPath: String = "[]",
+  @ColumnInfo(name = "start_element_path")
+  val startElementPath: SourceElementPath = SourceElementPath.Root,
+  @ColumnInfo(name = "end_element_path")
+  val endElementPath: SourceElementPath = SourceElementPath.Root,
   @ColumnInfo(name = "color") val color: String = ReaderHighlightColor.default.key,
   @ColumnInfo(name = "created_at") val createdAt: Long,
   @ColumnInfo(name = "updated_at") val updatedAt: Long,

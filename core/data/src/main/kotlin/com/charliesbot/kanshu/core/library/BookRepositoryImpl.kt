@@ -3,6 +3,9 @@ package com.charliesbot.kanshu.core.library
 import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
+import com.charliesbot.kanshu.core.database.entity.decodeProviderMetadata
+import com.charliesbot.kanshu.core.database.entity.encodeProviderMetadata
+import com.charliesbot.kanshu.core.database.entity.toProviderBookKey
 import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderCover
@@ -25,8 +28,6 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 class BookRepositoryImpl(
   private val providers: ProviderRegistry,
@@ -80,8 +81,7 @@ class BookRepositoryImpl(
                 downloadedAt = null,
                 lastOpenedAt = null,
                 coverToken = book.revisionToken,
-                providerMetadata =
-                  book.providerMetadata.takeIf { it.isNotEmpty() }?.let(Json::encodeToString),
+                providerMetadata = book.providerMetadata.encodeProviderMetadata(),
               )
             }
           bookDao.syncBooks(
@@ -110,7 +110,7 @@ class BookRepositoryImpl(
             .map { entity ->
               val provider = providers.provider(ProviderInstanceId(entity.providerInstanceId))
               val coverUrl =
-                (provider.resolveCover(entity.providerBookKey(), entity.coverToken)
+                (provider.resolveCover(entity.toProviderBookKey(), entity.coverToken)
                     as? ProviderCover.RemoteUrl)
                   ?.value
               LibraryItem(
@@ -190,8 +190,8 @@ class BookRepositoryImpl(
       val provider = providers.provider(providerId)
       val result =
         provider.acquire(
-          existingBook.providerBookKey(),
-          decodeProviderMetadata(existingBook.providerMetadata),
+          existingBook.toProviderBookKey(),
+          existingBook.providerMetadata.decodeProviderMetadata(),
           tmp,
         ) { bytesSoFar, totalBytes ->
           val pct =
@@ -232,11 +232,8 @@ class BookRepositoryImpl(
           lastOpenedAt = null,
           coverToken = existingBook.coverToken,
           providerMetadata =
-            (result as ProviderResult.Success)
-              .value
-              .providerMetadata
-              .takeIf { it.isNotEmpty() }
-              ?.let(Json::encodeToString) ?: existingBook.providerMetadata,
+            (result as ProviderResult.Success).value.providerMetadata.encodeProviderMetadata()
+              ?: existingBook.providerMetadata,
         )
       )
       _inFlight.update { it - bookId }
@@ -281,9 +278,6 @@ class BookRepositoryImpl(
   }
 }
 
-private fun BookEntity.providerBookKey() =
-  ProviderBookKey(ProviderInstanceId(providerInstanceId), providerItemId)
-
 private fun List<ProviderError>.toLibraryError(): LibraryResult =
   when {
     any { it == ProviderError.NoCredentials } -> LibraryResult.NoCredentials
@@ -292,8 +286,3 @@ private fun List<ProviderError>.toLibraryError(): LibraryResult =
     any { it == ProviderError.MalformedResponse } -> LibraryResult.Error.UnexpectedResponse
     else -> LibraryResult.Error.Unknown
   }
-
-private fun decodeProviderMetadata(value: String?): Map<String, String> =
-  value
-    ?.let { runCatching { Json.decodeFromString<Map<String, String>>(it) }.getOrNull() }
-    .orEmpty()

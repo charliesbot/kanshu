@@ -49,6 +49,8 @@ class AnnotationRepositoryTest {
           startCharOffset = 100,
           endCharOffset = 140,
           selectedText = "a highlighted phrase",
+          startElementPath = SourceElementPath.Root,
+          endElementPath = SourceElementPath.Root,
         )
 
     assertEquals("annotation-id", annotation?.id)
@@ -64,8 +66,30 @@ class AnnotationRepositoryTest {
   fun `an empty or inverted range is rejected without touching the dao`() = runTest {
     val dao = mockk<AnnotationDao>()
 
-    assertNull(repository(dao).addHighlight("kavita:7", 0, 10, 10, ""))
-    assertNull(repository(dao).addHighlight("kavita:7", 0, 10, 4, "backwards"))
+    assertNull(
+      repository(dao)
+        .addHighlight(
+          "kavita:7",
+          0,
+          10,
+          10,
+          "",
+          SourceElementPath.Root,
+          SourceElementPath.Root,
+        )
+    )
+    assertNull(
+      repository(dao)
+        .addHighlight(
+          "kavita:7",
+          0,
+          10,
+          4,
+          "backwards",
+          SourceElementPath.Root,
+          SourceElementPath.Root,
+        )
+    )
 
     coVerify(exactly = 0) { dao.upsert(any()) }
   }
@@ -126,8 +150,8 @@ class AnnotationRepositoryTest {
       )
 
     assertEquals(HighlightSyncState.PENDING_UPSERT, stored.captured.syncState)
-    assertEquals("[0,1]", stored.captured.startElementPath)
-    assertEquals("[0,2]", stored.captured.endElementPath)
+    assertEquals(SourceElementPath(listOf(0, 1)), stored.captured.startElementPath)
+    assertEquals(SourceElementPath(listOf(0, 2)), stored.captured.endElementPath)
   }
 
   @Test
@@ -194,8 +218,8 @@ class AnnotationRepositoryTest {
     stored.captured.forEach { row ->
       assertEquals("kavita:7", row.bookId)
       assertEquals("remote text", row.selectedText)
-      assertEquals("[0,1]", row.startElementPath)
-      assertEquals("[0,2]", row.endElementPath)
+      assertEquals(SourceElementPath(listOf(0, 1)), row.startElementPath)
+      assertEquals(SourceElementPath(listOf(0, 2)), row.endElementPath)
       assertEquals("AQUA", row.color)
       assertEquals(100L, row.createdAt)
       assertEquals(200L, row.updatedAt)
