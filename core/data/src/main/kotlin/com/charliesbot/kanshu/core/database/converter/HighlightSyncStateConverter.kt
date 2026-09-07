@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.core.database
+package com.charliesbot.kanshu.core.database.converter
 
 import androidx.room.TypeConverter
 import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState

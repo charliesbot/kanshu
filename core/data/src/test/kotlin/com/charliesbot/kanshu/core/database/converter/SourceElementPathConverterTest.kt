@@ -1,4 +1,4 @@
-package com.charliesbot.kanshu.core.database
+package com.charliesbot.kanshu.core.database.converter
 
 import com.charliesbot.kanshu.core.reader.SourceElementPath
 import org.junit.Assert.assertEquals

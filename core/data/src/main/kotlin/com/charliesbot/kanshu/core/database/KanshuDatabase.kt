@@ -3,6 +3,8 @@ package com.charliesbot.kanshu.core.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.charliesbot.kanshu.core.database.converter.HighlightSyncStateConverter
+import com.charliesbot.kanshu.core.database.converter.SourceElementPathConverter
 import com.charliesbot.kanshu.core.database.dao.AnnotationDao
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.dao.ReadingProgressDao
