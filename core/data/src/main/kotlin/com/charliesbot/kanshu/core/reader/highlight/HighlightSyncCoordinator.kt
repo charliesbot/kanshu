@@ -12,8 +12,10 @@ import com.charliesbot.kanshu.core.provider.ProviderHighlightContext
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderResult
 import java.io.File
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.readium.r2.shared.publication.Publication
 
 /** Coordinates on-demand highlight synchronization independently of local persistence. */
@@ -26,7 +28,8 @@ interface HighlightSyncCoordinator {
   /**
    * Requests a sync round for an opened book: deletes, upserts, then a complete pull. Overlapping
    * calls return after replacing the queued request with the latest one. Provider failure results
-   * leave pending changes untouched; no background retry is scheduled.
+   * leave pending changes untouched; no background retry is scheduled. Cancellation and thrown
+   * exceptions propagate and discard queued reader contexts; a future trigger can retry.
    */
   suspend fun synchronize(
     bookId: BookId,
@@ -70,16 +73,28 @@ class HighlightSyncCoordinatorImpl(
     }
     if (!shouldRun) return
 
-    while (true) {
-      runRound(request)
-      val next =
+    try {
+      while (true) {
+        runRound(request)
+        val next =
+          stateMutex.withLock {
+            pending.also {
+              pending = null
+              if (it == null) running = false
+            }
+          } ?: return
+        request = next
+      }
+    } catch (failure: Throwable) {
+      // Release ownership even if the caller was cancelled while holding a queued request.
+      // Mutations remain in Room; a future trigger retries with a live reader context.
+      withContext(NonCancellable) {
         stateMutex.withLock {
-          pending.also {
-            pending = null
-            if (it == null) running = false
-          }
-        } ?: return
-      request = next
+          pending = null
+          running = false
+        }
+      }
+      throw failure
     }
   }
 

@@ -24,8 +24,16 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.readium.r2.shared.publication.Publication
 
@@ -112,6 +120,110 @@ class HighlightSyncCoordinatorTest {
     coVerify { highlights.applySnapshot("kavita:7", any()) }
   }
 
+  @Test
+  fun overlappingTriggersRunOnlyTheLatestQueuedRequest() = runTest {
+    val release = CompletableDeferred<Unit>()
+    val files = mutableListOf<String>()
+    var active = 0
+    var maximumActive = 0
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          active++
+          maximumActive = maxOf(maximumActive, active)
+          files += context.book.file.name
+          if (files.size == 1) release.await()
+          active--
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val coordinator = coordinator(provider, mockk(relaxed = true))
+    val first = launch(start = CoroutineStart.UNDISPATCHED) { coordinator.sync("first") }
+
+    coordinator.sync("superseded")
+    coordinator.sync("latest")
+    assertEquals(listOf("first"), files)
+    release.complete(Unit)
+    first.join()
+
+    assertEquals(listOf("first", "latest"), files)
+    assertEquals(1, maximumActive)
+    coordinator.sync("later")
+    assertEquals(listOf("first", "latest", "later"), files)
+  }
+
+  @Test
+  fun cancellationPropagatesAndTheNextTriggerCanSync() = runTest {
+    val files = mutableListOf<String>()
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          files += context.book.file.name
+          if (files.size == 1) awaitCancellation()
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val highlights = mockk<HighlightRepository>(relaxed = true)
+    val coordinator = coordinator(provider, highlights)
+    val first = launch(start = CoroutineStart.UNDISPATCHED) { coordinator.sync("cancelled") }
+    coordinator.sync("queued")
+
+    first.cancelAndJoin()
+    assertTrue(first.isCancelled)
+    coVerify(exactly = 0) { highlights.applySnapshot(any(), any()) }
+    coordinator.sync("retry")
+
+    assertEquals(listOf("cancelled", "retry"), files)
+    coVerify(exactly = 1) { highlights.applySnapshot(any(), any()) }
+  }
+
+  @Test
+  fun thrownFailurePropagatesAndTheNextTriggerCanSync() = runTest {
+    val release = CompletableDeferred<Unit>()
+    val failure = IllegalStateException("pull failed")
+    val files = mutableListOf<String>()
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          files += context.book.file.name
+          if (files.size == 1) {
+            release.await()
+            throw failure
+          }
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val highlights = mockk<HighlightRepository>(relaxed = true)
+    val coordinator = coordinator(provider, highlights)
+    val first =
+      launch(start = CoroutineStart.UNDISPATCHED) {
+        try {
+          coordinator.sync("failed")
+          fail("Expected the original failure")
+        } catch (caught: IllegalStateException) {
+          assertSame(failure, caught)
+        }
+      }
+    coordinator.sync("queued")
+    release.complete(Unit)
+    first.join()
+    coVerify(exactly = 0) { highlights.applySnapshot(any(), any()) }
+
+    coordinator.sync("retry")
+    assertEquals(listOf("failed", "retry"), files)
+    coVerify(exactly = 1) { highlights.applySnapshot(any(), any()) }
+  }
+
+  private suspend fun HighlightSyncCoordinator.sync(fileName: String) {
+    synchronize(BookId("kavita:7"), File(fileName), mockk<Publication>()) { null }
+  }
+
   private fun coordinator(
     provider: Provider,
     highlights: HighlightRepository,
@@ -140,6 +252,7 @@ class HighlightSyncCoordinatorTest {
 
 private class RecordingProvider(
   private val events: MutableList<String>,
+  private val onPull: suspend (ProviderHighlightContext) -> Unit = {},
   private val pushResult: (HighlightChange) -> ProviderResult<HighlightPushAck>,
 ) : Provider {
   override val descriptor =
@@ -181,6 +294,7 @@ private class RecordingProvider(
     context: ProviderHighlightContext
   ): ProviderResult<ProviderHighlightSnapshot> {
     events += "pull"
+    onPull(context)
     return ProviderResult.Success(ProviderHighlightSnapshot(emptySet(), emptyList()))
   }
 }
