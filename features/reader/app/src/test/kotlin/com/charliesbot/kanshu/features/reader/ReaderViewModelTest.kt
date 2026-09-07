@@ -1647,6 +1647,7 @@ private class FakeAnnotationRepository : AnnotationRepository {
     val annotation =
       ReaderAnnotation(
         id = "annotation-${stored.value.size}",
+        bookId = bookId,
         spineIndex = spineIndex,
         startCharOffset = startCharOffset,
         endCharOffset = endCharOffset,

@@ -35,7 +35,7 @@ enum class HighlightSyncState(val storageValue: String) {
  */
 data class ReaderAnnotation(
   val id: String,
-  val bookId: String = "",
+  val bookId: String,
   val spineIndex: Int,
   val startCharOffset: Int,
   val endCharOffset: Int,
