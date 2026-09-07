@@ -587,7 +587,7 @@ class ReaderViewModel(
                 session.publication.readSpineItemAt(spineIndex, session.stylesheets)
               }
               ?.also { session.spineItems[spineIndex] = it }
-        item?.document?.sourceMap?.let(::ReaderProviderSourceMap)
+        item?.document?.sourceMap?.let(::ReaderEpubSourceMap)
       },
     )
   }

@@ -5,12 +5,12 @@ import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.toProviderBookContext
 import com.charliesbot.kanshu.core.database.entity.toProviderBookKey
 import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.EpubSourceMap
 import com.charliesbot.kanshu.core.provider.HighlightChange
 import com.charliesbot.kanshu.core.provider.Provider
 import com.charliesbot.kanshu.core.provider.ProviderHighlightContext
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderResult
-import com.charliesbot.kanshu.core.provider.ProviderSourceMap
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -32,7 +32,7 @@ interface AnnotationSyncCoordinator {
     bookId: BookId,
     file: File,
     publication: Publication,
-    sourceMapForSpine: suspend (Int) -> ProviderSourceMap?,
+    sourceMapForSpine: suspend (Int) -> EpubSourceMap?,
   )
 }
 
@@ -56,7 +56,7 @@ class AnnotationSyncCoordinatorImpl(
     bookId: BookId,
     file: File,
     publication: Publication,
-    sourceMapForSpine: suspend (Int) -> ProviderSourceMap?,
+    sourceMapForSpine: suspend (Int) -> EpubSourceMap?,
   ) {
     var request = SyncRequest(bookId, file, publication, sourceMapForSpine)
     val shouldRun = stateMutex.withLock {
@@ -129,7 +129,7 @@ class AnnotationSyncCoordinatorImpl(
     val bookId: BookId,
     val file: File,
     val publication: Publication,
-    val sourceMapForSpine: suspend (Int) -> ProviderSourceMap?,
+    val sourceMapForSpine: suspend (Int) -> EpubSourceMap?,
   )
 
   private companion object {
