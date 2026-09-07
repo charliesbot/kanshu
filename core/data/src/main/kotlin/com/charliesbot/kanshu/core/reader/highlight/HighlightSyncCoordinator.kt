@@ -61,29 +61,14 @@ class HighlightSyncCoordinatorImpl(
     publication: Publication,
     sourceMapForSpine: suspend (Int) -> EpubSourceMap?,
   ) {
-    var request = SyncRequest(bookId, file, publication, sourceMapForSpine)
-    val shouldRun = stateMutex.withLock {
-      if (running) {
-        pending = request
-        false
-      } else {
-        running = true
-        true
-      }
-    }
-    if (!shouldRun) return
+    val initialRequest = SyncRequest(bookId, file, publication, sourceMapForSpine)
+    if (!startOrQueue(initialRequest)) return
 
     try {
-      while (true) {
+      var request: SyncRequest? = initialRequest
+      while (request != null) {
         runRound(request)
-        val next =
-          stateMutex.withLock {
-            pending.also {
-              pending = null
-              if (it == null) running = false
-            }
-          } ?: return
-        request = next
+        request = takeNextRequest()
       }
     } catch (failure: Throwable) {
       // Release ownership even if the caller was cancelled while holding a queued request.
@@ -96,6 +81,22 @@ class HighlightSyncCoordinatorImpl(
       }
       throw failure
     }
+  }
+
+  private suspend fun startOrQueue(request: SyncRequest): Boolean = stateMutex.withLock {
+    if (running) {
+      pending = request
+      return@withLock false
+    }
+    running = true
+    true
+  }
+
+  private suspend fun takeNextRequest(): SyncRequest? = stateMutex.withLock {
+    val next = pending
+    pending = null
+    if (next == null) running = false
+    next
   }
 
   private suspend fun runRound(request: SyncRequest) {
@@ -124,19 +125,18 @@ class HighlightSyncCoordinatorImpl(
   ) {
     highlights.pendingChanges(bookId.value, state).forEach { change ->
       when (val result = provider.pushHighlight(context, change)) {
-        is ProviderResult.Success ->
-          when (change) {
-            is HighlightChange.Delete ->
-              highlights.acknowledgeDelete(change.localId, change.expectedUpdatedAt)
-            is HighlightChange.Upsert ->
-              highlights.acknowledgeUpsert(
-                change.localId,
-                change.expectedUpdatedAt,
-                result.value.remoteId,
-              )
-          }
+        is ProviderResult.Success -> acknowledge(change, result.value.remoteId)
         is ProviderResult.Failure -> Log.w(TAG, "Highlight push failed: " + result.error)
       }
+    }
+  }
+
+  private suspend fun acknowledge(change: HighlightChange, remoteId: String?) {
+    when (change) {
+      is HighlightChange.Delete ->
+        highlights.acknowledgeDelete(change.localId, change.expectedUpdatedAt)
+      is HighlightChange.Upsert ->
+        highlights.acknowledgeUpsert(change.localId, change.expectedUpdatedAt, remoteId)
     }
   }
 
