@@ -5,6 +5,7 @@ import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.KavitaException
 import com.charliesbot.kanshu.core.kavita.dto.AnnotationDto
 import com.charliesbot.kanshu.core.provider.AcquiredBook
+import com.charliesbot.kanshu.core.provider.EpubSourceMap
 import com.charliesbot.kanshu.core.provider.HighlightChange
 import com.charliesbot.kanshu.core.provider.HighlightPushAck
 import com.charliesbot.kanshu.core.provider.Provider
@@ -21,7 +22,6 @@ import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
 import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderMetadata
 import com.charliesbot.kanshu.core.provider.ProviderResult
-import com.charliesbot.kanshu.core.provider.ProviderSourceMap
 import com.charliesbot.kanshu.core.provider.ProviderType
 import com.charliesbot.kanshu.core.provider.RemoteProgress
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
@@ -265,7 +265,7 @@ class KavitaProvider(
 
 internal fun toKavitaXPath(
   path: SourceElementPath,
-  sourceMap: ProviderSourceMap,
+  sourceMap: EpubSourceMap,
 ): String? {
   var current = SourceElementPath.Root
   val segments = mutableListOf<String>()

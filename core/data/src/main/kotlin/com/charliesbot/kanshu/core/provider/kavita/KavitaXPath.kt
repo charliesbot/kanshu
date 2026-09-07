@@ -1,11 +1,11 @@
 package com.charliesbot.kanshu.core.provider.kavita
 
-import com.charliesbot.kanshu.core.provider.ProviderSourceMap
+import com.charliesbot.kanshu.core.provider.EpubSourceMap
 import com.charliesbot.kanshu.core.reader.SourceElementPath
 
 internal fun resolveKavitaXPath(
   xpath: String,
-  sourceMap: ProviderSourceMap,
+  sourceMap: EpubSourceMap,
 ): SourceElementPath? {
   val anchor = parseKavitaAnchor(xpath) ?: return null
   var current =

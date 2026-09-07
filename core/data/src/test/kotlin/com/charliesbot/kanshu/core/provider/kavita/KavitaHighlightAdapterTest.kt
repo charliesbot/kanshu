@@ -4,14 +4,14 @@ import com.charliesbot.kanshu.core.connection.CredentialsRepository
 import com.charliesbot.kanshu.core.connection.KavitaCredentials
 import com.charliesbot.kanshu.core.kavita.KavitaApi
 import com.charliesbot.kanshu.core.kavita.dto.AnnotationDto
+import com.charliesbot.kanshu.core.provider.EpubSourceElement
+import com.charliesbot.kanshu.core.provider.EpubSourceMap
 import com.charliesbot.kanshu.core.provider.HighlightChange
 import com.charliesbot.kanshu.core.provider.ProviderBookContext
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderHighlightContext
 import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
 import com.charliesbot.kanshu.core.provider.ProviderResult
-import com.charliesbot.kanshu.core.provider.ProviderSourceElement
-import com.charliesbot.kanshu.core.provider.ProviderSourceMap
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.SourceElementPath
 import io.mockk.coEvery
@@ -125,14 +125,14 @@ class KavitaHighlightAdapterTest {
 
   @Test
   fun entirePathIsValidatedBeforeLookingUpElements() {
-    val map = mockk<ProviderSourceMap>()
+    val map = mockk<EpubSourceMap>()
     assertNull(resolveKavitaXPath("id('container')/p[abc]", map))
     io.mockk.verify { map wasNot io.mockk.Called }
   }
 
   @Test
   fun bodyAnchorRequiresAnExistingSourceRoot() {
-    val map = mockk<ProviderSourceMap>()
+    val map = mockk<EpubSourceMap>()
     io.mockk.every { map.inspect(SourceElementPath.Root) } returns null
     assertNull(resolveKavitaXPath("//body", map))
   }
@@ -140,7 +140,7 @@ class KavitaHighlightAdapterTest {
   @Test
   fun quotedIdsMayContainPathDelimiters() {
     listOf("part)/section", "part'quote").forEach { id ->
-      val map = mockk<ProviderSourceMap>()
+      val map = mockk<EpubSourceMap>()
       io.mockk.every { map.resolveElementId(id) } returns SourceElementPath(listOf(0))
       io.mockk.every { map.inspect(SourceElementPath(listOf(0))) } returns
         sourceMap.inspect(SourceElementPath(listOf(0)))
@@ -263,21 +263,21 @@ class KavitaHighlightAdapterTest {
     )
 }
 
-private class FakeSourceMap : ProviderSourceMap {
+private class FakeSourceMap : EpubSourceMap {
   private val root = SourceElementPath.Root
   private val div = SourceElementPath(listOf(0))
   private val first = SourceElementPath(listOf(0, 0))
   private val second = SourceElementPath(listOf(0, 1))
   private val elements =
     listOf(
-        ProviderSourceElement(root, "body", null, 0, listOf(div), 0..20),
-        ProviderSourceElement(div, "DIV", "container", 0, listOf(first, second), 0..20),
-        ProviderSourceElement(first, "P", null, 0, emptyList(), 10..14),
-        ProviderSourceElement(second, "P", "target", 1, emptyList(), 15..20),
+        EpubSourceElement(root, "body", null, 0, listOf(div), 0..20),
+        EpubSourceElement(div, "DIV", "container", 0, listOf(first, second), 0..20),
+        EpubSourceElement(first, "P", null, 0, emptyList(), 10..14),
+        EpubSourceElement(second, "P", "target", 1, emptyList(), 15..20),
       )
       .associateBy { it.path }
 
-  override fun inspect(path: SourceElementPath): ProviderSourceElement? = elements[path]
+  override fun inspect(path: SourceElementPath): EpubSourceElement? = elements[path]
 
   override fun resolveChild(
     parent: SourceElementPath,
