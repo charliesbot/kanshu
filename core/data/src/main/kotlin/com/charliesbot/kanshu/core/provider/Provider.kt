@@ -1,10 +1,16 @@
 package com.charliesbot.kanshu.core.provider
 
 import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import java.io.File
 import org.readium.r2.shared.publication.Publication
 
+typealias ProviderMetadata = Map<String, String>
+
+/**
+ * Provider-specific catalog, acquisition, and synchronization operations behind a shared contract.
+ */
 interface Provider {
   val descriptor: ProviderDescriptor
 
@@ -18,6 +24,17 @@ interface Provider {
     onProgress: (downloaded: Long, total: Long?) -> Unit,
   ): ProviderResult<AcquiredBook>
 
+  /**
+   * Acquires a book with opaque catalog metadata that the provider may enrich in [AcquiredBook].
+   * The default delegates to acquisition without metadata for providers that do not need it.
+   */
+  suspend fun acquire(
+    book: ProviderBookKey,
+    metadata: ProviderMetadata,
+    target: File,
+    onProgress: (downloaded: Long, total: Long?) -> Unit,
+  ): ProviderResult<AcquiredBook> = acquire(book, target, onProgress)
+
   suspend fun pullProgress(context: ProviderBookContext): ProviderResult<RemoteProgress?> =
     ProviderResult.Success(null)
 
@@ -26,29 +43,54 @@ interface Provider {
     position: ReaderPosition,
   ): ProviderResult<Unit> = ProviderResult.Success(Unit)
 
+  /**
+   * Returns a complete remote snapshot, including IDs whose anchors cannot be translated. A failed
+   * or incomplete fetch must return failure rather than a partial success: missing IDs are used to
+   * remove linked local highlights. Called only for providers supporting highlight sync.
+   */
   suspend fun pullHighlights(
-    context: ProviderBookContext
-  ): ProviderResult<List<ProviderHighlight>> = ProviderResult.Success(emptyList())
+    context: ProviderHighlightContext
+  ): ProviderResult<ProviderHighlightSnapshot> =
+    ProviderResult.Success(ProviderHighlightSnapshot(emptySet(), emptyList()))
 
-  suspend fun pushHighlights(
-    context: ProviderBookContext,
-    changes: List<HighlightChange>,
-  ): ProviderResult<Unit> = ProviderResult.Success(Unit)
+  /**
+   * Pushes one local mutation and returns its acknowledgement, including the remote ID on creation.
+   * Failures leave the local change pending. Called only for providers supporting highlight sync.
+   */
+  suspend fun pushHighlight(
+    context: ProviderHighlightContext,
+    change: HighlightChange,
+  ): ProviderResult<HighlightPushAck> = ProviderResult.Success(HighlightPushAck())
 }
 
-data class AcquiredBook(val byteSize: Long)
+/** Acquisition result containing the downloaded size and any provider-enriched metadata. */
+data class AcquiredBook(
+  val byteSize: Long,
+  val providerMetadata: ProviderMetadata = emptyMap(),
+)
 
+/** An opened book and its opaque provider metadata, shared by progress and highlight adapters. */
 data class ProviderBookContext(
   val book: ProviderBookKey,
   val file: File,
   val publication: Publication,
+  val providerMetadata: ProviderMetadata = emptyMap(),
 )
 
 /**
- * @property position Null when the remote's position couldn't be decoded into our spine model —
- *   another kosync client's XPointer, or the numeric-only form Kavita sends for PDFs. The record is
- *   still reported rather than dropped, because [percentage] alone is enough to tell that the
- *   remote is further along, and dropping it would silently disarm the pre-push check.
+ * Book context plus lazy access to reader-supplied source maps for zero-based EPUB spine indexes.
+ * Providers may use these maps for EPUB anchor translation; providers do not implement the maps.
+ * [sourceMapForSpine] may load or parse a section and returns null when its source map is
+ * unavailable.
+ */
+data class ProviderHighlightContext(
+  val book: ProviderBookContext,
+  val sourceMapForSpine: suspend (Int) -> EpubSourceMap?,
+)
+
+/**
+ * Remote reading progress; a null [position] means the anchor could not be decoded. [percentage]
+ * still allows comparison with local progress even when the precise position is unknown.
  */
 data class RemoteProgress(
   val position: ReaderPosition?,
@@ -56,26 +98,67 @@ data class RemoteProgress(
   val timestampMillis: Long,
 )
 
-/** Provider-neutral highlight representation used only at the remote adapter boundary. */
+/**
+ * A translated remote highlight within one zero-based spine section. Character offsets use an
+ * exclusive end; source paths identify elements, not exact text positions. [createdAt] and
+ * [updatedAt] are epoch milliseconds supplied by the provider adapter.
+ */
 data class ProviderHighlight(
-  val localId: String?,
-  val remoteId: String?,
+  val remoteId: String,
   val spineIndex: Int,
   val startCharOffset: Int,
   val endCharOffset: Int,
   val selectedText: String,
+  val startElementPath: SourceElementPath,
+  val endElementPath: SourceElementPath,
   val color: ReaderHighlightColor,
   val createdAt: Long,
   val updatedAt: Long,
-  val remoteRevision: String?,
 )
 
-sealed interface HighlightChange {
-  data class Upsert(val highlight: ProviderHighlight) : HighlightChange
+/**
+ * Complete remote inventory used for local reconciliation. [seenRemoteIds] includes untranslatable
+ * highlights; [highlights] contains only translated ones. An ID absent from [highlights] but
+ * present in [seenRemoteIds] must not cause local deletion.
+ */
+data class ProviderHighlightSnapshot(
+  val seenRemoteIds: Set<String>,
+  val highlights: List<ProviderHighlight>,
+)
 
+/**
+ * A pending local mutation captured before network work begins. [expectedUpdatedAt] identifies the
+ * local version being acknowledged, so newer edits stay pending.
+ */
+sealed interface HighlightChange {
+  val localId: String
+  val remoteId: String?
+  val expectedUpdatedAt: Long
+
+  /** Creates a remote highlight when [remoteId] is null; otherwise updates the linked highlight. */
+  data class Upsert(
+    override val localId: String,
+    override val remoteId: String?,
+    override val expectedUpdatedAt: Long,
+    val spineIndex: Int,
+    val startCharOffset: Int,
+    val endCharOffset: Int,
+    val selectedText: String,
+    val startElementPath: SourceElementPath,
+    val endElementPath: SourceElementPath,
+    val color: ReaderHighlightColor,
+    val createdAt: Long,
+  ) : HighlightChange
+
+  /**
+   * Deletes a linked remote highlight; a null [remoteId] means there is no remote row to delete.
+   */
   data class Delete(
-    val localId: String,
-    val remoteId: String?,
-    val remoteRevision: String?,
+    override val localId: String,
+    override val remoteId: String?,
+    override val expectedUpdatedAt: Long,
   ) : HighlightChange
 }
+
+/** Successful mutation acknowledgement; creates must return the assigned [remoteId]. */
+data class HighlightPushAck(val remoteId: String? = null)

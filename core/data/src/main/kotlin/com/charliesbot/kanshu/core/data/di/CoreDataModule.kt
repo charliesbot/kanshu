@@ -1,6 +1,7 @@
 package com.charliesbot.kanshu.core.data.di
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import com.charliesbot.kanshu.core.connection.ConnectionRepository
 import com.charliesbot.kanshu.core.connection.ConnectionRepositoryImpl
 import com.charliesbot.kanshu.core.connection.CredentialsRepository
@@ -15,14 +16,17 @@ import com.charliesbot.kanshu.core.library.usecase.DeleteDownloadUseCase
 import com.charliesbot.kanshu.core.library.usecase.DownloadBookUseCase
 import com.charliesbot.kanshu.core.library.usecase.LoadLibraryUseCase
 import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
+import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
 import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
 import com.charliesbot.kanshu.core.reader.EpubOpener
 import com.charliesbot.kanshu.core.reader.EpubOpenerImpl
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepositoryImpl
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepositoryImpl
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinator
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinatorImpl
 import com.charliesbot.kanshu.core.reader.preferences.ReaderPreferencesRepositoryImpl
 import com.charliesbot.kanshu.core.reader.preferences.readerPreferencesDataStore
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
@@ -49,7 +53,7 @@ val coreDataModule = module {
   }
   single { get<KanshuDatabase>().bookDao() }
   single { get<KanshuDatabase>().readingProgressDao() }
-  single { get<KanshuDatabase>().annotationDao() }
+  single { get<KanshuDatabase>().highlightDao() }
   single { KavitaProvider(credentials = get(), api = get()) }
   single<ProviderRegistry> { ProviderRegistryImpl(listOf(get<KavitaProvider>())) }
   single<BookRepository> {
@@ -74,5 +78,23 @@ val coreDataModule = module {
   single<ProgressRepository> {
     ProgressRepositoryImpl(providers = get(), books = get(), progressDao = get())
   }
-  single<AnnotationRepository> { AnnotationRepositoryImpl(annotationDao = get()) }
+  single<HighlightRepository> {
+    val database = get<KanshuDatabase>()
+    HighlightRepositoryImpl(
+      highlightDao = database.highlightDao(),
+      highlightSyncEnabled = { bookId ->
+        val book = database.bookDao().find(bookId)
+        book != null &&
+          get<ProviderRegistry>()
+            .provider(ProviderInstanceId(book.providerInstanceId))
+            .descriptor
+            .capabilities
+            .highlightSync
+      },
+      inTransaction = { block -> database.withTransaction { block() } },
+    )
+  }
+  single<HighlightSyncCoordinator> {
+    HighlightSyncCoordinatorImpl(providers = get(), books = get(), highlights = get())
+  }
 }

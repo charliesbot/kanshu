@@ -9,15 +9,28 @@ import org.readium.r2.shared.publication.Publication
 
 class ProviderHighlightContractTest {
   @Test
-  fun `default highlight operations are successful no-ops`() = runTest {
+  fun defaultHighlightOperationsUseSnapshotsAndPerChangeAcknowledgements() = runTest {
     val provider = provider()
-    val context = context(provider)
+    val context =
+      ProviderHighlightContext(
+        book =
+          ProviderBookContext(
+            book = ProviderBookKey(provider.descriptor.id, "book"),
+            file = File("book.epub"),
+            publication = mockk<Publication>(),
+          ),
+        sourceMapForSpine = { null },
+      )
 
     assertEquals(
-      ProviderResult.Success(emptyList<ProviderHighlight>()),
+      ProviderResult.Success(ProviderHighlightSnapshot(emptySet(), emptyList())),
       provider.pullHighlights(context),
     )
-    assertEquals(ProviderResult.Success(Unit), provider.pushHighlights(context, emptyList()))
+    val change = HighlightChange.Delete("local", "remote", 7L)
+    assertEquals(
+      ProviderResult.Success(HighlightPushAck()),
+      provider.pushHighlight(context, change),
+    )
   }
 
   private fun provider() =
@@ -45,11 +58,4 @@ class ProviderHighlightContractTest {
         onProgress: (downloaded: Long, total: Long?) -> Unit,
       ): ProviderResult<AcquiredBook> = ProviderResult.Success(AcquiredBook(0))
     }
-
-  private fun context(provider: Provider) =
-    ProviderBookContext(
-      book = ProviderBookKey(provider.descriptor.id, "book"),
-      file = File("book.epub"),
-      publication = mockk<Publication>(),
-    )
 }

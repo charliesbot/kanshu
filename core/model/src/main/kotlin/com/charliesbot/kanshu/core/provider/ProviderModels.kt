@@ -11,12 +11,14 @@ data class ProviderBookKey(
   val providerItemId: String,
 )
 
+/** Catalog entry carrying opaque provider metadata that acquisition may enrich for later sync. */
 data class ProviderBook(
   val key: ProviderBookKey,
   val title: String,
   val cover: ProviderCover?,
   val mediaType: String,
   val revisionToken: String?,
+  val providerMetadata: Map<String, String> = emptyMap(),
 )
 
 sealed interface ProviderCover {

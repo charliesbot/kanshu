@@ -11,7 +11,8 @@ import com.charliesbot.kanshu.core.reader.ReaderMargins
 import com.charliesbot.kanshu.core.reader.ReaderPreferences
 import com.charliesbot.kanshu.core.reader.ReaderPreferencesRepository
 import com.charliesbot.kanshu.core.reader.ReaderResult
-import com.charliesbot.kanshu.core.reader.annotation.AnnotationRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightRepository
+import com.charliesbot.kanshu.core.reader.highlight.HighlightSyncCoordinator
 import com.charliesbot.kanshu.core.reader.progress.ReaderPosition
 import com.charliesbot.kanshu.core.reader.usecase.OpenBookUseCase
 import com.charliesbot.kanshu.core.sync.ProgressRepository
@@ -66,11 +67,15 @@ internal data class ReaderPaginationState(
   val pendingLanding: ReaderLandingPage? = null,
 )
 
+/**
+ * Owns the reader session and Room-backed highlights, requesting sync after opening or local edits.
+ */
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
   private val progressRepository: ProgressRepository,
-  private val annotationRepository: AnnotationRepository,
+  private val highlightRepository: HighlightRepository,
+  private val highlightSyncCoordinator: HighlightSyncCoordinator? = null,
   private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
   private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -339,7 +344,8 @@ class ReaderViewModel(
 
   /**
    * Stores the current selection as a highlight. The range is the engine's, in chapter text-stream
-   * offsets, so the highlight lands on the same words after any repagination.
+   * offsets, so the highlight lands on the same words after any repagination. Local persistence
+   * completes before provider synchronization is requested.
    */
   fun addHighlight(
     selection: ReaderSelectionInfo,
@@ -349,23 +355,34 @@ class ReaderViewModel(
     if (!selection.hasRange) return
     val spineIndex = currentSpineIndex
     viewModelScope.launch {
-      annotationRepository.addHighlight(
+      highlightRepository.addHighlight(
         bookId = id.value,
         spineIndex = spineIndex,
         startCharOffset = selection.startCharOffset,
         endCharOffset = selection.endCharOffset,
         selectedText = selection.text,
+        startElementPath = selection.startElementPath,
+        endElementPath = selection.endElementPath,
         color = color,
       )
+      synchronizeHighlights()
     }
   }
 
+  /** Applies the local deletion before requesting provider synchronization. */
   fun removeHighlight(id: String) {
-    viewModelScope.launch { annotationRepository.delete(id) }
+    viewModelScope.launch {
+      highlightRepository.delete(id)
+      synchronizeHighlights()
+    }
   }
 
+  /** Persists the new color locally before requesting provider synchronization. */
   fun setHighlightColor(id: String, color: ReaderHighlightColor) {
-    viewModelScope.launch { annotationRepository.updateHighlightColor(id, color) }
+    viewModelScope.launch {
+      highlightRepository.updateHighlightColor(id, color)
+      synchronizeHighlights()
+    }
   }
 
   private fun observeHighlights(chapterToken: Long) {
@@ -374,9 +391,9 @@ class ReaderViewModel(
     highlightsJob?.cancel()
     _highlights.value = emptyList()
     highlightsJob = viewModelScope.launch {
-      annotationRepository.observeForSpine(id.value, spineIndex).collect { annotations ->
+      highlightRepository.observeForSpine(id.value, spineIndex).collect { highlights ->
         if (!isCurrentChapter(chapterToken)) return@collect
-        _highlights.value = annotations.map {
+        _highlights.value = highlights.map {
           ReaderHighlight(
             startCharOffset = it.startCharOffset,
             endCharOffset = it.endCharOffset,
@@ -516,11 +533,7 @@ class ReaderViewModel(
     val startingSpineIndex = currentSpineIndex
     spineJob = viewModelScope.launch {
       try {
-        val item =
-          session.spineItems[targetSpineIndex]
-            ?: withContext(ioDispatcher) {
-              session.publication.readSpineItemAt(targetSpineIndex, session.stylesheets)
-            }
+        val item = loadSpineItem(session, targetSpineIndex)
         if (openSession !== session || currentSpineIndex != startingSpineIndex) {
           Log.d(TAG, "openSpineItem: ignored stale open of spine[$targetSpineIndex]")
           return@launch
@@ -541,6 +554,13 @@ class ReaderViewModel(
     }
   }
 
+  private suspend fun loadSpineItem(session: BookSession, spineIndex: Int): SpineItem? =
+    session.spineItems[spineIndex]
+      ?: withContext(ioDispatcher) {
+          session.publication.readSpineItemAt(spineIndex, session.stylesheets)
+        }
+        ?.also { session.spineItems[spineIndex] = it }
+
   private fun activateSpineItem(session: BookSession, item: SpineItem) {
     session.spineItems[item.spineIndex] = item
     currentSpineIndex = item.spineIndex
@@ -553,6 +573,20 @@ class ReaderViewModel(
         diagnostics = item.diagnostics,
       )
     observeHighlights(chapterToken)
+    viewModelScope.launch { synchronizeHighlights() }
+  }
+
+  private suspend fun synchronizeHighlights() {
+    val coordinator = highlightSyncCoordinator ?: return
+    val session = openSession ?: return
+    coordinator.synchronize(
+      bookId = session.bookId,
+      file = session.file,
+      publication = session.publication,
+      sourceMapForSpine = { spineIndex ->
+        loadSpineItem(session, spineIndex)?.document?.sourceMap?.let(::ReaderEpubSourceMap)
+      },
+    )
   }
 
   override fun onCleared() {

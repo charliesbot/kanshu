@@ -1,0 +1,325 @@
+package com.charliesbot.kanshu.core.reader.highlight
+
+import com.charliesbot.kanshu.core.database.dao.HighlightDao
+import com.charliesbot.kanshu.core.database.entity.HighlightEntity
+import com.charliesbot.kanshu.core.provider.ProviderHighlight
+import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class HighlightRepositoryTest {
+  @Test
+  fun `updateHighlightColor updates the stored highlight color and timestamp`() = runTest {
+    val dao =
+      mockk<HighlightDao> {
+        coEvery { find("highlight-id") } returns highlightEntity("highlight-id", "YELLOW")
+        coEvery {
+          updateColor("highlight-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
+        } returns Unit
+      }
+
+    repository(dao).updateHighlightColor("highlight-id", ReaderHighlightColor.Aqua)
+
+    coVerify(exactly = 1) {
+      dao.updateColor("highlight-id", "AQUA", 1_700L, HighlightSyncState.SYNCED)
+    }
+  }
+
+  @Test
+  fun `addHighlight stores the offsets and returns the highlight`() = runTest {
+    val stored = slot<HighlightEntity>()
+    val dao = mockk<HighlightDao> { coEvery { upsert(capture(stored)) } returns Unit }
+
+    val highlight =
+      repository(dao)
+        .addHighlight(
+          bookId = "kavita:7",
+          spineIndex = 3,
+          startCharOffset = 100,
+          endCharOffset = 140,
+          selectedText = "a highlighted phrase",
+          startElementPath = SourceElementPath.Root,
+          endElementPath = SourceElementPath.Root,
+        )
+
+    assertEquals("highlight-id", highlight?.id)
+    assertEquals("kavita:7", stored.captured.bookId)
+    assertEquals(3, stored.captured.spineIndex)
+    assertEquals(100, stored.captured.startCharOffset)
+    assertEquals(140, stored.captured.endCharOffset)
+    assertEquals("a highlighted phrase", stored.captured.selectedText)
+    assertEquals(1_700L, stored.captured.createdAt)
+  }
+
+  @Test
+  fun `an empty or inverted range is rejected without touching the dao`() = runTest {
+    val dao = mockk<HighlightDao>()
+
+    assertNull(
+      repository(dao)
+        .addHighlight(
+          "kavita:7",
+          0,
+          10,
+          10,
+          "",
+          SourceElementPath.Root,
+          SourceElementPath.Root,
+        )
+    )
+    assertNull(
+      repository(dao)
+        .addHighlight(
+          "kavita:7",
+          0,
+          10,
+          4,
+          "backwards",
+          SourceElementPath.Root,
+          SourceElementPath.Root,
+        )
+    )
+
+    coVerify(exactly = 0) { dao.upsert(any()) }
+  }
+
+  @Test
+  fun `observeForSpine maps rows to highlights`() = runTest {
+    val dao =
+      mockk<HighlightDao> {
+        coEvery { observeForSpine("kavita:7", 3) } returns
+          flowOf(
+            listOf(
+              HighlightEntity(
+                id = "a",
+                bookId = "kavita:7",
+                spineIndex = 3,
+                startCharOffset = 10,
+                endCharOffset = 20,
+                selectedText = "words",
+                createdAt = 5L,
+                updatedAt = 5L,
+              )
+            )
+          )
+      }
+
+    val highlights = repository(dao).observeForSpine("kavita:7", 3).first()
+
+    assertEquals(
+      listOf(
+        Highlight(
+          id = "a",
+          spineIndex = 3,
+          startCharOffset = 10,
+          endCharOffset = 20,
+          selectedText = "words",
+          bookId = "kavita:7",
+          createdAt = 5L,
+        )
+      ),
+      highlights,
+    )
+  }
+
+  @Test
+  fun syncCapableCreateStoresPathsAsPendingUpsert() = runTest {
+    val stored = slot<HighlightEntity>()
+    val dao = mockk<HighlightDao> { coEvery { upsert(capture(stored)) } returns Unit }
+
+    repository(dao, syncEnabled = true)
+      .addHighlight(
+        bookId = "kavita:7",
+        spineIndex = 2,
+        startCharOffset = 4,
+        endCharOffset = 9,
+        selectedText = "words",
+        startElementPath = SourceElementPath(listOf(0, 1)),
+        endElementPath = SourceElementPath(listOf(0, 2)),
+      )
+
+    assertEquals(HighlightSyncState.PENDING_UPSERT, stored.captured.syncState)
+    assertEquals(SourceElementPath(listOf(0, 1)), stored.captured.startElementPath)
+    assertEquals(SourceElementPath(listOf(0, 2)), stored.captured.endElementPath)
+  }
+
+  @Test
+  fun syncCapableLinkedDeleteLeavesPendingTombstone() = runTest {
+    val row = highlightEntity("highlight-id", "YELLOW").copy(remoteId = "remote-1")
+    val dao =
+      mockk<HighlightDao> {
+        coEvery { find("highlight-id") } returns row
+        coEvery { markPendingDelete("highlight-id", 1_700L) } returns Unit
+      }
+
+    repository(dao, syncEnabled = true).delete("highlight-id")
+
+    coVerify { dao.markPendingDelete("highlight-id", 1_700L) }
+    coVerify(exactly = 0) { dao.delete(any()) }
+  }
+
+  @Test
+  fun applySnapshotMapsNewAndSyncedRemoteHighlightsInOneTransaction() = runTest {
+    var transactionActive = false
+    val stored = slot<List<HighlightEntity>>()
+    val existing =
+      highlightEntity("local-existing", "YELLOW")
+        .copy(
+          remoteId = "remote-existing",
+          syncState = HighlightSyncState.SYNCED,
+        )
+    val dao =
+      mockk<HighlightDao> {
+        coEvery { forBook("kavita:7") } answers
+          {
+            check(transactionActive)
+            listOf(existing)
+          }
+        coEvery { upsertAll(capture(stored)) } answers
+          {
+            check(transactionActive)
+          }
+      }
+    val transaction: suspend (suspend () -> Unit) -> Unit = { block ->
+      transactionActive = true
+      try {
+        block()
+      } finally {
+        transactionActive = false
+      }
+    }
+
+    repository(dao, transaction = transaction)
+      .applySnapshot(
+        "kavita:7",
+        ProviderHighlightSnapshot(
+          seenRemoteIds = setOf("remote-new", "remote-existing"),
+          highlights =
+            listOf(
+              providerHighlight("remote-new", spineIndex = 1),
+              providerHighlight("remote-existing", spineIndex = 2),
+            ),
+        ),
+      )
+
+    assertEquals(listOf("highlight-id", "local-existing"), stored.captured.map { it.id })
+    assertEquals(listOf(1, 2), stored.captured.map { it.spineIndex })
+    stored.captured.forEach { row ->
+      assertEquals("kavita:7", row.bookId)
+      assertEquals("remote text", row.selectedText)
+      assertEquals(SourceElementPath(listOf(0, 1)), row.startElementPath)
+      assertEquals(SourceElementPath(listOf(0, 2)), row.endElementPath)
+      assertEquals("AQUA", row.color)
+      assertEquals(100L, row.createdAt)
+      assertEquals(200L, row.updatedAt)
+      assertEquals(HighlightSyncState.SYNCED, row.syncState)
+    }
+  }
+
+  @Test
+  fun applySnapshotPreservesPendingRowsAndDeletesOnlyMissingSyncedRows() = runTest {
+    val pending =
+      highlightEntity("pending", "PINK")
+        .copy(
+          remoteId = "remote-pending",
+          syncState = HighlightSyncState.PENDING_UPSERT,
+        )
+    val missing =
+      highlightEntity("missing", "YELLOW")
+        .copy(
+          remoteId = "remote-missing",
+          syncState = HighlightSyncState.SYNCED,
+        )
+    val seenButUntranslated =
+      highlightEntity("untranslated", "GREEN")
+        .copy(
+          remoteId = "remote-untranslated",
+          syncState = HighlightSyncState.SYNCED,
+        )
+    val dao =
+      mockk<HighlightDao> {
+        coEvery { forBook("kavita:7") } returns listOf(pending, missing, seenButUntranslated)
+        coEvery { deleteAll(listOf("missing")) } returns Unit
+      }
+
+    repository(dao)
+      .applySnapshot(
+        "kavita:7",
+        ProviderHighlightSnapshot(
+          seenRemoteIds = setOf("remote-pending", "remote-untranslated"),
+          highlights = listOf(providerHighlight("remote-pending")),
+        ),
+      )
+
+    coVerify(exactly = 0) { dao.upsertAll(any()) }
+    coVerify(exactly = 1) { dao.deleteAll(listOf("missing")) }
+  }
+
+  @Test
+  fun `stored colors accept legacy casing and unknown values fall back to yellow`() = runTest {
+    val rows =
+      listOf(
+        highlightEntity(id = "legacy", color = "aqua"),
+        highlightEntity(id = "unknown", color = "not-a-color"),
+      )
+    val dao = mockk<HighlightDao> { every { observeForSpine("kavita:7", 3) } returns flowOf(rows) }
+
+    val highlights = repository(dao).observeForSpine("kavita:7", 3).first()
+
+    assertEquals(
+      listOf(ReaderHighlightColor.Aqua, ReaderHighlightColor.Yellow),
+      highlights.map { it.color },
+    )
+  }
+
+  private fun repository(
+    dao: HighlightDao,
+    syncEnabled: Boolean = false,
+    transaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
+  ): HighlightRepository =
+    HighlightRepositoryImpl(
+      highlightDao = dao,
+      highlightSyncEnabled = { syncEnabled },
+      now = { 1_700L },
+      newId = { "highlight-id" },
+      inTransaction = transaction,
+    )
+}
+
+private fun highlightEntity(id: String, color: String): HighlightEntity =
+  HighlightEntity(
+    id = id,
+    bookId = "kavita:7",
+    spineIndex = 3,
+    startCharOffset = 10,
+    endCharOffset = 20,
+    selectedText = "words",
+    color = color,
+    createdAt = 5L,
+    updatedAt = 5L,
+  )
+
+private fun providerHighlight(remoteId: String, spineIndex: Int = 3): ProviderHighlight =
+  ProviderHighlight(
+    remoteId = remoteId,
+    spineIndex = spineIndex,
+    startCharOffset = 30,
+    endCharOffset = 40,
+    selectedText = "remote text",
+    startElementPath = SourceElementPath(listOf(0, 1)),
+    endElementPath = SourceElementPath(listOf(0, 2)),
+    color = ReaderHighlightColor.Aqua,
+    createdAt = 100L,
+    updatedAt = 200L,
+  )

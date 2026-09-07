@@ -3,6 +3,9 @@ package com.charliesbot.kanshu.core.library
 import android.util.Log
 import com.charliesbot.kanshu.core.database.dao.BookDao
 import com.charliesbot.kanshu.core.database.entity.BookEntity
+import com.charliesbot.kanshu.core.database.entity.decodeProviderMetadata
+import com.charliesbot.kanshu.core.database.entity.encodeProviderMetadata
+import com.charliesbot.kanshu.core.database.entity.toProviderBookKey
 import com.charliesbot.kanshu.core.provider.BookId
 import com.charliesbot.kanshu.core.provider.ProviderBookKey
 import com.charliesbot.kanshu.core.provider.ProviderCover
@@ -26,6 +29,10 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Maintains the Room-backed library and downloads, preserving provider metadata through
+ * acquisition.
+ */
 class BookRepositoryImpl(
   private val providers: ProviderRegistry,
   private val booksDir: File,
@@ -48,6 +55,10 @@ class BookRepositoryImpl(
   // nothing — completed downloads land in the DB; abandoned downloads disappear with the process.
   private val _inFlight = MutableStateFlow<Map<BookId, Int>>(emptyMap())
 
+  /**
+   * Refreshes enabled provider catalogs and emits the Room-backed library with local download
+   * state.
+   */
   override fun observeBooks(): Flow<LibraryResult> = flow {
     val localBooksSnapshot =
       try {
@@ -78,6 +89,7 @@ class BookRepositoryImpl(
                 downloadedAt = null,
                 lastOpenedAt = null,
                 coverToken = book.revisionToken,
+                providerMetadata = book.providerMetadata.encodeProviderMetadata(),
               )
             }
           bookDao.syncBooks(
@@ -106,7 +118,7 @@ class BookRepositoryImpl(
             .map { entity ->
               val provider = providers.provider(ProviderInstanceId(entity.providerInstanceId))
               val coverUrl =
-                (provider.resolveCover(entity.providerBookKey(), entity.coverToken)
+                (provider.resolveCover(entity.toProviderBookKey(), entity.coverToken)
                     as? ProviderCover.RemoteUrl)
                   ?.value
               LibraryItem(
@@ -185,7 +197,11 @@ class BookRepositoryImpl(
       val providerId = ProviderInstanceId(existingBook.providerInstanceId)
       val provider = providers.provider(providerId)
       val result =
-        provider.acquire(existingBook.providerBookKey(), tmp) { bytesSoFar, totalBytes ->
+        provider.acquire(
+          existingBook.toProviderBookKey(),
+          existingBook.providerMetadata.decodeProviderMetadata(),
+          tmp,
+        ) { bytesSoFar, totalBytes ->
           val pct =
             if (totalBytes != null && totalBytes > 0) {
               ((bytesSoFar * 100) / totalBytes).toInt().coerceIn(0, 100)
@@ -223,6 +239,9 @@ class BookRepositoryImpl(
           downloadedAt = System.currentTimeMillis(),
           lastOpenedAt = null,
           coverToken = existingBook.coverToken,
+          providerMetadata =
+            (result as ProviderResult.Success).value.providerMetadata.encodeProviderMetadata()
+              ?: existingBook.providerMetadata,
         )
       )
       _inFlight.update { it - bookId }
@@ -266,9 +285,6 @@ class BookRepositoryImpl(
     const val TAG = "BookRepository"
   }
 }
-
-private fun BookEntity.providerBookKey() =
-  ProviderBookKey(ProviderInstanceId(providerInstanceId), providerItemId)
 
 private fun List<ProviderError>.toLibraryError(): LibraryResult =
   when {

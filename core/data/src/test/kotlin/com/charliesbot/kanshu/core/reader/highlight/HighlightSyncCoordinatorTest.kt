@@ -1,0 +1,300 @@
+package com.charliesbot.kanshu.core.reader.highlight
+
+import com.charliesbot.kanshu.core.database.dao.BookDao
+import com.charliesbot.kanshu.core.database.entity.BookEntity
+import com.charliesbot.kanshu.core.provider.AcquiredBook
+import com.charliesbot.kanshu.core.provider.BookId
+import com.charliesbot.kanshu.core.provider.HighlightChange
+import com.charliesbot.kanshu.core.provider.HighlightPushAck
+import com.charliesbot.kanshu.core.provider.Provider
+import com.charliesbot.kanshu.core.provider.ProviderBook
+import com.charliesbot.kanshu.core.provider.ProviderBookKey
+import com.charliesbot.kanshu.core.provider.ProviderCapabilities
+import com.charliesbot.kanshu.core.provider.ProviderCover
+import com.charliesbot.kanshu.core.provider.ProviderDescriptor
+import com.charliesbot.kanshu.core.provider.ProviderHighlightContext
+import com.charliesbot.kanshu.core.provider.ProviderHighlightSnapshot
+import com.charliesbot.kanshu.core.provider.ProviderInstanceId
+import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
+import com.charliesbot.kanshu.core.provider.ProviderResult
+import com.charliesbot.kanshu.core.provider.ProviderType
+import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
+import com.charliesbot.kanshu.core.reader.SourceElementPath
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import org.readium.r2.shared.publication.Publication
+
+class HighlightSyncCoordinatorTest {
+  @Test
+  fun pushesDeletesThenUpsertsThenPulls() = runTest {
+    val events = mutableListOf<String>()
+    val delete = HighlightChange.Delete("delete", "remote-delete", 3L)
+    val upsert =
+      HighlightChange.Upsert(
+        localId = "upsert",
+        remoteId = null,
+        expectedUpdatedAt = 4L,
+        spineIndex = 0,
+        startCharOffset = 1,
+        endCharOffset = 2,
+        selectedText = "x",
+        startElementPath = SourceElementPath(listOf(0)),
+        endElementPath = SourceElementPath(listOf(0)),
+        color = ReaderHighlightColor.Yellow,
+        createdAt = 1L,
+      )
+    val highlights =
+      mockk<HighlightRepository>(relaxed = true) {
+        coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_DELETE) } returns
+          listOf(delete)
+        coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_UPSERT) } returns
+          listOf(upsert)
+        coEvery { acknowledgeDelete("delete", 3L) } answers { events += "ack-delete" }
+        coEvery { acknowledgeUpsert("upsert", 4L, "remote-created") } answers
+          {
+            events += "ack-upsert"
+          }
+        coEvery { applySnapshot("kavita:7", any()) } answers { events += "apply-pull" }
+      }
+    val provider =
+      RecordingProvider(events) { change ->
+        when (change) {
+          is HighlightChange.Delete -> ProviderResult.Success(HighlightPushAck())
+          is HighlightChange.Upsert ->
+            ProviderResult.Success(HighlightPushAck(remoteId = "remote-created"))
+        }
+      }
+    val coordinator = coordinator(provider, highlights)
+
+    coordinator.synchronize(
+      BookId("kavita:7"),
+      File("book.epub"),
+      mockk<Publication>(),
+    ) {
+      null
+    }
+
+    assertEquals(
+      listOf("push-delete", "ack-delete", "push-upsert", "ack-upsert", "pull", "apply-pull"),
+      events,
+    )
+  }
+
+  @Test
+  fun failedPushLeavesPendingStateUntouchedAndStillCompletesPull() = runTest {
+    val change = HighlightChange.Delete("delete", "remote-delete", 3L)
+    val highlights =
+      mockk<HighlightRepository>(relaxed = true) {
+        coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_DELETE) } returns
+          listOf(change)
+        coEvery { pendingChanges("kavita:7", HighlightSyncState.PENDING_UPSERT) } returns
+          emptyList()
+      }
+    val provider =
+      RecordingProvider(mutableListOf()) {
+        ProviderResult.Failure(com.charliesbot.kanshu.core.provider.ProviderError.Network)
+      }
+
+    coordinator(provider, highlights).synchronize(
+      BookId("kavita:7"),
+      File("book.epub"),
+      mockk<Publication>(),
+    ) {
+      null
+    }
+
+    coVerify(exactly = 0) { highlights.acknowledgeDelete(any(), any()) }
+    coVerify { highlights.applySnapshot("kavita:7", any()) }
+  }
+
+  @Test
+  fun overlappingTriggersRunOnlyTheLatestQueuedRequest() = runTest {
+    val release = CompletableDeferred<Unit>()
+    val files = mutableListOf<String>()
+    var active = 0
+    var maximumActive = 0
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          active++
+          maximumActive = maxOf(maximumActive, active)
+          files += context.book.file.name
+          if (files.size == 1) release.await()
+          active--
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val coordinator = coordinator(provider, mockk(relaxed = true))
+    val first = launch(start = CoroutineStart.UNDISPATCHED) { coordinator.sync("first") }
+
+    coordinator.sync("superseded")
+    coordinator.sync("latest")
+    assertEquals(listOf("first"), files)
+    release.complete(Unit)
+    first.join()
+
+    assertEquals(listOf("first", "latest"), files)
+    assertEquals(1, maximumActive)
+    coordinator.sync("later")
+    assertEquals(listOf("first", "latest", "later"), files)
+  }
+
+  @Test
+  fun cancellationPropagatesAndTheNextTriggerCanSync() = runTest {
+    val files = mutableListOf<String>()
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          files += context.book.file.name
+          if (files.size == 1) awaitCancellation()
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val highlights = mockk<HighlightRepository>(relaxed = true)
+    val coordinator = coordinator(provider, highlights)
+    val first = launch(start = CoroutineStart.UNDISPATCHED) { coordinator.sync("cancelled") }
+    coordinator.sync("queued")
+
+    first.cancelAndJoin()
+    assertTrue(first.isCancelled)
+    coVerify(exactly = 0) { highlights.applySnapshot(any(), any()) }
+    coordinator.sync("retry")
+
+    assertEquals(listOf("cancelled", "retry"), files)
+    coVerify(exactly = 1) { highlights.applySnapshot(any(), any()) }
+  }
+
+  @Test
+  fun thrownFailurePropagatesAndTheNextTriggerCanSync() = runTest {
+    val release = CompletableDeferred<Unit>()
+    val failure = IllegalStateException("pull failed")
+    val files = mutableListOf<String>()
+    val provider =
+      RecordingProvider(
+        mutableListOf(),
+        onPull = { context ->
+          files += context.book.file.name
+          if (files.size == 1) {
+            release.await()
+            throw failure
+          }
+        },
+      ) {
+        ProviderResult.Success(HighlightPushAck())
+      }
+    val highlights = mockk<HighlightRepository>(relaxed = true)
+    val coordinator = coordinator(provider, highlights)
+    val first =
+      launch(start = CoroutineStart.UNDISPATCHED) {
+        try {
+          coordinator.sync("failed")
+          fail("Expected the original failure")
+        } catch (caught: IllegalStateException) {
+          assertSame(failure, caught)
+        }
+      }
+    coordinator.sync("queued")
+    release.complete(Unit)
+    first.join()
+    coVerify(exactly = 0) { highlights.applySnapshot(any(), any()) }
+
+    coordinator.sync("retry")
+    assertEquals(listOf("failed", "retry"), files)
+    coVerify(exactly = 1) { highlights.applySnapshot(any(), any()) }
+  }
+
+  private suspend fun HighlightSyncCoordinator.sync(fileName: String) {
+    synchronize(BookId("kavita:7"), File(fileName), mockk<Publication>()) { null }
+  }
+
+  private fun coordinator(
+    provider: Provider,
+    highlights: HighlightRepository,
+  ): HighlightSyncCoordinator {
+    val books =
+      mockk<BookDao> {
+        coEvery { find("kavita:7") } returns
+          BookEntity(
+            id = "kavita:7",
+            providerInstanceId = "kavita",
+            providerItemId = "7",
+            title = "Book",
+            localPath = "book.epub",
+            byteSize = 1L,
+            downloadedAt = 1L,
+            lastOpenedAt = null,
+          )
+      }
+    return HighlightSyncCoordinatorImpl(
+      providers = ProviderRegistryImpl(listOf(provider)),
+      books = books,
+      highlights = highlights,
+    )
+  }
+}
+
+private class RecordingProvider(
+  private val events: MutableList<String>,
+  private val onPull: suspend (ProviderHighlightContext) -> Unit = {},
+  private val pushResult: (HighlightChange) -> ProviderResult<HighlightPushAck>,
+) : Provider {
+  override val descriptor =
+    ProviderDescriptor(
+      id = ProviderInstanceId("kavita"),
+      type = ProviderType.KAVITA,
+      displayName = "Kavita",
+      enabled = true,
+      capabilities = ProviderCapabilities(progressSync = true, highlightSync = true),
+    )
+
+  override suspend fun fetchCatalog(): ProviderResult<List<ProviderBook>> =
+    ProviderResult.Success(emptyList())
+
+  override suspend fun resolveCover(
+    book: ProviderBookKey,
+    revisionToken: String?,
+  ): ProviderCover? = null
+
+  override suspend fun acquire(
+    book: ProviderBookKey,
+    target: File,
+    onProgress: (downloaded: Long, total: Long?) -> Unit,
+  ): ProviderResult<AcquiredBook> = ProviderResult.Success(AcquiredBook(0))
+
+  override suspend fun pushHighlight(
+    context: ProviderHighlightContext,
+    change: HighlightChange,
+  ): ProviderResult<HighlightPushAck> {
+    events +=
+      when (change) {
+        is HighlightChange.Delete -> "push-delete"
+        is HighlightChange.Upsert -> "push-upsert"
+      }
+    return pushResult(change)
+  }
+
+  override suspend fun pullHighlights(
+    context: ProviderHighlightContext
+  ): ProviderResult<ProviderHighlightSnapshot> {
+    events += "pull"
+    onPull(context)
+    return ProviderResult.Success(ProviderHighlightSnapshot(emptySet(), emptyList()))
+  }
+}
