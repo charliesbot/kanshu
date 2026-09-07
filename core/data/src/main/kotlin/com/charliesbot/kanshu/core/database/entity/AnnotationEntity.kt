@@ -9,6 +9,7 @@ import com.charliesbot.kanshu.core.reader.ReaderHighlightColor
 import com.charliesbot.kanshu.core.reader.SourceElementPath
 import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 
+/** Persisted highlight or delete tombstone; remote IDs are unique within each book. */
 @Entity(
   tableName = "annotations",
   foreignKeys =

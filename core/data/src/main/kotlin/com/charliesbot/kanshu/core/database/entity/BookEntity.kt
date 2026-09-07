@@ -5,13 +5,12 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-// Unified registry of books this device knows about. The stable Kanshu `id` owns reading state;
-// providerInstanceId + providerItemId identify the book at its origin without parsing `id`.
-//
-// `localPath` is the bridge to the filesystem: when non-null, the EPUB lives at that path.
-// The FS is no longer authoritative for "what's downloaded" — the DB is. The on-disk file is
-// just bytes the DB points at. Uninstall wipes both together (filesDir + Room db are app-private),
-// so DB/FS divergence is bounded to in-process bugs we control.
+/**
+ * Local book registry: [id] owns reading state, while provider IDs identify the remote book.
+ * [localPath] records the downloaded EPUB location; Room is authoritative for download status.
+ * [providerMetadata] is opaque JSON that acquisition may enrich and catalog refreshes preserve for
+ * downloaded books.
+ */
 @Entity(
   tableName = "books",
   indices =

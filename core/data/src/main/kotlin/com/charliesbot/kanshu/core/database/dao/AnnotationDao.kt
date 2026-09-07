@@ -7,8 +7,10 @@ import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.reader.annotation.HighlightSyncState
 import kotlinx.coroutines.flow.Flow
 
+/** Room operations for visible highlights, pending mutations, and guarded acknowledgements. */
 @Dao
 interface AnnotationDao {
+  /** Observes highlights in offset order, excluding pending-delete tombstones by default. */
   @Query(
     "SELECT * FROM annotations WHERE book_id = :bookId AND spine_index = :spineIndex " +
       "AND sync_state != :excludedState ORDER BY start_char_offset ASC"
@@ -19,11 +21,14 @@ interface AnnotationDao {
     excludedState: HighlightSyncState = HighlightSyncState.PENDING_DELETE,
   ): Flow<List<AnnotationEntity>>
 
+  /** Returns a row by local ID, including tombstones, or null if absent. */
   @Query("SELECT * FROM annotations WHERE id = :id") suspend fun find(id: String): AnnotationEntity?
 
+  /** Returns all book annotations, including tombstones, for reconciliation. */
   @Query("SELECT * FROM annotations WHERE book_id = :bookId")
   suspend fun forBook(bookId: String): List<AnnotationEntity>
 
+  /** Returns rows in a requested state ordered by their last local update. */
   @Query(
     "SELECT * FROM annotations WHERE book_id = :bookId AND sync_state = :state " +
       "ORDER BY updated_at ASC"
@@ -32,8 +37,10 @@ interface AnnotationDao {
 
   @Upsert suspend fun upsert(annotation: AnnotationEntity)
 
+  /** Inserts or updates a batch; callers supply the transaction when reconciling a snapshot. */
   @Upsert suspend fun upsertAll(annotations: List<AnnotationEntity>)
 
+  /** Updates color, timestamp, and sync status together in one statement. */
   @Query(
     "UPDATE annotations SET color = :color, updated_at = :updatedAt, sync_state = :syncState " +
       "WHERE id = :id"
@@ -45,6 +52,7 @@ interface AnnotationDao {
     syncState: HighlightSyncState,
   )
 
+  /** Marks an annotation as a hidden pending-delete tombstone by default. */
   @Query("UPDATE annotations SET updated_at = :updatedAt, sync_state = :syncState WHERE id = :id")
   suspend fun markPendingDelete(
     id: String,
@@ -52,6 +60,7 @@ interface AnnotationDao {
     syncState: HighlightSyncState = HighlightSyncState.PENDING_DELETE,
   )
 
+  /** Acknowledges only the expected pending version; returns the number of updated rows. */
   @Query(
     "UPDATE annotations SET remote_id = COALESCE(:remoteId, remote_id), " +
       "sync_state = :syncedState WHERE id = :id AND updated_at = :expectedUpdatedAt " +
@@ -65,6 +74,7 @@ interface AnnotationDao {
     pendingState: HighlightSyncState = HighlightSyncState.PENDING_UPSERT,
   ): Int
 
+  /** Deletes only the expected pending tombstone; returns the number of removed rows. */
   @Query(
     "DELETE FROM annotations WHERE id = :id AND updated_at = :expectedUpdatedAt AND " +
       "sync_state = :pendingState"
@@ -77,5 +87,6 @@ interface AnnotationDao {
 
   @Query("DELETE FROM annotations WHERE id = :id") suspend fun delete(id: String)
 
+  /** Physically removes a batch of local IDs during snapshot reconciliation. */
   @Query("DELETE FROM annotations WHERE id IN (:ids)") suspend fun deleteAll(ids: List<String>)
 }

@@ -12,6 +12,7 @@ import com.charliesbot.kanshu.core.database.entity.AnnotationEntity
 import com.charliesbot.kanshu.core.database.entity.BookEntity
 import com.charliesbot.kanshu.core.database.entity.ReadingProgressEntity
 
+/** Room database for books, reading progress, and durable highlight sync state. */
 @Database(
   entities = [BookEntity::class, ReadingProgressEntity::class, AnnotationEntity::class],
   version = 8,

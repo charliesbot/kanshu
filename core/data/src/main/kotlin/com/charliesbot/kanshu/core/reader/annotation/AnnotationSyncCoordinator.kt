@@ -16,9 +16,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.readium.r2.shared.publication.Publication
 
+/** Coordinates on-demand highlight synchronization independently of local persistence. */
 interface AnnotationSyncCoordinator {
+  /**
+   * Checks declared provider support, not network reachability; returns false for a missing book.
+   */
   suspend fun supports(bookId: BookId): Boolean
 
+  /**
+   * Requests a sync round for an opened book: deletes, upserts, then a complete pull. Overlapping
+   * calls return after replacing the queued request with the latest one. Provider failure results
+   * leave pending changes untouched; no background retry is scheduled.
+   */
   suspend fun synchronize(
     bookId: BookId,
     file: File,
@@ -27,6 +36,7 @@ interface AnnotationSyncCoordinator {
   )
 }
 
+/** Serializes sync rounds and coalesces overlapping triggers into the latest queued request. */
 class AnnotationSyncCoordinatorImpl(
   private val providers: ProviderRegistry,
   private val books: BookDao,

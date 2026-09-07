@@ -11,18 +11,28 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+/**
+ * Durable local sync status with explicit storage values independent of enum ordinals. SYNCED also
+ * represents local-only highlights; PENDING_DELETE rows are hidden tombstones.
+ */
 enum class HighlightSyncState(val storageValue: String) {
   SYNCED("SYNCED"),
   PENDING_UPSERT("PENDING_UPSERT"),
   PENDING_DELETE("PENDING_DELETE");
 
   companion object {
+    /** Decodes a persisted state, throwing [IllegalArgumentException] for unknown values. */
     fun fromStorageValue(value: String): HighlightSyncState =
       entries.firstOrNull { it.storageValue == value }
         ?: throw IllegalArgumentException("Unknown highlight sync state: $value")
   }
 }
 
+/**
+ * A local highlight with rendering offsets, source-element anchors, and durable sync bookkeeping.
+ * Offsets are relative to one spine section with an exclusive end; timestamps are epoch
+ * milliseconds. A null [remoteId] means the highlight has not been linked to a remote annotation.
+ */
 data class ReaderAnnotation(
   val id: String,
   val bookId: String = "",
@@ -39,9 +49,17 @@ data class ReaderAnnotation(
   val syncState: HighlightSyncState = HighlightSyncState.SYNCED,
 )
 
+/** Local-first highlight storage and guarded reconciliation with provider changes. */
 interface AnnotationRepository {
+  /**
+   * Observes visible highlights in offset order for one spine section, excluding delete tombstones.
+   */
   fun observeForSpine(bookId: String, spineIndex: Int): Flow<List<ReaderAnnotation>>
 
+  /**
+   * Persists a highlight before any network work; returns null for an empty or inverted range.
+   * Sync-capable books start pending upsert; local-only books start synced.
+   */
   suspend fun addHighlight(
     bookId: String,
     spineIndex: Int,
@@ -53,22 +71,41 @@ interface AnnotationRepository {
     color: ReaderHighlightColor = ReaderHighlightColor.default,
   ): ReaderAnnotation?
 
+  /** Recolors locally and marks sync-capable highlights pending upsert; absent IDs are ignored. */
   suspend fun updateHighlightColor(id: String, color: ReaderHighlightColor)
 
+  /**
+   * Hides remotely linked, sync-capable highlights as pending-delete tombstones. Unlinked or
+   * local-only highlights are physically removed; absent IDs are ignored.
+   */
   suspend fun delete(id: String)
 
+  /** Returns mutations in timestamp order for a pending [state]; SYNCED is not a mutation state. */
   suspend fun pendingChanges(
     bookId: String,
     state: HighlightSyncState,
   ): List<HighlightChange>
 
+  /**
+   * Marks a pending upsert synced only if [expectedUpdatedAt] still matches. A null [remoteId]
+   * preserves the existing remote link; newer local changes remain pending.
+   */
   suspend fun acknowledgeUpsert(id: String, expectedUpdatedAt: Long, remoteId: String?)
 
+  /** Physically removes a pending-delete row only if [expectedUpdatedAt] still matches. */
   suspend fun acknowledgeDelete(id: String, expectedUpdatedAt: Long)
 
+  /**
+   * Atomically imports remote highlights, updates linked synced rows, and removes missing synced
+   * rows. Pending local changes win; IDs reported as seen but untranslated are preserved.
+   */
   suspend fun applySnapshot(bookId: String, snapshot: ProviderHighlightSnapshot)
 }
 
+/**
+ * Room-backed highlight storage with injected capability lookup and transaction execution. Local
+ * mutations do not perform network requests; the sync coordinator submits pending work.
+ */
 class AnnotationRepositoryImpl(
   private val annotationDao: AnnotationDao,
   private val inTransaction: suspend (suspend () -> Unit) -> Unit,

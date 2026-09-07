@@ -7,6 +7,7 @@ import androidx.room.Upsert
 import com.charliesbot.kanshu.core.database.entity.BookEntity
 import kotlinx.coroutines.flow.Flow
 
+/** Book persistence and provider-scoped catalog reconciliation. */
 @Dao
 interface BookDao {
   @Query("SELECT * FROM books") fun observeAll(): Flow<List<BookEntity>>
@@ -32,6 +33,10 @@ interface BookDao {
 
   @Query("DELETE FROM books WHERE id = :id") suspend fun delete(id: String)
 
+  /**
+   * Reconciles a complete provider catalog while retaining local download and reading state.
+   * Downloaded books retain acquisition-enriched metadata; missing undownloaded rows are removed.
+   */
   @Transaction
   suspend fun syncBooks(
     providerInstanceId: String,

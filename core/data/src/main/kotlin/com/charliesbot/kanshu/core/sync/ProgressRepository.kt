@@ -101,6 +101,9 @@ sealed interface InitialPosition {
     InitialPosition
 }
 
+/**
+ * Coordinates local reading progress with provider progress using the opened book and its metadata.
+ */
 class ProgressRepositoryImpl(
   private val providers: ProviderRegistry,
   private val books: BookDao,

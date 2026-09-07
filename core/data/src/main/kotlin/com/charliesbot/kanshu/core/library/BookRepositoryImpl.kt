@@ -29,6 +29,10 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Maintains the Room-backed library and downloads, preserving provider metadata through
+ * acquisition.
+ */
 class BookRepositoryImpl(
   private val providers: ProviderRegistry,
   private val booksDir: File,
@@ -51,6 +55,10 @@ class BookRepositoryImpl(
   // nothing — completed downloads land in the DB; abandoned downloads disappear with the process.
   private val _inFlight = MutableStateFlow<Map<BookId, Int>>(emptyMap())
 
+  /**
+   * Refreshes enabled provider catalogs and emits the Room-backed library with local download
+   * state.
+   */
   override fun observeBooks(): Flow<LibraryResult> = flow {
     val localBooksSnapshot =
       try {

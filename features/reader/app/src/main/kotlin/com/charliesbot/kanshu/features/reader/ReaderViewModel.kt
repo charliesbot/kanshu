@@ -67,6 +67,9 @@ internal data class ReaderPaginationState(
   val pendingLanding: ReaderLandingPage? = null,
 )
 
+/**
+ * Owns the reader session and Room-backed highlights, requesting sync after opening or local edits.
+ */
 class ReaderViewModel(
   private val openBook: OpenBookUseCase,
   private val preferencesRepository: ReaderPreferencesRepository,
@@ -341,7 +344,8 @@ class ReaderViewModel(
 
   /**
    * Stores the current selection as a highlight. The range is the engine's, in chapter text-stream
-   * offsets, so the highlight lands on the same words after any repagination.
+   * offsets, so the highlight lands on the same words after any repagination. Local persistence
+   * completes before provider synchronization is requested.
    */
   fun addHighlight(
     selection: ReaderSelectionInfo,
@@ -365,6 +369,7 @@ class ReaderViewModel(
     }
   }
 
+  /** Applies the local deletion before requesting provider synchronization. */
   fun removeHighlight(id: String) {
     viewModelScope.launch {
       annotationRepository.delete(id)
@@ -372,6 +377,7 @@ class ReaderViewModel(
     }
   }
 
+  /** Persists the new color locally before requesting provider synchronization. */
   fun setHighlightColor(id: String, color: ReaderHighlightColor) {
     viewModelScope.launch {
       annotationRepository.updateHighlightColor(id, color)
