@@ -16,6 +16,7 @@ import com.charliesbot.kanshu.core.library.usecase.DeleteDownloadUseCase
 import com.charliesbot.kanshu.core.library.usecase.DownloadBookUseCase
 import com.charliesbot.kanshu.core.library.usecase.LoadLibraryUseCase
 import com.charliesbot.kanshu.core.network.buildKavitaHttpClient
+import com.charliesbot.kanshu.core.provider.ProviderInstanceId
 import com.charliesbot.kanshu.core.provider.ProviderRegistry
 import com.charliesbot.kanshu.core.provider.ProviderRegistryImpl
 import com.charliesbot.kanshu.core.provider.kavita.KavitaProvider
@@ -85,9 +86,7 @@ val coreDataModule = module {
         val book = database.bookDao().find(bookId)
         book != null &&
           get<ProviderRegistry>()
-            .provider(
-              com.charliesbot.kanshu.core.provider.ProviderInstanceId(book.providerInstanceId)
-            )
+            .provider(ProviderInstanceId(book.providerInstanceId))
             .descriptor
             .capabilities
             .highlightSync
