@@ -278,44 +278,6 @@ internal fun toKavitaXPath(
     segments.joinToString(separator = "/", prefix = if (segments.isEmpty()) "" else "/")
 }
 
-internal fun resolveKavitaXPath(
-  xpath: String,
-  sourceMap: ProviderSourceMap,
-): SourceElementPath? {
-  val trimmed = xpath.trim()
-  var current = SourceElementPath.Root
-  var remaining = trimmed
-  if (trimmed.startsWith("id(")) {
-    val close = trimmed.indexOf(')')
-    if (close < 4) return null
-    val id = trimmed.substring(3, close).trim().trim('"', '\'')
-    current = sourceMap.resolveElementId(id) ?: return null
-    remaining = trimmed.substring(close + 1)
-  }
-
-  val segments = remaining.split('/').filter { it.isNotBlank() }.toMutableList()
-  while (segments.firstOrNull()?.substringBefore('[')?.lowercase() in setOf("html", "body")) {
-    segments.removeAt(0)
-  }
-  for (segment in segments) {
-    val tag = segment.substringBefore('[').lowercase()
-    if (tag.isBlank() || !tag.first().isLetter()) return null
-    val indexText = segment.substringAfter('[', "").substringBefore(']', "")
-    if ('[' in segment && (indexText.isBlank() || !segment.endsWith(']'))) return null
-    val sibling = (indexText.toIntOrNull() ?: 1) - 1
-    if (sibling < 0) return null
-    val parent = sourceMap.inspect(current) ?: return null
-    current =
-      parent.childPaths
-        .mapNotNull(sourceMap::inspect)
-        .firstOrNull {
-          it.tagName.equals(tag, ignoreCase = true) && it.sameTagSiblingIndex == sibling
-        }
-        ?.path ?: return null
-  }
-  return current
-}
-
 internal fun slotForColor(color: ReaderHighlightColor): Int =
   when (color) {
     ReaderHighlightColor.Aqua -> 0

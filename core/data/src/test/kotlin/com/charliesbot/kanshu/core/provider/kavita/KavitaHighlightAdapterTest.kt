@@ -22,6 +22,7 @@ import java.io.File
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.readium.r2.shared.publication.Publication
@@ -50,6 +51,101 @@ class KavitaHighlightAdapterTest {
       SourceElementPath(listOf(0, 1)),
       resolveKavitaXPath("id(\"target\")", sourceMap),
     )
+  }
+
+  @Test
+  fun malformedPathsAreRejectedInsteadOfResolvingToAnotherElement() {
+    val invalidPaths =
+      listOf(
+        "",
+        "  ",
+        "/",
+        "//",
+        "div/p",
+        "//body/",
+        "//body//div[1]",
+        "//body/div[abc]",
+        "//body/div[999999999999999999999]",
+        "//body/div[0]",
+        "//body/div[-2147483648]",
+        "//body/div[+1]",
+        "//body/div[1][2]",
+        "//body/div[1]garbage]",
+        "//body/div[]",
+        "//body[2]/div",
+        "/html[2]/body/div",
+        "/body/body/div",
+        "//body/div/@id",
+        "//body/div/*",
+        "//body/div/text()",
+        "id(target)",
+        "id(\"target')",
+        "id(\"target\")garbage",
+        "id(\"target\")/",
+        "id(\"target\")//p",
+        "id(\"\")",
+        "id(\"two ids\")",
+        "///body/div",
+        "//body/div/",
+      )
+    invalidPaths.forEach { xpath ->
+      assertNull("Should reject: $xpath", resolveKavitaXPath(xpath, sourceMap))
+    }
+  }
+
+  @Test
+  fun supportedRootsAndChildStepsResolve() {
+    listOf("//body", "/body", "/html/body", "//html/body", "/html[1]/body[1]").forEach { root ->
+      assertEquals(SourceElementPath.Root, resolveKavitaXPath(root, sourceMap))
+      assertEquals(
+        SourceElementPath(listOf(0, 1)),
+        resolveKavitaXPath("$root/div[1]/p[2]", sourceMap),
+      )
+    }
+    assertEquals(
+      SourceElementPath(listOf(0, 0)),
+      resolveKavitaXPath("  //BODY/DIV/P  ", sourceMap),
+    )
+    listOf("id(\"container\")", "id('container')").forEach { root ->
+      assertEquals(
+        SourceElementPath(listOf(0, 1)),
+        resolveKavitaXPath("$root/p[2]", sourceMap),
+      )
+    }
+    listOf(SourceElementPath.Root, SourceElementPath(listOf(0)), SourceElementPath(listOf(0, 1)))
+      .forEach { path ->
+        assertEquals(
+          path,
+          resolveKavitaXPath(requireNotNull(toKavitaXPath(path, sourceMap)), sourceMap),
+        )
+      }
+    assertNull(resolveKavitaXPath("id('missing')", sourceMap))
+    assertNull(resolveKavitaXPath("//body/div/p[3]", sourceMap))
+  }
+
+  @Test
+  fun entirePathIsValidatedBeforeLookingUpElements() {
+    val map = mockk<ProviderSourceMap>()
+    assertNull(resolveKavitaXPath("id('container')/p[abc]", map))
+    io.mockk.verify { map wasNot io.mockk.Called }
+  }
+
+  @Test
+  fun bodyAnchorRequiresAnExistingSourceRoot() {
+    val map = mockk<ProviderSourceMap>()
+    io.mockk.every { map.inspect(SourceElementPath.Root) } returns null
+    assertNull(resolveKavitaXPath("//body", map))
+  }
+
+  @Test
+  fun quotedIdsMayContainPathDelimiters() {
+    listOf("part)/section", "part'quote").forEach { id ->
+      val map = mockk<ProviderSourceMap>()
+      io.mockk.every { map.resolveElementId(id) } returns SourceElementPath(listOf(0))
+      io.mockk.every { map.inspect(SourceElementPath(listOf(0))) } returns
+        sourceMap.inspect(SourceElementPath(listOf(0)))
+      assertEquals(SourceElementPath(listOf(0)), resolveKavitaXPath("id(\"$id\")", map))
+    }
   }
 
   @Test
@@ -105,12 +201,14 @@ class KavitaHighlightAdapterTest {
       listOf(
         annotation(id = 1, xPath = "//body/div[1]/p[1]", text = "words"),
         annotation(id = 2, xPath = "//body/missing[1]", text = "words"),
+        annotation(id = 3, xPath = "//body/div[abc]/p[1]", text = "words"),
+        annotation(id = 4, xPath = "", text = "words"),
       )
 
     val result = provider.pullHighlights(context()) as ProviderResult.Success
     val snapshot = result.value as ProviderHighlightSnapshot
 
-    assertEquals(setOf("1", "2"), snapshot.seenRemoteIds)
+    assertEquals(setOf("1", "2", "3", "4"), snapshot.seenRemoteIds)
     assertEquals(listOf("1"), snapshot.highlights.map { it.remoteId })
     assertEquals(10, snapshot.highlights.single().startCharOffset)
     assertEquals(15, snapshot.highlights.single().endCharOffset)
@@ -173,7 +271,7 @@ private class FakeSourceMap : ProviderSourceMap {
   private val elements =
     listOf(
         ProviderSourceElement(root, "body", null, 0, listOf(div), 0..20),
-        ProviderSourceElement(div, "DIV", null, 0, listOf(first, second), 0..20),
+        ProviderSourceElement(div, "DIV", "container", 0, listOf(first, second), 0..20),
         ProviderSourceElement(first, "P", null, 0, emptyList(), 10..14),
         ProviderSourceElement(second, "P", "target", 1, emptyList(), 15..20),
       )
